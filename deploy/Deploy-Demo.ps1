@@ -59,6 +59,37 @@ function Stop-ServiceIfRunning {
     }
 }
 
+function Move-DirectoryWithRetry {
+    param(
+        [Parameter(Mandatory)][string] $Source,
+        [Parameter(Mandatory)][string] $Destination
+    )
+
+    $lastError = $null
+    for ($attempt = 1; $attempt -le 15; $attempt++) {
+        try {
+            Move-Item -Path $Source -Destination $Destination -ErrorAction Stop
+            return
+        }
+        catch {
+            if (($_.Exception -isnot [System.IO.IOException]) -and
+                ($_.Exception -isnot [System.UnauthorizedAccessException])) {
+                throw
+            }
+
+            $lastError = $_
+            if ($attempt -lt 15) {
+                Start-Sleep -Seconds 2
+            }
+        }
+    }
+
+    throw ("Could not move '{0}' to '{1}' after 15 attempts. Last error: {2}" -f
+        $Source,
+        $Destination,
+        $lastError.Exception.Message)
+}
+
 function Ensure-ServiceDefinition {
     param(
         [Parameter(Mandatory)][string] $Name,
@@ -289,9 +320,13 @@ if ($hadPreviousCaddyConfig) {
 Stop-ServiceIfRunning -Name $apiServiceName
 Remove-Item $backupDirectory -Recurse -Force -ErrorAction SilentlyContinue
 if ($hadPreviousDeployment) {
-    Move-Item -Path $appDirectory -Destination $backupDirectory
+    Move-DirectoryWithRetry `
+        -Source $appDirectory `
+        -Destination $backupDirectory
 }
-Move-Item -Path $stagingDirectory -Destination $appDirectory
+Move-DirectoryWithRetry `
+    -Source $stagingDirectory `
+    -Destination $appDirectory
 
 try {
     $apiExecutable = Join-Path $appDirectory "CsaMeetingCoach.Api.exe"
@@ -336,7 +371,9 @@ catch {
 
     Remove-Item $appDirectory -Recurse -Force -ErrorAction SilentlyContinue
     if ($hadPreviousDeployment -and (Test-Path $backupDirectory)) {
-        Move-Item -Path $backupDirectory -Destination $appDirectory
+        Move-DirectoryWithRetry `
+            -Source $backupDirectory `
+            -Destination $appDirectory
     }
     if ($apiServiceExisted) {
         Start-Service -Name $apiServiceName
