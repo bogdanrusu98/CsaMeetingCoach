@@ -208,6 +208,18 @@ app.UseExceptionHandler(errorApplication =>
     });
 });
 
+app.Use((context, next) =>
+{
+    if (!context.Request.Path.StartsWithSegments("/api"))
+    {
+        context.Response.Headers.CacheControl =
+            "no-store, no-cache, must-revalidate, max-age=0";
+        context.Response.Headers.Pragma = "no-cache";
+        context.Response.Headers.Expires = "0";
+    }
+
+    return next(context);
+});
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseRateLimiter();
