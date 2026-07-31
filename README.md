@@ -303,9 +303,15 @@ settings. Provider errors are surfaced and never trigger a silent fallback.
 
 ## Teams app package
 
-`appPackage/manifest.json` defines the meeting side panel. After the Azure Bot
-and Entra application exist, generate one package containing both the side panel
-and the calling bot:
+`appPackage/manifest.json` defines the meeting side panel. For the admin-free
+microphone path, generate a side-panel-only package:
+
+```powershell
+.\deploy\Build-TeamsPackage.ps1 -PackageVersion "0.3.0"
+```
+
+After the Azure Bot and Entra application exist, add `-BotAppId` to generate one
+package containing both the side panel and the calling bot:
 
 ```powershell
 .\deploy\Build-TeamsPackage.ps1 `
@@ -313,10 +319,11 @@ and the calling bot:
   -PackageVersion "0.3.0"
 ```
 
-The script injects the real bot application ID, enables calling for the
-`groupChat` scope, and creates `CsaMeetingCoach-Teams.zip`. Upload that package
-through the organization's approved Teams app process. The bot ID cannot be
-hard-coded before Azure assigns the Entra application ID.
+The script creates `CsaMeetingCoach-Teams.zip`. With `-BotAppId`, it also injects
+the real bot application ID and enables calling for the `groupChat` scope.
+Upload the selected package through the organization's approved Teams app
+process. The bot ID cannot be hard-coded before Azure assigns the Entra
+application ID.
 
 The local HTTP URL cannot be installed directly into Teams. Use an approved HTTPS
 development tunnel or Azure deployment.

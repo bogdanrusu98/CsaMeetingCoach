@@ -1,11 +1,13 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)]
     [ValidateScript({
+        if ([string]::IsNullOrWhiteSpace($_)) {
+            return $true
+        }
         $parsed = [Guid]::Empty
         [Guid]::TryParse($_, [ref] $parsed) -and $parsed -ne [Guid]::Empty
     })]
-    [string] $BotAppId,
+    [string] $BotAppId = "",
 
     [ValidatePattern("^\d+\.\d+\.\d+$")]
     [string] $PackageVersion = "0.3.0",
@@ -36,20 +38,26 @@ foreach ($requiredFile in @("manifest.json", "color.png", "outline.png")) {
 
 $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
 $manifest.version = $PackageVersion
-$botDefinition = [ordered]@{
-    botId = $BotAppId
-    scopes = @("groupChat")
-    supportsFiles = $false
-    isNotificationOnly = $false
-    supportsCalling = $true
-    supportsVideo = $false
-}
-
-if ($manifest.PSObject.Properties.Name -contains "bots") {
-    $manifest.bots = @($botDefinition)
+if ([string]::IsNullOrWhiteSpace($BotAppId)) {
+    if ($manifest.PSObject.Properties.Name -contains "bots") {
+        $manifest.PSObject.Properties.Remove("bots")
+    }
 }
 else {
-    $manifest | Add-Member -NotePropertyName "bots" -NotePropertyValue @($botDefinition)
+    $botDefinition = [ordered]@{
+        botId = $BotAppId
+        scopes = @("groupChat")
+        supportsFiles = $false
+        isNotificationOnly = $false
+        supportsCalling = $true
+        supportsVideo = $false
+    }
+    if ($manifest.PSObject.Properties.Name -contains "bots") {
+        $manifest.bots = @($botDefinition)
+    }
+    else {
+        $manifest | Add-Member -NotePropertyName "bots" -NotePropertyValue @($botDefinition)
+    }
 }
 
 $temporaryDirectory = Join-Path `
@@ -86,4 +94,10 @@ finally {
     Remove-Item $temporaryDirectory -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Write-Output "Unified Teams package created at $OutputPath."
+$packageType = if ([string]::IsNullOrWhiteSpace($BotAppId)) {
+    "Side-panel"
+}
+else {
+    "Unified"
+}
+Write-Output "$packageType Teams package created at $OutputPath."
