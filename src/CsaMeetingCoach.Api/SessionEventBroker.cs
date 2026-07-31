@@ -48,13 +48,18 @@ public sealed class SessionEventBroker : ISessionUpdatePublisher
             return Task.CompletedTask;
         }
 
-        var payload = JsonSerializer.Serialize(session, JsonOptions);
+        var payload = SerializeSession(session);
         foreach (var channel in subscribers.Values)
         {
             channel.Writer.TryWrite(payload);
         }
 
         return Task.CompletedTask;
+    }
+
+    public string SerializeSession(MeetingSessionState session)
+    {
+        return JsonSerializer.Serialize(session, JsonOptions);
     }
 
     private void Remove(Guid sessionId, Guid subscriptionId)

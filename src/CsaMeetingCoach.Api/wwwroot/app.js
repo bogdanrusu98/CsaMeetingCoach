@@ -1,7 +1,18 @@
 const state = {
   session: null,
   eventSource: null,
-  teamsMeetingId: null
+  teamsMeetingId: null,
+  browserSpeechAvailable: false,
+  microphoneRecognizer: null,
+  microphoneAudioConfig: null,
+  microphoneRefreshTimer: null,
+  microphoneStartupAbortController: null,
+  microphoneRefreshAbortController: null,
+  microphoneBusy: false,
+  microphoneOperation: Promise.resolve(),
+  speechPublishQueue: Promise.resolve(),
+  speechPublishAbortController: null,
+  seenRecognitionIds: new Set()
 };
 
 const elements = {
@@ -9,6 +20,12 @@ const elements = {
   sessionView: document.querySelector("#session-view"),
   sessionForm: document.querySelector("#session-form"),
   transcriptForm: document.querySelector("#transcript-form"),
+  microphonePanel: document.querySelector("#microphone-panel"),
+  microphoneConsent: document.querySelector("#microphone-consent"),
+  microphoneAccessKey: document.querySelector("#microphone-access-key"),
+  microphoneToggle: document.querySelector("#microphone-toggle"),
+  microphoneStatus: document.querySelector("#microphone-status"),
+  microphonePreview: document.querySelector("#microphone-preview"),
   checklist: document.querySelector("#checklist"),
   recommendations: document.querySelector("#recommendations"),
   transcript: document.querySelector("#transcript"),
@@ -34,6 +51,25 @@ async function initializeTeamsContext() {
 }
 
 const teamsContextReady = initializeTeamsContext();
+initializeBrowserSpeechAvailability();
+
+elements.microphoneConsent.addEventListener("change", renderMicrophoneControls);
+elements.microphoneAccessKey.addEventListener("input", renderMicrophoneControls);
+elements.microphoneToggle.addEventListener("click", async () => {
+  try {
+    await queueMicrophoneOperation(async () => {
+      if (state.microphoneRecognizer) {
+        await stopMicrophone();
+        showToast("Microphone transcription stopped.");
+      } else {
+        await startMicrophone();
+        showToast("Microphone transcription started.");
+      }
+    });
+  } catch (error) {
+    showToast(normalizeMicrophoneError(error));
+  }
+});
 
 elements.sessionForm.addEventListener("submit", async event => {
   event.preventDefault();
@@ -88,6 +124,8 @@ elements.transcriptForm.addEventListener("submit", async event => {
 
 document.querySelector("#complete-meeting").addEventListener("click", async event => {
   await runWithButton(event.currentTarget, async () => {
+    cancelMicrophoneTokenRequests();
+    await queueMicrophoneOperation(stopMicrophone);
     state.session = await api(`/api/sessions/${state.session.id}/complete`, {
       method: "POST"
     });
@@ -142,6 +180,14 @@ function connectEvents(sessionId) {
     if (!state.session || incoming.revision >= state.session.revision) {
       state.session = incoming;
       render();
+      if (incoming.status === "completed"
+          && (state.microphoneRecognizer || state.microphoneBusy)) {
+        cancelMicrophoneTokenRequests();
+        state.speechPublishAbortController?.abort();
+        void queueMicrophoneOperation(stopMicrophone).catch(error => {
+          showToast(`Microphone could not be stopped: ${error.message}`);
+        });
+      }
     }
   });
   state.eventSource.addEventListener("error", () => {
@@ -162,6 +208,7 @@ function render() {
   document.querySelector("#purpose-objective").textContent = session.purpose.objective;
   document.querySelector("#complete-meeting").disabled = session.status === "completed";
   document.querySelector("#transcript-form button").disabled = session.status === "completed";
+  renderMicrophoneControls();
 
   const completed = session.checklist.filter(item => item.status === "completed").length;
   document.querySelector("#progress-label").textContent =
@@ -237,13 +284,361 @@ function render() {
     .join("");
 }
 
+async function startMicrophone() {
+  if (!state.session || state.session.status !== "active") {
+    throw new Error("Create an active coaching session before starting the microphone.");
+  }
+  const sessionId = state.session.id;
+  if (!elements.microphoneConsent.checked) {
+    throw new Error("Confirm participant notice and permission before starting.");
+  }
+  if (!state.browserSpeechAvailable) {
+    throw new Error("Browser microphone transcription is not configured.");
+  }
+  if (!elements.microphoneAccessKey.value) {
+    throw new Error("Enter the demo access code before starting.");
+  }
+  if (!window.SpeechSDK) {
+    throw new Error("Azure Speech SDK could not be loaded.");
+  }
+
+  state.microphoneBusy = true;
+  renderMicrophoneControls();
+  const startupAbortController = new AbortController();
+  const speechPublishAbortController = new AbortController();
+  state.microphoneStartupAbortController = startupAbortController;
+  state.speechPublishAbortController = speechPublishAbortController;
+  let recognizer = null;
+  let audioConfig = null;
+  let recognitionStarted = false;
+  try {
+    const token = await requestSpeechToken(
+      sessionId,
+      startupAbortController.signal);
+    ensureMicrophoneSessionActive(sessionId);
+    const speechConfig = window.SpeechSDK.SpeechConfig.fromAuthorizationToken(
+      token.token,
+      token.region);
+    speechConfig.speechRecognitionLanguage = token.language;
+    audioConfig = window.SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+    recognizer = new window.SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
+
+    recognizer.recognizing = (_, event) => {
+      const text = event.result?.text?.trim();
+      if (text) {
+        elements.microphonePreview.textContent = text;
+      }
+    };
+    recognizer.recognized = (_, event) => {
+      if (event.result?.reason !== window.SpeechSDK.ResultReason.RecognizedSpeech) {
+        return;
+      }
+
+      const text = event.result.text?.trim();
+      const recognitionId = event.result.resultId;
+      if (!text || (recognitionId && state.seenRecognitionIds.has(recognitionId))) {
+        return;
+      }
+      if (recognitionId) {
+        state.seenRecognitionIds.add(recognitionId);
+      }
+
+      elements.microphonePreview.textContent = text;
+      enqueueSpeechSegment(text);
+    };
+    recognizer.canceled = (_, event) => {
+      if (state.microphoneRecognizer !== recognizer) {
+        return;
+      }
+
+      const detail = event.errorDetails?.trim();
+      showToast(detail
+        ? `Microphone recognition stopped: ${detail}`
+        : "Microphone recognition was canceled.");
+      void queueMicrophoneOperation(stopMicrophone);
+    };
+    recognizer.sessionStopped = () => {
+      if (state.microphoneRecognizer === recognizer && !state.microphoneBusy) {
+        void queueMicrophoneOperation(stopMicrophone);
+      }
+    };
+
+    state.microphoneRecognizer = recognizer;
+    state.microphoneAudioConfig = audioConfig;
+    state.seenRecognitionIds.clear();
+    await startContinuousRecognition(recognizer);
+    recognitionStarted = true;
+    ensureMicrophoneSessionActive(sessionId);
+    scheduleSpeechTokenRefresh(token, recognizer);
+  } catch (error) {
+    state.microphoneRecognizer = null;
+    state.microphoneAudioConfig = null;
+    speechPublishAbortController.abort();
+    if (state.speechPublishAbortController === speechPublishAbortController) {
+      state.speechPublishAbortController = null;
+    }
+    if (recognitionStarted) {
+      await stopContinuousRecognition(recognizer);
+    }
+    recognizer?.close();
+    audioConfig?.close();
+    throw error;
+  } finally {
+    if (state.microphoneStartupAbortController === startupAbortController) {
+      state.microphoneStartupAbortController = null;
+    }
+    state.microphoneBusy = false;
+    renderMicrophoneControls();
+  }
+}
+
+async function stopMicrophone() {
+  const recognizer = state.microphoneRecognizer;
+  const audioConfig = state.microphoneAudioConfig;
+  const speechPublishAbortController = state.speechPublishAbortController;
+  state.microphoneBusy = true;
+  cancelMicrophoneTokenRequests();
+  state.microphoneRecognizer = null;
+  state.microphoneAudioConfig = null;
+  window.clearTimeout(state.microphoneRefreshTimer);
+  state.microphoneRefreshTimer = null;
+  renderMicrophoneControls();
+
+  try {
+    if (recognizer) {
+      const stopped = await stopContinuousRecognition(recognizer);
+      if (!stopped) {
+        showToast("Speech SDK did not confirm shutdown; microphone resources were closed.");
+      }
+      recognizer.close();
+    }
+    audioConfig?.close();
+    await drainSpeechPublishQueue(speechPublishAbortController);
+  } finally {
+    speechPublishAbortController?.abort();
+    if (state.speechPublishAbortController === speechPublishAbortController) {
+      state.speechPublishAbortController = null;
+    }
+    state.microphoneBusy = false;
+    elements.microphonePreview.textContent =
+      "Recognized speech will appear here before final segments are sent to the coach.";
+    renderMicrophoneControls();
+  }
+}
+
+function requestSpeechToken(sessionId = state.session?.id, signal) {
+  return api(`/api/sessions/${sessionId}/speech-token`, {
+    method: "POST",
+    signal,
+    headers: {
+      "X-Browser-Speech-Key": elements.microphoneAccessKey.value
+    }
+  });
+}
+
+function ensureMicrophoneSessionActive(sessionId) {
+  if (!state.session
+      || state.session.id !== sessionId
+      || state.session.status !== "active") {
+    throw new Error("The meeting session completed before microphone activation.");
+  }
+}
+
+function scheduleSpeechTokenRefresh(token, recognizer) {
+  window.clearTimeout(state.microphoneRefreshTimer);
+  const expiresAt = Date.parse(token.expiresAtUtc);
+  const refreshDelay = Number.isFinite(expiresAt)
+    ? Math.max(60_000, expiresAt - Date.now() - 60_000)
+    : 8 * 60_000;
+
+  state.microphoneRefreshTimer = window.setTimeout(async () => {
+    if (state.microphoneRecognizer !== recognizer) {
+      return;
+    }
+
+    const refreshAbortController = new AbortController();
+    state.microphoneRefreshAbortController = refreshAbortController;
+    try {
+      const refreshed = await requestSpeechToken(
+        state.session?.id,
+        refreshAbortController.signal);
+      if (state.microphoneRecognizer === recognizer) {
+        recognizer.authorizationToken = refreshed.token;
+        scheduleSpeechTokenRefresh(refreshed, recognizer);
+      }
+    } catch (error) {
+      if (refreshAbortController.signal.aborted
+          || state.microphoneRecognizer !== recognizer) {
+        return;
+      }
+      showToast(`Speech authorization could not be renewed: ${error.message}`);
+      await queueMicrophoneOperation(stopMicrophone);
+    } finally {
+      if (state.microphoneRefreshAbortController === refreshAbortController) {
+        state.microphoneRefreshAbortController = null;
+      }
+    }
+  }, refreshDelay);
+}
+
+function enqueueSpeechSegment(text) {
+  const abortController = state.speechPublishAbortController;
+  if (!abortController || abortController.signal.aborted) {
+    return;
+  }
+  const segment = {
+    speaker: "Presenter microphone",
+    text,
+    occurredAtUtc: new Date().toISOString(),
+    isFinal: true,
+    sourceSegmentId: window.crypto.randomUUID()
+  };
+
+  state.speechPublishQueue = state.speechPublishQueue
+    .then(async () => {
+      const updated = await api(`/api/sessions/${state.session.id}/transcript`, {
+        method: "POST",
+        signal: abortController.signal,
+        body: JSON.stringify(segment)
+      });
+      if (!state.session || updated.revision >= state.session.revision) {
+        state.session = updated;
+        render();
+      }
+    })
+    .catch(error => {
+      if (!abortController.signal.aborted) {
+        showToast(`A recognized segment could not be processed: ${error.message}`);
+      }
+    });
+}
+
+async function drainSpeechPublishQueue(abortController) {
+  const queue = state.speechPublishQueue;
+  let timeoutId;
+  const drained = await Promise.race([
+    queue.then(() => true),
+    new Promise(resolve => {
+      timeoutId = window.setTimeout(() => resolve(false), 5000);
+    })
+  ]);
+  window.clearTimeout(timeoutId);
+  if (drained) {
+    return;
+  }
+
+  abortController?.abort();
+  await queue;
+  showToast("Microphone stopped before all final speech segments could be uploaded.");
+}
+
+function cancelMicrophoneTokenRequests() {
+  state.microphoneStartupAbortController?.abort();
+  state.microphoneRefreshAbortController?.abort();
+}
+
+function startContinuousRecognition(recognizer) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = callback => value => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(timeoutId);
+      callback(value);
+    };
+    const timeoutId = window.setTimeout(
+      settle(reject),
+      10_000,
+      new Error("Microphone recognition did not start within 10 seconds."));
+    try {
+      recognizer.startContinuousRecognitionAsync(
+        settle(resolve),
+        settle(reject));
+    } catch (error) {
+      settle(reject)(error);
+    }
+  });
+}
+
+function stopContinuousRecognition(recognizer) {
+  return new Promise(resolve => {
+    let settled = false;
+    const settle = result => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(timeoutId);
+      resolve(result);
+    };
+    const timeoutId = window.setTimeout(() => settle(false), 5000);
+    try {
+      recognizer.stopContinuousRecognitionAsync(
+        () => settle(true),
+        () => settle(false));
+    } catch {
+      settle(false);
+    }
+  });
+}
+
+function renderMicrophoneControls() {
+  elements.microphonePanel.classList.toggle(
+    "hidden",
+    !state.browserSpeechAvailable);
+  const listening = Boolean(state.microphoneRecognizer);
+  const sessionCompleted = state.session?.status === "completed";
+  elements.microphoneToggle.textContent = listening ? "Stop listening" : "Start listening";
+  elements.microphoneToggle.disabled = state.microphoneBusy
+    || sessionCompleted
+    || (!listening
+      && (!elements.microphoneConsent.checked
+        || !elements.microphoneAccessKey.value));
+  elements.microphoneConsent.disabled =
+    state.microphoneBusy || listening || sessionCompleted;
+  elements.microphoneAccessKey.disabled =
+    state.microphoneBusy || listening || sessionCompleted;
+  elements.microphoneStatus.textContent = listening ? "Listening" : "Microphone off";
+  elements.microphoneStatus.className =
+    `status ${listening ? "listening" : "neutral"}`;
+  elements.microphoneToggle.setAttribute("aria-pressed", listening ? "true" : "false");
+}
+
+function queueMicrophoneOperation(operation) {
+  const queued = state.microphoneOperation.then(operation, operation);
+  state.microphoneOperation = queued.catch(() => {});
+  return queued;
+}
+
+async function initializeBrowserSpeechAvailability() {
+  try {
+    const health = await api("/api/health");
+    state.browserSpeechAvailable =
+      health.browserMicrophoneTranscription === "ready";
+  } catch {
+    state.browserSpeechAvailable = false;
+  }
+  renderMicrophoneControls();
+}
+
+function normalizeMicrophoneError(error) {
+  const message = error?.message || String(error);
+  if (/permission|notallowed|denied/i.test(message)) {
+    return "Microphone permission was denied. Allow microphone access and try again.";
+  }
+  return message;
+}
+
 async function api(url, options = {}) {
+  const { headers = {}, ...requestOptions } = options;
   const response = await fetch(url, {
+    ...requestOptions,
     headers: {
       "Content-Type": "application/json",
-      ...(options.headers || {})
-    },
-    ...options
+      ...headers
+    }
   });
 
   if (!response.ok) {
@@ -262,6 +657,9 @@ async function runWithButton(button, action) {
     showToast(error.message);
   } finally {
     button.disabled = false;
+    if (state.session) {
+      render();
+    }
   }
 }
 
@@ -276,3 +674,11 @@ function escapeHtml(value) {
   element.textContent = value ?? "";
   return element.innerHTML;
 }
+
+window.addEventListener("pagehide", () => {
+  window.clearTimeout(state.microphoneRefreshTimer);
+  cancelMicrophoneTokenRequests();
+  state.speechPublishAbortController?.abort();
+  state.microphoneRecognizer?.close();
+  state.microphoneAudioConfig?.close();
+});

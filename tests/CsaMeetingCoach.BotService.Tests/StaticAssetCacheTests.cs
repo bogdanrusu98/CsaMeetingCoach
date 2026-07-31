@@ -18,12 +18,21 @@ public sealed class StaticAssetCacheTests
         indexResponse.EnsureSuccessStatusCode();
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
-        Assert.Contains("app.js?v=20260731.1", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260731.2", html, StringComparison.Ordinal);
+        Assert.Contains(
+            "vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0",
+            html,
+            StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260731.1");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260731.2");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
+
+        using var speechSdkResponse = await client.GetAsync(
+            "/vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0");
+        speechSdkResponse.EnsureSuccessStatusCode();
+        AssertNoStore(speechSdkResponse);
     }
 
     private static void AssertNoStore(HttpResponseMessage response)

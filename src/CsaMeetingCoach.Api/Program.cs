@@ -63,6 +63,28 @@ builder.Services.AddSingleton<SessionEventBroker>();
 builder.Services.AddSingleton<ISessionUpdatePublisher>(
     services => services.GetRequiredService<SessionEventBroker>());
 
+var browserSpeechOptions = new BrowserSpeechOptions
+{
+    Enabled = builder.Configuration.GetValue<bool>("BrowserSpeech:Enabled"),
+    SubscriptionKey = builder.Configuration["BrowserSpeech:SubscriptionKey"] ?? string.Empty,
+    AccessKey = builder.Configuration["BrowserSpeech:AccessKey"] ?? string.Empty,
+    Region = builder.Configuration["BrowserSpeech:Region"] ?? string.Empty,
+    Language = builder.Configuration["BrowserSpeech:Language"] ?? "en-US"
+};
+browserSpeechOptions.Validate();
+builder.Services.AddSingleton(browserSpeechOptions);
+builder.Services.AddSingleton<BrowserSpeechAuthorizer>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services
+    .AddHttpClient<IBrowserSpeechTokenService, AzureBrowserSpeechTokenService>(client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(10);
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AllowAutoRedirect = false
+    });
+
 var dataDirectory = builder.Configuration["Storage:DataDirectory"];
 if (string.IsNullOrWhiteSpace(dataDirectory))
 {
@@ -164,6 +186,9 @@ app.UseExceptionHandler(errorApplication =>
             TranscriptAdapterUnavailableException => (
                 StatusCodes.Status503ServiceUnavailable,
                 "Transcript adapter unavailable"),
+            BrowserSpeechUnavailableException => (
+                StatusCodes.Status503ServiceUnavailable,
+                "Browser speech unavailable"),
             InvalidOperationException => (StatusCodes.Status409Conflict, "Operation rejected"),
             _ => (StatusCodes.Status500InternalServerError, "Unexpected server error")
         };
@@ -208,8 +233,11 @@ app.MapGet("/api/health", () => Results.Ok(new
 {
     status = "healthy",
     coachAgentProvider,
-    liveTranscriptSource = "Simulator/API adapter",
-    transcriptAdapterAuthentication = adapterAuthMode.ToString()
+    liveTranscriptSource = browserSpeechOptions.Enabled
+        ? "Browser microphone/Simulator/API adapter"
+        : "Simulator/API adapter",
+    transcriptAdapterAuthentication = adapterAuthMode.ToString(),
+    browserMicrophoneTranscription = browserSpeechOptions.Enabled ? "ready" : "disabled"
 }));
 
 app.MapPost(
@@ -224,6 +252,31 @@ app.MapPost(
         var session = await coordinator.CreateAsync(request, cancellationToken);
         accessTokens.GrantAccess(context, session.Id);
         return Results.Created($"/api/sessions/{session.Id}", session);
+    });
+
+app.MapPost(
+    "/api/sessions/{sessionId:guid}/speech-token",
+    async (
+        Guid sessionId,
+        HttpContext context,
+        SessionAccessTokenService accessTokens,
+        MeetingSessionCoordinator coordinator,
+        BrowserSpeechAuthorizer speechAuthorizer,
+        IBrowserSpeechTokenService speechTokens,
+        CancellationToken cancellationToken) =>
+    {
+        RequireSessionAccess(context, sessionId, accessTokens);
+        var session = await coordinator.GetAsync(sessionId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Meeting session {sessionId} was not found.");
+        if (session.Status != MeetingSessionStatus.Active)
+        {
+            throw new InvalidOperationException(
+                "Microphone transcription requires an active meeting session.");
+        }
+
+        speechAuthorizer.Authorize(context);
+        context.Response.Headers.CacheControl = "no-store";
+        return Results.Ok(await speechTokens.IssueTokenAsync(cancellationToken));
     });
 
 app.MapPost(
@@ -354,7 +407,9 @@ app.MapGet(
         CancellationToken cancellationToken) =>
     {
         RequireSessionAccess(context, sessionId, accessTokens);
-        if (await coordinator.GetAsync(sessionId, cancellationToken) is null)
+        await using var subscription = broker.Subscribe(sessionId);
+        var currentSession = await coordinator.GetAsync(sessionId, cancellationToken);
+        if (currentSession is null)
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;
             return;
@@ -364,8 +419,10 @@ app.MapGet(
         context.Response.Headers.Connection = "keep-alive";
         context.Response.ContentType = "text/event-stream";
 
-        await using var subscription = broker.Subscribe(sessionId);
         await context.Response.WriteAsync(": connected\n\n", cancellationToken);
+        await context.Response.WriteAsync(
+            $"event: session\ndata: {broker.SerializeSession(currentSession)}\n\n",
+            cancellationToken);
         await context.Response.Body.FlushAsync(cancellationToken);
         await foreach (var payload in subscription.Reader.ReadAllAsync(cancellationToken))
         {

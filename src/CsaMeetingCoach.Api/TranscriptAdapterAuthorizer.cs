@@ -1,6 +1,4 @@
 using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
 
 namespace CsaMeetingCoach.Api;
 
@@ -44,19 +42,10 @@ public sealed class TranscriptAdapterAuthorizer(TranscriptAdapterAuthOptions opt
 
     private void AuthorizeDevelopmentApiKey(HttpContext context)
     {
-        if (!context.Request.Headers.TryGetValue(ApiKeyHeaderName, out var suppliedValues)
-            || suppliedValues.Count != 1
-            || string.IsNullOrWhiteSpace(suppliedValues[0]))
-        {
-            throw new UnauthorizedAccessException(
-                "A valid transcript adapter credential is required.");
-        }
-
-        var suppliedHash = SHA256.HashData(
-            Encoding.UTF8.GetBytes(suppliedValues[0]!));
-        var expectedHash = SHA256.HashData(
-            Encoding.UTF8.GetBytes(options.DevelopmentApiKey));
-        if (!CryptographicOperations.FixedTimeEquals(suppliedHash, expectedHash))
+        if (!ApiKeyCredentialValidator.IsValid(
+                context.Request.Headers,
+                ApiKeyHeaderName,
+                options.DevelopmentApiKey))
         {
             throw new UnauthorizedAccessException(
                 "A valid transcript adapter credential is required.");

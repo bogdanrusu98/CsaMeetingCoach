@@ -9,6 +9,8 @@ stream to maintain an evidence-backed checklist and recommend follow-up tasks.
 - Creates a meeting checklist from the meeting type, objective, and success
   criteria.
 - Accepts final transcript segments through a real-time ingestion API.
+- Can transcribe an explicitly consented local microphone in real time through
+  short-lived Azure Speech tokens; the subscription key never reaches the browser.
 - Auto-completes a checklist item only above a confidence threshold and only
   when the agent supplies an exact quote from the latest transcript segment.
 - Stores the speaker, timestamp, quote, rationale, and confidence for every
@@ -27,9 +29,9 @@ stream to maintain an evidence-backed checklist and recommend follow-up tasks.
 - Persists meeting sessions as local JSON files under the current user's local
   application-data directory, outside the repository.
 
-The browser UI includes a transcript simulator. For the presentation demo, this
-is the primary input and can be replaced by an explicitly consented presenter
-microphone. The demo does not claim to capture every Teams participant.
+The browser UI includes both a transcript simulator and an explicitly started
+presenter-microphone source. The microphone source captures audio reaching that
+device only. The demo does not claim to capture every Teams participant.
 
 By default, session files are stored in
 `%LOCALAPPDATA%\CsaMeetingCoach\data` on Windows.
@@ -50,6 +52,36 @@ A production integration must choose one approved source:
    meeting-agent integration.
 3. Another organization-approved transcript source that calls the ingestion
    endpoint.
+
+## Browser microphone transcription
+
+The admin-free live demo path uses the Azure Speech JavaScript SDK in the meeting
+side panel. The user must confirm participant notice, select **Start listening**,
+and grant the Teams/browser microphone permission. The app sends only final text
+segments to the existing session API. It does not persist or upload raw audio to
+the Coach API, does not start automatically, and stops when the user ends the
+session or selects **Stop listening**.
+
+The API exchanges the Speech subscription key for a short-lived authorization
+token. Configure the key only on the server:
+
+```powershell
+$env:BrowserSpeech__Enabled = "true"
+$env:BrowserSpeech__SubscriptionKey = "FROM-SECRET-STORE"
+$env:BrowserSpeech__AccessKey = "RANDOM-VALUE-OF-AT-LEAST-32-CHARACTERS"
+$env:BrowserSpeech__Region = "westus2"
+$env:BrowserSpeech__Language = "en-US"
+```
+
+The GitHub deployment enables this path only when the repository variable
+`BROWSER_SPEECH_ENABLED` is `true`. It reuses
+`MEDIA_BOT_SPEECH_KEY`, `MEDIA_BOT_SPEECH_REGION`, and
+`MEDIA_BOT_SPEECH_LANGUAGE`, so browser transcription can be enabled while
+`MEDIA_BOT_ENABLED` remains `false`. Store a separate random value of at least
+32 characters in the `BROWSER_SPEECH_ACCESS_KEY` repository secret and enter
+that value in the side panel for an authorized demo. It is retained only in
+page memory. The Teams manifest requests the `media` device permission; tenant
+policy can still block custom app or microphone access.
 
 The Windows media-bot service is in `src/CsaMeetingCoach.BotService`. Graph is
 disabled by default, so `/api/sessions/{id}/transcript` and the UI simulator

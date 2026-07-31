@@ -19,6 +19,16 @@ param(
     [ValidateLength(1, 64)]
     [string] $FoundryAgentName = "csa-meeting-coach-v2",
 
+    [switch] $BrowserSpeechEnabled,
+
+    [string] $BrowserSpeechSubscriptionKey = "",
+
+    [string] $BrowserSpeechAccessKey = "",
+
+    [string] $BrowserSpeechRegion = "",
+
+    [string] $BrowserSpeechLanguage = "en-US",
+
     [ValidateSet("Disabled", "DevelopmentApiKey", "Entra")]
     [string] $TranscriptAdapterAuthenticationMode = "Disabled",
 
@@ -395,6 +405,15 @@ if ($CoachAgentProvider -eq "Foundry") {
     }
 }
 
+if ($BrowserSpeechEnabled) {
+    if ([string]::IsNullOrWhiteSpace($BrowserSpeechSubscriptionKey) -or
+        $BrowserSpeechAccessKey.Length -lt 32 -or
+        $BrowserSpeechRegion -notmatch "^[a-z0-9-]+$" -or
+        $BrowserSpeechLanguage -notmatch "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})+$") {
+        throw "Browser speech requires a key, Azure region, and valid speech locale."
+    }
+}
+
 if ($TranscriptAdapterAuthenticationMode -eq "DevelopmentApiKey" -and
     $TranscriptAdapterDevelopmentApiKey.Length -lt 32) {
     throw "Transcript adapter development authentication requires a key of at least 32 characters."
@@ -504,6 +523,11 @@ try {
             "CoachAgent__Foundry__ProjectEndpoint=$FoundryProjectEndpoint",
             "CoachAgent__Foundry__ModelDeployment=$FoundryModelDeployment",
             "CoachAgent__Foundry__AgentName=$FoundryAgentName",
+            "BrowserSpeech__Enabled=$($BrowserSpeechEnabled.IsPresent.ToString().ToLowerInvariant())",
+            "BrowserSpeech__SubscriptionKey=$BrowserSpeechSubscriptionKey",
+            "BrowserSpeech__AccessKey=$BrowserSpeechAccessKey",
+            "BrowserSpeech__Region=$BrowserSpeechRegion",
+            "BrowserSpeech__Language=$BrowserSpeechLanguage",
             "TranscriptAdapter__AuthenticationMode=$TranscriptAdapterAuthenticationMode",
             "TranscriptAdapter__DevelopmentApiKey=$TranscriptAdapterDevelopmentApiKey",
             "TranscriptAdapter__Entra__TenantId=$TranscriptAdapterEntraTenantId",

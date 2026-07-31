@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CSA Meeting Coach</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="styles.css?v=20260731.1">
+  <link rel="stylesheet" href="styles.css?v=20260731.2">
 </head>
 <body>
   <header class="app-header">
@@ -65,6 +65,36 @@ Define owners and next steps</textarea>
         <button id="complete-meeting" class="secondary">End session</button>
       </article>
 
+      <article id="microphone-panel" class="panel microphone-panel hidden">
+        <p class="eyebrow">Consented local audio</p>
+        <h2>Live microphone transcription</h2>
+        <p class="muted">
+          Captures audio reaching this device's selected microphone. It does not
+          access the protected Teams meeting audio stream. Azure Speech processes
+          the audio in the configured region; CSA Meeting Coach never stores it.
+        </p>
+        <label class="consent-option">
+          <input id="microphone-consent" type="checkbox">
+          <span>I have informed the participants and have permission to transcribe.</span>
+        </label>
+        <label>
+          Demo access code
+          <input id="microphone-access-key" type="password" autocomplete="off">
+          <span class="field-help">
+            Required to protect the Azure Speech quota. Kept only in this page's memory.
+          </span>
+        </label>
+        <div class="microphone-controls">
+          <button id="microphone-toggle" type="button" class="primary" disabled>
+            Start listening
+          </button>
+          <span id="microphone-status" class="status neutral">Microphone off</span>
+        </div>
+        <p id="microphone-preview" class="live-caption" aria-live="polite">
+          Recognized speech will appear here before final segments are sent to the coach.
+        </p>
+      </article>
+
       <article class="panel">
         <div class="section-heading">
           <div>
@@ -120,6 +150,7 @@ Define owners and next steps</textarea>
 
   <div id="toast" role="status" aria-live="polite" class="toast hidden"></div>
   <script src="https://res.cdn.office.net/teams-js/2.31.0/js/MicrosoftTeams.min.js"></script>
-  <script src="app.js?v=20260731.1"></script>
+  <script src="vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0"></script>
+  <script src="app.js?v=20260731.2"></script>
 </body>
 </html>

@@ -39,6 +39,9 @@
   "permissions": [
     "identity"
   ],
+  "devicePermissions": [
+    "media"
+  ],
   "validDomains": [
     "csa-meeting-coach-demo.westus2.cloudapp.azure.com",
     "res.cdn.office.net"

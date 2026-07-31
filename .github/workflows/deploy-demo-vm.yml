@@ -21,6 +21,8 @@ env:
   FOUNDRY_PROJECT_ENDPOINT: https://csa-meeting-coach-resource.services.ai.azure.com/api/projects/csa-meeting-coach
   FOUNDRY_MODEL_DEPLOYMENT: gpt-4.1-mini
   FOUNDRY_AGENT_NAME: csa-meeting-coach-v2
+  BROWSER_SPEECH_ENABLED: ${{ vars.BROWSER_SPEECH_ENABLED || 'false' }}
+  BROWSER_SPEECH_ACCESS_KEY: ${{ secrets.BROWSER_SPEECH_ACCESS_KEY }}
   TRANSCRIPT_ADAPTER_AUTH_MODE: ${{ vars.TRANSCRIPT_ADAPTER_AUTH_MODE || 'Disabled' }}
   TRANSCRIPT_ADAPTER_API_KEY: ${{ secrets.TRANSCRIPT_ADAPTER_API_KEY }}
   TRANSCRIPT_ADAPTER_ENTRA_TENANT_ID: ${{ vars.TRANSCRIPT_ADAPTER_ENTRA_TENANT_ID }}
@@ -106,6 +108,11 @@ jobs:
             FoundryProjectEndpoint = $env:FOUNDRY_PROJECT_ENDPOINT
             FoundryModelDeployment = $env:FOUNDRY_MODEL_DEPLOYMENT
             FoundryAgentName = $env:FOUNDRY_AGENT_NAME
+            BrowserSpeechEnabled = $env:BROWSER_SPEECH_ENABLED -eq "true"
+            BrowserSpeechSubscriptionKey = $env:MEDIA_BOT_SPEECH_KEY
+            BrowserSpeechAccessKey = $env:BROWSER_SPEECH_ACCESS_KEY
+            BrowserSpeechRegion = $env:MEDIA_BOT_SPEECH_REGION
+            BrowserSpeechLanguage = $env:MEDIA_BOT_SPEECH_LANGUAGE
             TranscriptAdapterAuthenticationMode = $env:TRANSCRIPT_ADAPTER_AUTH_MODE
             TranscriptAdapterDevelopmentApiKey = $env:TRANSCRIPT_ADAPTER_API_KEY
             TranscriptAdapterEntraTenantId = $env:TRANSCRIPT_ADAPTER_ENTRA_TENANT_ID

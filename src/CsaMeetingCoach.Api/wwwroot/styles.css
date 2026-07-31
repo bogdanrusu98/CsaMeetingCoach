@@ -95,6 +95,12 @@ label {
   font-weight: 600;
 }
 
+.field-help {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
 input,
 select,
 textarea,
@@ -111,6 +117,10 @@ textarea {
   border-radius: 8px;
   color: var(--text);
   background: white;
+}
+
+input[type="checkbox"] {
+  width: auto;
 }
 
 textarea {
@@ -161,6 +171,43 @@ button:disabled {
   border-left: 4px solid var(--brand);
   background: #f4f3ff;
   font-size: 13px;
+}
+
+.consent-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8f9fc;
+  line-height: 1.4;
+}
+
+.consent-option input {
+  margin-top: 3px;
+}
+
+.microphone-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status.listening {
+  color: #8e2424;
+  background: #fee9e8;
+}
+
+.live-caption {
+  min-height: 48px;
+  margin: 14px 0 0;
+  padding: 11px 12px;
+  border-left: 3px solid var(--brand);
+  color: #354057;
+  background: #f4f3ff;
+  line-height: 1.45;
 }
 
 .checklist-item,
@@ -281,7 +328,8 @@ button:disabled {
   .app-header,
   .purpose-card,
   .section-heading,
-  .item-row {
+  .item-row,
+  .microphone-controls {
     align-items: stretch;
     flex-direction: column;
   }
