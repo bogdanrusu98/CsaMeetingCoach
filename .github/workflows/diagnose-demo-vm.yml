@@ -1,0 +1,43 @@
+name: Diagnose demo VM
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Read application diagnostics
+    runs-on:
+      - self-hosted
+      - Windows
+      - X64
+      - csa-demo
+    timeout-minutes: 5
+
+    steps:
+      - name: Show service state
+        shell: powershell
+        run: |
+          & "$env:SystemRoot\System32\sc.exe" queryex CsaMeetingCoach.Api
+          & "$env:SystemRoot\System32\sc.exe" queryex CsaMeetingCoach.Caddy
+
+      - name: Show recent application errors
+        shell: powershell
+        run: |
+          $since = (Get-Date).AddHours(-1)
+          Get-WinEvent -FilterHashtable @{
+            LogName = "Application"
+            StartTime = $since
+            Level = 2, 3
+          } -ErrorAction SilentlyContinue |
+            Where-Object {
+              $_.ProviderName -in @(
+                "CsaMeetingCoach.Api",
+                ".NET Runtime",
+                "Application Error"
+              ) -or $_.Message -match "CsaMeetingCoach|Foundry|Azure.AI"
+            } |
+            Select-Object -First 30 TimeCreated, ProviderName, Id, Message |
+            Format-List
