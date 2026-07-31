@@ -391,6 +391,8 @@ app.MapGet(
         context.Response.ContentType = "text/event-stream";
 
         await using var subscription = broker.Subscribe(sessionId);
+        await context.Response.WriteAsync(": connected\n\n", cancellationToken);
+        await context.Response.Body.FlushAsync(cancellationToken);
         await foreach (var payload in subscription.Reader.ReadAllAsync(cancellationToken))
         {
             await context.Response.WriteAsync(
