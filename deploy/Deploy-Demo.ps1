@@ -64,10 +64,51 @@ function Stop-ServiceIfRunning {
     param([Parameter(Mandatory)][string] $Name)
 
     $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
-    if ($service -and $service.Status -ne "Stopped") {
-        Stop-Service -Name $Name -Force
-        $service.WaitForStatus("Stopped", [TimeSpan]::FromSeconds(30))
+    if (-not $service -or $service.Status -eq "Stopped") {
+        return
     }
+
+    $stopOutput = & "$env:SystemRoot\System32\sc.exe" stop $Name 2>&1
+    $stopExitCode = $LASTEXITCODE
+    $deadline = [DateTime]::UtcNow.AddSeconds(35)
+    do {
+        $service = Get-Service -Name $Name -ErrorAction Stop
+        if ($service.Status -eq "Stopped") {
+            return
+        }
+
+        Start-Sleep -Seconds 1
+    } while ([DateTime]::UtcNow -lt $deadline)
+
+    $escapedName = $Name.Replace("'", "''")
+    $serviceProcess = Get-CimInstance `
+        -ClassName Win32_Service `
+        -Filter "Name='$escapedName'" `
+        -ErrorAction Stop
+    if ($serviceProcess.ProcessId -gt 0) {
+        Stop-Process `
+            -Id ([int] $serviceProcess.ProcessId) `
+            -Force `
+            -ErrorAction Stop
+    }
+
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        $service = Get-Service -Name $Name -ErrorAction Stop
+        if ($service.Status -eq "Stopped") {
+            return
+        }
+
+        Start-Sleep -Seconds 1
+    } while ([DateTime]::UtcNow -lt $deadline)
+
+    $queryOutput = & "$env:SystemRoot\System32\sc.exe" queryex $Name 2>&1
+    throw ("Service '{0}' did not stop. Stop exit code: {1}. " +
+        "Stop output: {2}. Status: {3}" -f
+        $Name,
+        $stopExitCode,
+        ($stopOutput -join " "),
+        ($queryOutput -join " "))
 }
 
 function Move-DirectoryWithRetry {
