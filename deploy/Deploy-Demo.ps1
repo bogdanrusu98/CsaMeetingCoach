@@ -130,15 +130,24 @@ function Wait-HttpsHealth {
     $curl = Get-Command "curl.exe" -ErrorAction Stop
     $lastError = $null
     for ($attempt = 0; $attempt -lt 60; $attempt++) {
-        $response = & $curl.Source `
-            --fail `
-            --silent `
-            --show-error `
-            --connect-timeout 5 `
-            --max-time 10 `
-            --resolve "${PublicHostname}:443:127.0.0.1" `
-            "https://$PublicHostname/api/health" 2>&1
-        if ($LASTEXITCODE -eq 0) {
+        $previousErrorActionPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            $response = & $curl.Source `
+                --fail `
+                --silent `
+                --show-error `
+                --connect-timeout 5 `
+                --max-time 10 `
+                --resolve "${PublicHostname}:443:127.0.0.1" `
+                "https://$PublicHostname/api/health" 2>&1
+            $curlExitCode = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+        }
+
+        if ($curlExitCode -eq 0) {
             try {
                 $health = ($response -join [Environment]::NewLine) | ConvertFrom-Json
                 if ($health.status -eq "healthy") {
