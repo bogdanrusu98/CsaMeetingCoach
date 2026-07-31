@@ -1,0 +1,292 @@
+:root {
+  color-scheme: light;
+  --bg: #f5f7fb;
+  --surface: #ffffff;
+  --text: #172033;
+  --muted: #647086;
+  --line: #dfe4ee;
+  --brand: #5b5fc7;
+  --brand-dark: #4649a7;
+  --success: #16855b;
+  --success-bg: #e8f7f0;
+  --warning: #9c6400;
+  --warning-bg: #fff6df;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px;
+  color: white;
+  background: linear-gradient(135deg, #34377c, var(--brand));
+  box-shadow: 0 3px 14px rgb(23 32 51 / 18%);
+}
+
+.app-header h1,
+.panel h2 {
+  margin: 0;
+}
+
+.app-header .eyebrow {
+  color: #dcdcff;
+}
+
+main {
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 18px;
+}
+
+.panel {
+  margin-bottom: 16px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 7px 22px rgb(23 32 51 / 6%);
+}
+
+.purpose-card,
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.muted {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+form,
+.stack {
+  display: grid;
+  gap: 14px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  color: #354057;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #bdc5d3;
+  border-radius: 8px;
+  color: var(--text);
+  background: white;
+}
+
+textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 3px solid rgb(91 95 199 / 18%);
+  border-color: var(--brand);
+}
+
+button {
+  width: fit-content;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+.primary {
+  color: white;
+  background: var(--brand);
+}
+
+.primary:hover {
+  background: var(--brand-dark);
+}
+
+.secondary {
+  color: var(--brand-dark);
+  background: #eeeeff;
+}
+
+.privacy-note {
+  display: grid;
+  gap: 4px;
+  margin-top: 18px;
+  padding: 12px;
+  border-left: 4px solid var(--brand);
+  background: #f4f3ff;
+  font-size: 13px;
+}
+
+.checklist-item,
+.recommendation,
+.transcript-entry,
+.warning {
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.checklist-item.completed {
+  border-color: #9ed9c2;
+  background: var(--success-bg);
+}
+
+.item-row,
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.item-title {
+  font-weight: 700;
+}
+
+.evidence {
+  margin: 9px 0 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--success);
+  color: #34594b;
+  font-size: 13px;
+}
+
+.badge,
+.status {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.badge.success,
+.status.connected {
+  color: #0c6241;
+  background: #dff5ea;
+}
+
+.badge.pending,
+.status.neutral {
+  color: #59647a;
+  background: #eef1f6;
+}
+
+.status.disconnected {
+  color: #9c2f2f;
+  background: #fee9e8;
+}
+
+.actions {
+  justify-content: flex-start;
+  margin-top: 10px;
+}
+
+.actions button {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.empty-state {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.transcript {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.transcript-entry strong {
+  color: var(--brand-dark);
+}
+
+.warning-panel,
+.warning {
+  border-color: #f0ca79;
+  background: var(--warning-bg);
+}
+
+.warning {
+  color: var(--warning);
+}
+
+.toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  max-width: 360px;
+  padding: 12px 16px;
+  color: white;
+  background: #24283b;
+  border-radius: 9px;
+  box-shadow: 0 8px 30px rgb(0 0 0 / 25%);
+}
+
+.hidden {
+  display: none !important;
+}
+
+@media (max-width: 520px) {
+  .app-header,
+  .purpose-card,
+  .section-heading,
+  .item-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .app-header .status {
+    width: fit-content;
+  }
+}

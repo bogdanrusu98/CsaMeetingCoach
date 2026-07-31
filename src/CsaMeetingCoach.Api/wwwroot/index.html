@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CSA Meeting Coach</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">Private meeting assistant</p>
+      <h1>CSA Meeting Coach</h1>
+    </div>
+    <span id="connection-status" class="status neutral">Not connected</span>
+  </header>
+
+  <main>
+    <section id="setup-view" class="panel">
+      <h2>Start a coaching session</h2>
+      <p class="muted">
+        Define the purpose before the meeting. The coach creates a checklist and
+        only auto-completes items when it can cite discussion evidence.
+      </p>
+      <form id="session-form">
+        <label>
+          Meeting title
+          <input id="meeting-title" required value="Contoso cloud modernization VBD">
+        </label>
+        <label>
+          Meeting type
+          <select id="meeting-type">
+            <option>VBD</option>
+            <option>Architecture review</option>
+            <option>Technical workshop</option>
+            <option>Customer follow-up</option>
+          </select>
+        </label>
+        <label>
+          Objective
+          <textarea id="meeting-objective" required>Align the modernization proposal to measurable customer business value.</textarea>
+        </label>
+        <label>
+          Success criteria, one per line
+          <textarea id="success-criteria">Confirm the priority workloads
+Agree measurable business outcomes
+Define owners and next steps</textarea>
+        </label>
+        <button type="submit" class="primary">Create live checklist</button>
+      </form>
+      <aside class="privacy-note">
+        <strong>MVP safety boundary</strong>
+        <span>No emotion analysis, employee scoring, or hidden recording. Do not enter confidential customer data in this local simulator.</span>
+      </aside>
+    </section>
+
+    <section id="session-view" class="hidden">
+      <article class="panel purpose-card">
+        <div>
+          <p id="meeting-type-label" class="eyebrow"></p>
+          <h2 id="purpose-title"></h2>
+          <p id="purpose-objective" class="muted"></p>
+        </div>
+        <button id="complete-meeting" class="secondary">End session</button>
+      </article>
+
+      <article class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Live progress</p>
+            <h2>Evidence-backed checklist</h2>
+          </div>
+          <span id="progress-label"></span>
+        </div>
+        <div id="checklist" class="stack"></div>
+      </article>
+
+      <article class="panel">
+        <p class="eyebrow">Recommended from discussion</p>
+        <h2>Suggested tasks</h2>
+        <div id="recommendations" class="stack empty-state">
+          No recommendations yet.
+        </div>
+      </article>
+
+      <article class="panel simulator">
+        <p class="eyebrow">Development transcript adapter</p>
+        <h2>Simulate a live transcript segment</h2>
+        <p class="muted">
+          This endpoint is the boundary where an approved Teams live media or
+          transcription source will connect.
+        </p>
+        <form id="transcript-form">
+          <label>
+            Speaker
+            <input id="speaker" required value="CSA">
+          </label>
+          <label>
+            Final transcript segment
+            <textarea id="transcript-text" required placeholder="Example: We will send the migration assessment by Friday."></textarea>
+          </label>
+          <button type="submit" class="primary">Send segment</button>
+        </form>
+      </article>
+
+      <article class="panel">
+        <p class="eyebrow">Recent discussion</p>
+        <h2>Transcript evidence</h2>
+        <div id="transcript" class="transcript empty-state">No transcript segments yet.</div>
+      </article>
+
+      <article id="warnings-panel" class="panel warning-panel hidden">
+        <p class="eyebrow">Agent safeguards</p>
+        <h2>Rejected agent decisions</h2>
+        <div id="warnings" class="stack"></div>
+      </article>
+    </section>
+  </main>
+
+  <div id="toast" role="status" aria-live="polite" class="toast hidden"></div>
+  <script src="https://res.cdn.office.net/teams-js/2.31.0/js/MicrosoftTeams.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.19/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.19",
+  "version": "0.2.0",
+  "id": "ea741c0d-2d8e-43c9-a59d-e16679f41eb3",
+  "developer": {
+    "name": "CSA Meeting Coach",
+    "websiteUrl": "https://csa-meeting-coach-demo.westus2.cloudapp.azure.com",
+    "privacyUrl": "https://csa-meeting-coach-demo.westus2.cloudapp.azure.com/privacy.html",
+    "termsOfUseUrl": "https://csa-meeting-coach-demo.westus2.cloudapp.azure.com/terms.html"
+  },
+  "icons": {
+    "outline": "outline.png",
+    "color": "color.png"
+  },
+  "name": {
+    "short": "CSA Meeting Coach",
+    "full": "CSA Meeting Coach for VBD and technical customer meetings"
+  },
+  "description": {
+    "short": "Private, evidence-backed meeting checklist and task coach.",
+    "full": "Uses the meeting purpose and approved transcript input to maintain an evidence-backed checklist and recommend follow-up tasks for CSA meetings."
+  },
+  "accentColor": "#5B5FC7",
+  "configurableTabs": [
+    {
+      "configurationUrl": "https://csa-meeting-coach-demo.westus2.cloudapp.azure.com/configure.html",
+      "canUpdateConfiguration": true,
+      "scopes": [
+        "groupChat"
+      ],
+      "context": [
+        "meetingSidePanel",
+        "meetingDetailsTab",
+        "meetingChatTab"
+      ]
+    }
+  ],
+  "permissions": [
+    "identity"
+  ],
+  "validDomains": [
+    "csa-meeting-coach-demo.westus2.cloudapp.azure.com",
+    "res.cdn.office.net"
+  ]
+}

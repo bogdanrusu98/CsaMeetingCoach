@@ -1,0 +1,68 @@
+name: Deploy demo VM
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: csa-meeting-coach-demo
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+  DEMO_HOSTNAME: csa-meeting-coach-demo.westus2.cloudapp.azure.com
+
+jobs:
+  validate-and-deploy:
+    name: Validate and deploy
+    runs-on:
+      - self-hosted
+      - Windows
+      - X64
+      - csa-demo
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 8.0.423
+
+      - name: Restore
+        shell: powershell
+        run: dotnet restore .\CsaMeetingCoach.sln
+
+      - name: Build
+        shell: powershell
+        run: dotnet build .\CsaMeetingCoach.sln -c Release --no-restore
+
+      - name: Test
+        shell: powershell
+        run: dotnet test .\CsaMeetingCoach.sln -c Release --no-build
+
+      - name: Publish Windows service
+        shell: powershell
+        run: |
+          $publishDirectory = "$env:RUNNER_TEMP\csa-meeting-coach-publish"
+          Remove-Item $publishDirectory -Recurse -Force -ErrorAction SilentlyContinue
+          dotnet publish .\src\CsaMeetingCoach.Api\CsaMeetingCoach.Api.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -o $publishDirectory
+
+      - name: Deploy with local rollback
+        shell: powershell
+        run: >
+          .\deploy\Deploy-Demo.ps1
+          -PublishDirectory "$env:RUNNER_TEMP\csa-meeting-coach-publish"
+          -Hostname "$env:DEMO_HOSTNAME"
