@@ -39,13 +39,35 @@ public sealed class AzureFoundryAgentClient : IFoundryAgentClient
             .GetProjectResponsesClientForAgent(options.AgentName);
 
 #pragma warning disable OPENAI001
-        var responseOptions = new CreateResponseOptions
+        ResponseResult response = await responsesClient.CreateResponseAsync(
+            BuildResponseOptions(inputJson),
+            cancellationToken);
+        var outputText = response.GetOutputText();
+#pragma warning restore OPENAI001
+        return outputText;
+    }
+
+#pragma warning disable OPENAI001
+    internal static CreateResponseOptions BuildResponseOptions(string inputJson)
+    {
+        return new CreateResponseOptions
         {
             InputItems =
             {
                 ResponseItem.CreateUserMessageItem(inputJson)
             },
-            MaxOutputTokenCount = 2_000,
+            MaxOutputTokenCount = 2_000
+        };
+    }
+#pragma warning restore OPENAI001
+
+    internal static DeclarativeAgentDefinition BuildAgentDefinition(
+        string modelDeployment)
+    {
+#pragma warning disable OPENAI001
+        return new DeclarativeAgentDefinition(modelDeployment)
+        {
+            Instructions = FoundryAgentContract.Instructions,
             TextOptions = new ResponseTextOptions
             {
                 TextFormat = ResponseTextFormat.CreateJsonSchemaFormat(
@@ -55,13 +77,7 @@ public sealed class AzureFoundryAgentClient : IFoundryAgentClient
                     true)
             }
         };
-
-        ResponseResult response = await responsesClient.CreateResponseAsync(
-            responseOptions,
-            cancellationToken);
-        var outputText = response.GetOutputText();
 #pragma warning restore OPENAI001
-        return outputText;
     }
 
     private async Task EnsureAgentAsync(CancellationToken cancellationToken)
@@ -100,10 +116,7 @@ public sealed class AzureFoundryAgentClient : IFoundryAgentClient
 
     private async Task CreateAgentAsync(CancellationToken cancellationToken)
     {
-        var definition = new DeclarativeAgentDefinition(options.ModelDeployment)
-        {
-            Instructions = FoundryAgentContract.Instructions
-        };
+        var definition = BuildAgentDefinition(options.ModelDeployment);
 
         try
         {

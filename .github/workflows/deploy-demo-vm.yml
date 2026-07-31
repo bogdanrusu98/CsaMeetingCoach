@@ -20,7 +20,7 @@ env:
   COACH_AGENT_PROVIDER: ${{ vars.COACH_AGENT_PROVIDER || 'Local' }}
   FOUNDRY_PROJECT_ENDPOINT: https://csa-meeting-coach-resource.services.ai.azure.com/api/projects/csa-meeting-coach
   FOUNDRY_MODEL_DEPLOYMENT: gpt-4.1-mini
-  FOUNDRY_AGENT_NAME: csa-meeting-coach-v1
+  FOUNDRY_AGENT_NAME: csa-meeting-coach-v2
 
 jobs:
   validate-and-deploy:

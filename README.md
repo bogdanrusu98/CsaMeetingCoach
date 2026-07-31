@@ -228,14 +228,16 @@ control:
 $env:CoachAgent__Provider = "Foundry"
 $env:CoachAgent__Foundry__ProjectEndpoint = "https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT"
 $env:CoachAgent__Foundry__ModelDeployment = "gpt-4.1-mini"
-$env:CoachAgent__Foundry__AgentName = "csa-meeting-coach-v1"
+$env:CoachAgent__Foundry__AgentName = "csa-meeting-coach-v2"
 ```
 
 The application checks for the named agent before its first analysis and creates
-version 1 if the agent does not exist. Agent instructions reject transcript prompt
+its first version if the agent does not exist. The agent name is incremented when
+its persisted definition changes. Agent instructions reject transcript prompt
 injection, sensitive-attribute inference, unsupported checklist completion, and
-tasks without transcript sources. Responses use a strict JSON schema and are
-validated again before the session coordinator can apply them.
+tasks without transcript sources. The strict JSON schema is stored on the agent
+definition; invocation requests do not override it. Responses are validated again
+before the session coordinator can apply them.
 
 On Azure, grant the VM system-assigned managed identity an approved Foundry role
 on the Foundry resource or project. Automatic agent creation requires a role that
