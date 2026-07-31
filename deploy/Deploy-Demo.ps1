@@ -138,11 +138,44 @@ function Ensure-ServiceDefinition {
         "restart/5000/restart/5000/restart/5000")
 }
 
-function Wait-ServiceRunning {
+function Start-ServiceBounded {
     param([Parameter(Mandatory)][string] $Name)
 
     $service = Get-Service -Name $Name -ErrorAction Stop
-    $service.WaitForStatus("Running", [TimeSpan]::FromSeconds(30))
+    if ($service.Status -eq "Running") {
+        return
+    }
+
+    $startOutput = & "$env:SystemRoot\System32\sc.exe" start $Name 2>&1
+    $startExitCode = $LASTEXITCODE
+    $deadline = [DateTime]::UtcNow.AddSeconds(30)
+
+    do {
+        $service = Get-Service -Name $Name -ErrorAction Stop
+        if ($service.Status -eq "Running") {
+            return
+        }
+        if ($service.Status -eq "Stopped") {
+            $queryOutput =
+                & "$env:SystemRoot\System32\sc.exe" queryex $Name 2>&1
+            throw ("Service '{0}' stopped during startup. Start exit code: {1}. " +
+                "Start output: {2}. Status: {3}" -f
+                $Name,
+                $startExitCode,
+                ($startOutput -join " "),
+                ($queryOutput -join " "))
+        }
+
+        Start-Sleep -Seconds 1
+    } while ([DateTime]::UtcNow -lt $deadline)
+
+    $queryOutput = & "$env:SystemRoot\System32\sc.exe" queryex $Name 2>&1
+    throw ("Service '{0}' did not reach Running within 30 seconds. " +
+        "Start exit code: {1}. Start output: {2}. Status: {3}" -f
+        $Name,
+        $startExitCode,
+        ($startOutput -join " "),
+        ($queryOutput -join " "))
 }
 
 function Wait-ApiHealth {
@@ -375,8 +408,7 @@ try {
             "CoachAgent__Foundry__AgentName=$FoundryAgentName") `
         -Force | Out-Null
 
-    Start-Service -Name $apiServiceName
-    Wait-ServiceRunning -Name $apiServiceName
+    Start-ServiceBounded -Name $apiServiceName
     Wait-ApiHealth
 
     Ensure-HttpsFirewallRule
@@ -387,8 +419,7 @@ try {
         -Name $caddyServiceName `
         -DisplayName "CSA Meeting Coach HTTPS Proxy" `
         -BinaryPath $caddyBinaryPath
-    Start-Service -Name $caddyServiceName
-    Wait-ServiceRunning -Name $caddyServiceName
+    Start-ServiceBounded -Name $caddyServiceName
     Wait-HttpsHealth -PublicHostname $Hostname
 }
 catch {
@@ -403,7 +434,7 @@ catch {
             -Destination $appDirectory
     }
     if ($apiServiceExisted) {
-        Start-Service -Name $apiServiceName
+        Start-ServiceBounded -Name $apiServiceName
     }
     else {
         Remove-ServiceDefinition -Name $apiServiceName
@@ -416,7 +447,7 @@ catch {
         Remove-Item $caddyConfig -Force -ErrorAction SilentlyContinue
     }
     if ($caddyServiceExisted) {
-        Start-Service -Name $caddyServiceName
+        Start-ServiceBounded -Name $caddyServiceName
     }
     else {
         Remove-ServiceDefinition -Name $caddyServiceName
