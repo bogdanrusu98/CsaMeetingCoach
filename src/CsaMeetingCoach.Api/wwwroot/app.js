@@ -18,6 +18,21 @@ const elements = {
   toast: document.querySelector("#toast")
 };
 
+async function initializeTeamsContext() {
+  const teamsHosted = new URLSearchParams(window.location.search).get("host") === "teams";
+  if (!teamsHosted) {
+    return;
+  }
+
+  if (!window.microsoftTeams) {
+    throw new Error("Microsoft Teams SDK could not be loaded.");
+  }
+
+  await window.microsoftTeams.app.initialize();
+  const context = await window.microsoftTeams.app.getContext();
+  state.teamsMeetingId = context.meeting?.id ?? null;
+}
+
 const teamsContextReady = initializeTeamsContext();
 
 elements.sessionForm.addEventListener("submit", async event => {
@@ -46,21 +61,6 @@ elements.sessionForm.addEventListener("submit", async event => {
         teamsOnlineMeetingId: state.teamsMeetingId
       })
     });
-
-    async function initializeTeamsContext() {
-      const teamsHosted = new URLSearchParams(window.location.search).get("host") === "teams";
-      if (!teamsHosted) {
-        return;
-      }
-
-      if (!window.microsoftTeams) {
-        throw new Error("Microsoft Teams SDK could not be loaded.");
-      }
-
-      await window.microsoftTeams.app.initialize();
-      const context = await window.microsoftTeams.app.getContext();
-      state.teamsMeetingId = context.meeting?.id ?? null;
-    }
 
     state.session = session;
     elements.setupView.classList.add("hidden");
