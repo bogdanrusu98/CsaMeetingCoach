@@ -8,6 +8,7 @@
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <PackageReference Include="Microsoft.CognitiveServices.Speech" Version="1.51.1" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
     <PackageReference Include="Microsoft.Graph.Communications.Calls" Version="1.2.0.17950" />
     <PackageReference Include="Microsoft.Graph.Communications.Calls.Media" Version="1.2.0.17950" />
   </ItemGroup>

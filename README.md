@@ -58,8 +58,9 @@ deployed.
 
 ## Experimental Windows media bot
 
-This component is not enabled or deployed for the presentation demo. It remains
-an isolated engineering adapter for evaluating platform-approved scenarios.
+The deployment workflow installs this component as a separate Windows service
+behind `/bot/*`, but keeps Graph communications disabled by default. Enabling it
+still requires the platform approvals and Azure configuration below.
 
 The bot targets `net8.0-windows`, x64, and `win-x64`. It uses Graph
 Communications SDK `1.2.0.17950` and app-hosted Teams media. The receive-only
@@ -115,11 +116,11 @@ online-meeting IDs; message and media-session IDs are optional. Protect it with
 either a development key (`X-Media-Bot-Key`, at least 32 characters) or Entra
 and the configured `MediaBot.Controller` app role. `POST /bot/calling` forwards
 Graph notifications to the communications SDK. `Media__MaxConcurrentCalls`
-limits native media allocations; excess joins receive HTTP 429. `GET /health`
-returns configured/enabled/ready/degraded state and aggregate call, drop,
-publish, pipeline, and keepalive counters; it never returns configuration
-values or secrets. Expected pre-gate discards are reported but do not by
-themselves degrade readiness; queue drops and worker, publish, Speech, or
+limits native media allocations; excess joins receive HTTP 429.
+`GET /bot/health` returns configured/enabled/ready/degraded state and aggregate
+call, drop, publish, pipeline, and keepalive counters without exposing
+configuration values or secrets. Expected pre-gate discards are reported but do
+not by themselves degrade readiness; queue drops and worker, publish, Speech, or
 keepalive failures do. An enabled service that is not ready or is degraded
 returns HTTP 503.
 
@@ -131,6 +132,15 @@ approval are prerequisites. To run the disabled-by-default service locally:
 ```powershell
 dotnet run --project .\src\CsaMeetingCoach.BotService
 ```
+
+The GitHub deployment remains fail-closed unless `MEDIA_BOT_ENABLED=true`.
+Non-secret settings use repository variables prefixed with `MEDIA_BOT_`;
+credentials use the `MEDIA_BOT_GRAPH_CLIENT_SECRET`,
+`MEDIA_BOT_SPEECH_KEY`, `MEDIA_BOT_CONTROL_API_KEY`, and
+`TRANSCRIPT_ADAPTER_API_KEY` repository secrets. The transcript adapter and
+media-bot coach client must use matching authentication settings. When enabled,
+the deployment validates configuration, installs the service, opens only the
+configured media port, and rolls back if `/bot/health` does not report `ready`.
 
 ## Transcript adapter authentication
 
@@ -261,12 +271,20 @@ settings. Provider errors are surfaced and never trigger a silent fallback.
 
 ## Teams app package
 
-`appPackage/manifest.json` defines a meeting side panel. Before packaging:
+`appPackage/manifest.json` defines the meeting side panel. After the Azure Bot
+and Entra application exist, generate one package containing both the side panel
+and the calling bot:
 
-1. Replace the manifest `id` if the app registration process assigns another
-   Teams app ID.
-2. Zip the contents of `appPackage`, not the directory itself.
-3. Upload the package through the organization's approved Teams app process.
+```powershell
+.\deploy\Build-TeamsPackage.ps1 `
+  -BotAppId "BOT-ENTRA-APPLICATION-ID" `
+  -PackageVersion "0.3.0"
+```
+
+The script injects the real bot application ID, enables calling for the
+`groupChat` scope, and creates `CsaMeetingCoach-Teams.zip`. Upload that package
+through the organization's approved Teams app process. The bot ID cannot be
+hard-coded before Azure assigns the Entra application ID.
 
 The local HTTP URL cannot be installed directly into Teams. Use an approved HTTPS
 development tunnel or Azure deployment.

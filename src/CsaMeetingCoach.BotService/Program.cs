@@ -11,6 +11,8 @@ using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Host.UseWindowsService(options =>
+    options.ServiceName = "CSA Meeting Coach Media Bot");
 builder.Services.AddSingleton<BotOptionsValidator>();
 builder.Services.AddSingleton<IValidateOptions<GraphOptions>>(services =>
     services.GetRequiredService<BotOptionsValidator>());
@@ -88,7 +90,7 @@ if (controlMode == EndpointAuthenticationMode.Entra)
 
 app.UseAuthorization();
 
-app.MapGet("/health", (
+app.MapGet("/bot/health", (
     IGraphCallClient graph,
     PipelineMetrics metrics) =>
 {

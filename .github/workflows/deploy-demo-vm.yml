@@ -21,6 +21,25 @@ env:
   FOUNDRY_PROJECT_ENDPOINT: https://csa-meeting-coach-resource.services.ai.azure.com/api/projects/csa-meeting-coach
   FOUNDRY_MODEL_DEPLOYMENT: gpt-4.1-mini
   FOUNDRY_AGENT_NAME: csa-meeting-coach-v2
+  TRANSCRIPT_ADAPTER_AUTH_MODE: ${{ vars.TRANSCRIPT_ADAPTER_AUTH_MODE || 'Disabled' }}
+  TRANSCRIPT_ADAPTER_API_KEY: ${{ secrets.TRANSCRIPT_ADAPTER_API_KEY }}
+  TRANSCRIPT_ADAPTER_ENTRA_TENANT_ID: ${{ vars.TRANSCRIPT_ADAPTER_ENTRA_TENANT_ID }}
+  TRANSCRIPT_ADAPTER_ENTRA_AUDIENCE: ${{ vars.TRANSCRIPT_ADAPTER_ENTRA_AUDIENCE }}
+  MEDIA_BOT_ENABLED: ${{ vars.MEDIA_BOT_ENABLED || 'false' }}
+  MEDIA_BOT_GRAPH_TENANT_ID: ${{ vars.MEDIA_BOT_GRAPH_TENANT_ID }}
+  MEDIA_BOT_GRAPH_APP_ID: ${{ vars.MEDIA_BOT_GRAPH_APP_ID }}
+  MEDIA_BOT_GRAPH_CLIENT_SECRET: ${{ secrets.MEDIA_BOT_GRAPH_CLIENT_SECRET }}
+  MEDIA_BOT_PUBLIC_IP: ${{ vars.MEDIA_BOT_PUBLIC_IP }}
+  MEDIA_BOT_CERTIFICATE_THUMBPRINT: ${{ vars.MEDIA_BOT_CERTIFICATE_THUMBPRINT }}
+  MEDIA_BOT_SPEECH_KEY: ${{ secrets.MEDIA_BOT_SPEECH_KEY }}
+  MEDIA_BOT_SPEECH_REGION: ${{ vars.MEDIA_BOT_SPEECH_REGION }}
+  MEDIA_BOT_SPEECH_LANGUAGE: ${{ vars.MEDIA_BOT_SPEECH_LANGUAGE || 'en-US' }}
+  MEDIA_BOT_COACH_AUTH_MODE: ${{ vars.MEDIA_BOT_COACH_AUTH_MODE || 'Disabled' }}
+  MEDIA_BOT_COACH_ENTRA_SCOPE: ${{ vars.MEDIA_BOT_COACH_ENTRA_SCOPE }}
+  MEDIA_BOT_CONTROL_AUTH_MODE: ${{ vars.MEDIA_BOT_CONTROL_AUTH_MODE || 'Disabled' }}
+  MEDIA_BOT_CONTROL_API_KEY: ${{ secrets.MEDIA_BOT_CONTROL_API_KEY }}
+  MEDIA_BOT_CONTROL_ENTRA_TENANT_ID: ${{ vars.MEDIA_BOT_CONTROL_ENTRA_TENANT_ID }}
+  MEDIA_BOT_CONTROL_ENTRA_AUDIENCE: ${{ vars.MEDIA_BOT_CONTROL_ENTRA_AUDIENCE }}
 
 jobs:
   validate-and-deploy:
@@ -57,20 +76,68 @@ jobs:
         shell: powershell
         run: |
           $publishDirectory = "$env:RUNNER_TEMP\csa-meeting-coach-publish"
+          $botPublishDirectory = "$env:RUNNER_TEMP\csa-meeting-coach-bot-publish"
           Remove-Item $publishDirectory -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item $botPublishDirectory -Recurse -Force -ErrorAction SilentlyContinue
           dotnet publish .\src\CsaMeetingCoach.Api\CsaMeetingCoach.Api.csproj `
             -c Release `
             -r win-x64 `
             --self-contained true `
             -o $publishDirectory
+          dotnet publish .\src\CsaMeetingCoach.BotService\CsaMeetingCoach.BotService.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -o $botPublishDirectory
 
       - name: Deploy with local rollback
         shell: powershell
-        run: >
-          .\deploy\Deploy-Demo.ps1
-          -PublishDirectory "$env:RUNNER_TEMP\csa-meeting-coach-publish"
-          -Hostname "$env:DEMO_HOSTNAME"
-          -CoachAgentProvider "$env:COACH_AGENT_PROVIDER"
-          -FoundryProjectEndpoint "$env:FOUNDRY_PROJECT_ENDPOINT"
-          -FoundryModelDeployment "$env:FOUNDRY_MODEL_DEPLOYMENT"
-          -FoundryAgentName "$env:FOUNDRY_AGENT_NAME"
+        run: |
+          $disabledBotParameters = @{
+            PublishDirectory = "$env:RUNNER_TEMP\csa-meeting-coach-bot-publish"
+            Hostname = $env:DEMO_HOSTNAME
+          }
+          .\deploy\Deploy-MediaBot.ps1 @disabledBotParameters
+
+          $apiParameters = @{
+            PublishDirectory = "$env:RUNNER_TEMP\csa-meeting-coach-publish"
+            Hostname = $env:DEMO_HOSTNAME
+            CoachAgentProvider = $env:COACH_AGENT_PROVIDER
+            FoundryProjectEndpoint = $env:FOUNDRY_PROJECT_ENDPOINT
+            FoundryModelDeployment = $env:FOUNDRY_MODEL_DEPLOYMENT
+            FoundryAgentName = $env:FOUNDRY_AGENT_NAME
+            TranscriptAdapterAuthenticationMode = $env:TRANSCRIPT_ADAPTER_AUTH_MODE
+            TranscriptAdapterDevelopmentApiKey = $env:TRANSCRIPT_ADAPTER_API_KEY
+            TranscriptAdapterEntraTenantId = $env:TRANSCRIPT_ADAPTER_ENTRA_TENANT_ID
+            TranscriptAdapterEntraAudience = $env:TRANSCRIPT_ADAPTER_ENTRA_AUDIENCE
+          }
+          .\deploy\Deploy-Demo.ps1 @apiParameters
+
+          if ($env:MEDIA_BOT_ENABLED -ne "true") {
+            return
+          }
+
+          $botParameters = @{
+            PublishDirectory = "$env:RUNNER_TEMP\csa-meeting-coach-bot-publish"
+            Hostname = $env:DEMO_HOSTNAME
+            Enabled = $true
+            GraphTenantId = $env:MEDIA_BOT_GRAPH_TENANT_ID
+            GraphAppId = $env:MEDIA_BOT_GRAPH_APP_ID
+            GraphClientSecret = $env:MEDIA_BOT_GRAPH_CLIENT_SECRET
+            PublicIpAddress = $env:MEDIA_BOT_PUBLIC_IP
+            CertificateThumbprint = $env:MEDIA_BOT_CERTIFICATE_THUMBPRINT
+            SpeechSubscriptionKey = $env:MEDIA_BOT_SPEECH_KEY
+            SpeechRegion = $env:MEDIA_BOT_SPEECH_REGION
+            SpeechLanguage = $env:MEDIA_BOT_SPEECH_LANGUAGE
+            CoachApiAuthenticationMode = $env:MEDIA_BOT_COACH_AUTH_MODE
+            CoachApiDevelopmentApiKey = $env:TRANSCRIPT_ADAPTER_API_KEY
+            CoachApiEntraScope = $env:MEDIA_BOT_COACH_ENTRA_SCOPE
+            TranscriptAdapterAuthenticationMode = $env:TRANSCRIPT_ADAPTER_AUTH_MODE
+            TranscriptAdapterEntraTenantId = $env:TRANSCRIPT_ADAPTER_ENTRA_TENANT_ID
+            TranscriptAdapterEntraAudience = $env:TRANSCRIPT_ADAPTER_ENTRA_AUDIENCE
+            ControlAuthenticationMode = $env:MEDIA_BOT_CONTROL_AUTH_MODE
+            ControlDevelopmentApiKey = $env:MEDIA_BOT_CONTROL_API_KEY
+            ControlEntraTenantId = $env:MEDIA_BOT_CONTROL_ENTRA_TENANT_ID
+            ControlEntraAudience = $env:MEDIA_BOT_CONTROL_ENTRA_AUDIENCE
+          }
+          .\deploy\Deploy-MediaBot.ps1 @botParameters

@@ -17,7 +17,18 @@ param(
     [string] $FoundryModelDeployment = "gpt-4.1-mini",
 
     [ValidateLength(1, 64)]
-    [string] $FoundryAgentName = "csa-meeting-coach-v2"
+    [string] $FoundryAgentName = "csa-meeting-coach-v2",
+
+    [ValidateSet("Disabled", "DevelopmentApiKey", "Entra")]
+    [string] $TranscriptAdapterAuthenticationMode = "Disabled",
+
+    [string] $TranscriptAdapterDevelopmentApiKey = "",
+
+    [string] $TranscriptAdapterEntraTenantId = "",
+
+    [string] $TranscriptAdapterEntraAudience = "",
+
+    [string] $TranscriptAdapterRequiredRole = "TranscriptIngestor"
 )
 
 Set-StrictMode -Version Latest
@@ -37,6 +48,8 @@ $caddyVersionFile = Join-Path $caddyDirectory "version.txt"
 $dataDirectory = Join-Path $env:ProgramData "CsaMeetingCoach\data"
 $keyDirectory = Join-Path $env:ProgramData "CsaMeetingCoach\keys"
 $apiServiceName = "CsaMeetingCoach.Api"
+$apiServiceRegistryPath =
+    "HKLM:\SYSTEM\CurrentControlSet\Services\$apiServiceName"
 $caddyServiceName = "CsaMeetingCoach.Caddy"
 $firewallRuleName = "CSA Meeting Coach HTTPS"
 $caddyUrl =
@@ -58,6 +71,29 @@ function Invoke-ServiceControl {
     if ($LASTEXITCODE -ne 0) {
         throw "sc.exe $($Arguments -join ' ') failed: $($output -join ' ')"
     }
+}
+
+function Protect-ServiceRegistryKey {
+    param([Parameter(Mandatory)][string] $Path)
+
+    $acl = Get-Acl -Path $Path
+    $acl.SetAccessRuleProtection($true, $false)
+    foreach ($existingRule in @($acl.Access)) {
+        $acl.RemoveAccessRuleSpecific($existingRule)
+    }
+    foreach ($account in @(
+            [Security.Principal.NTAccount]"NT AUTHORITY\SYSTEM",
+            [Security.Principal.NTAccount]"BUILTIN\Administrators")) {
+        $rule = [Security.AccessControl.RegistryAccessRule]::new(
+            $account,
+            [Security.AccessControl.RegistryRights]::FullControl,
+            [Security.AccessControl.InheritanceFlags]::ContainerInherit,
+            [Security.AccessControl.PropagationFlags]::None,
+            [Security.AccessControl.AccessControlType]::Allow)
+        $acl.AddAccessRule($rule)
+    }
+
+    Set-Acl -Path $Path -AclObject $acl
 }
 
 function Stop-ServiceIfRunning {
@@ -359,6 +395,16 @@ if ($CoachAgentProvider -eq "Foundry") {
     }
 }
 
+if ($TranscriptAdapterAuthenticationMode -eq "DevelopmentApiKey" -and
+    $TranscriptAdapterDevelopmentApiKey.Length -lt 32) {
+    throw "Transcript adapter development authentication requires a key of at least 32 characters."
+}
+if ($TranscriptAdapterAuthenticationMode -eq "Entra" -and
+    ([string]::IsNullOrWhiteSpace($TranscriptAdapterEntraTenantId) -or
+        [string]::IsNullOrWhiteSpace($TranscriptAdapterEntraAudience))) {
+    throw "Transcript adapter Entra authentication requires tenant and audience values."
+}
+
 New-Item `
     -ItemType Directory `
     -Path $root, $dataDirectory, $keyDirectory `
@@ -382,6 +428,7 @@ $caddyFileContents = @"
 
 $Hostname {
     encode zstd gzip
+    reverse_proxy /bot/* 127.0.0.1:5065
     reverse_proxy 127.0.0.1:5055
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -406,6 +453,18 @@ if ($LASTEXITCODE -ne 0) {
 $hadPreviousDeployment = Test-Path $appDirectory -PathType Container
 $apiServiceExisted =
     [bool](Get-Service -Name $apiServiceName -ErrorAction SilentlyContinue)
+$previousApiEnvironment = $null
+$hadPreviousApiEnvironment = $false
+if (Test-Path $apiServiceRegistryPath) {
+    $registryValues = Get-ItemProperty `
+        -Path $apiServiceRegistryPath `
+        -Name "Environment" `
+        -ErrorAction SilentlyContinue
+    if ($null -ne $registryValues) {
+        $previousApiEnvironment = @($registryValues.Environment)
+        $hadPreviousApiEnvironment = $true
+    }
+}
 $caddyServiceExisted =
     [bool](Get-Service -Name $caddyServiceName -ErrorAction SilentlyContinue)
 $hadPreviousCaddyConfig = Test-Path $caddyConfig -PathType Leaf
@@ -432,10 +491,8 @@ try {
         -DisplayName "CSA Meeting Coach API" `
         -BinaryPath ('"{0}"' -f $apiExecutable)
 
-    $serviceRegistryPath =
-        "HKLM:\SYSTEM\CurrentControlSet\Services\$apiServiceName"
     New-ItemProperty `
-        -Path $serviceRegistryPath `
+        -Path $apiServiceRegistryPath `
         -Name "Environment" `
         -PropertyType MultiString `
         -Value @(
@@ -446,8 +503,14 @@ try {
             "CoachAgent__Provider=$CoachAgentProvider",
             "CoachAgent__Foundry__ProjectEndpoint=$FoundryProjectEndpoint",
             "CoachAgent__Foundry__ModelDeployment=$FoundryModelDeployment",
-            "CoachAgent__Foundry__AgentName=$FoundryAgentName") `
+            "CoachAgent__Foundry__AgentName=$FoundryAgentName",
+            "TranscriptAdapter__AuthenticationMode=$TranscriptAdapterAuthenticationMode",
+            "TranscriptAdapter__DevelopmentApiKey=$TranscriptAdapterDevelopmentApiKey",
+            "TranscriptAdapter__Entra__TenantId=$TranscriptAdapterEntraTenantId",
+            "TranscriptAdapter__Entra__Audience=$TranscriptAdapterEntraAudience",
+            "TranscriptAdapter__Entra__RequiredRole=$TranscriptAdapterRequiredRole") `
         -Force | Out-Null
+    Protect-ServiceRegistryKey -Path $apiServiceRegistryPath
 
     Start-ServiceBounded -Name $apiServiceName
     Wait-ApiHealth
@@ -475,6 +538,20 @@ catch {
             -Destination $appDirectory
     }
     if ($apiServiceExisted) {
+        if ($hadPreviousApiEnvironment) {
+            New-ItemProperty `
+                -Path $apiServiceRegistryPath `
+                -Name "Environment" `
+                -PropertyType MultiString `
+                -Value $previousApiEnvironment `
+                -Force | Out-Null
+        }
+        else {
+            Remove-ItemProperty `
+                -Path $apiServiceRegistryPath `
+                -Name "Environment" `
+                -ErrorAction SilentlyContinue
+        }
         Start-ServiceBounded -Name $apiServiceName
     }
     else {
