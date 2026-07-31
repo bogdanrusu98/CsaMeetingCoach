@@ -17,6 +17,10 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
   DOTNET_NOLOGO: "1"
   DEMO_HOSTNAME: csa-meeting-coach-demo.westus2.cloudapp.azure.com
+  COACH_AGENT_PROVIDER: ${{ vars.COACH_AGENT_PROVIDER || 'Local' }}
+  FOUNDRY_PROJECT_ENDPOINT: https://csa-meeting-coach-resource.services.ai.azure.com/api/projects/csa-meeting-coach
+  FOUNDRY_MODEL_DEPLOYMENT: gpt-4.1-mini
+  FOUNDRY_AGENT_NAME: csa-meeting-coach-v1
 
 jobs:
   validate-and-deploy:
@@ -66,3 +70,7 @@ jobs:
           .\deploy\Deploy-Demo.ps1
           -PublishDirectory "$env:RUNNER_TEMP\csa-meeting-coach-publish"
           -Hostname "$env:DEMO_HOSTNAME"
+          -CoachAgentProvider "$env:COACH_AGENT_PROVIDER"
+          -FoundryProjectEndpoint "$env:FOUNDRY_PROJECT_ENDPOINT"
+          -FoundryModelDeployment "$env:FOUNDRY_MODEL_DEPLOYMENT"
+          -FoundryAgentName "$env:FOUNDRY_AGENT_NAME"

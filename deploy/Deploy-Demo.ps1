@@ -6,7 +6,18 @@ param(
 
     [Parameter(Mandatory)]
     [ValidatePattern("^[a-z0-9.-]+$")]
-    [string] $Hostname
+    [string] $Hostname,
+
+    [ValidateSet("Local", "Foundry")]
+    [string] $CoachAgentProvider = "Local",
+
+    [string] $FoundryProjectEndpoint =
+        "https://csa-meeting-coach-resource.services.ai.azure.com/api/projects/csa-meeting-coach",
+
+    [string] $FoundryModelDeployment = "gpt-4.1-mini",
+
+    [ValidateLength(1, 64)]
+    [string] $FoundryAgentName = "csa-meeting-coach-v1"
 )
 
 Set-StrictMode -Version Latest
@@ -262,6 +273,18 @@ function Remove-ServiceDefinition {
 Assert-Administrator
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+if ($CoachAgentProvider -eq "Foundry") {
+    $foundryEndpoint = $null
+    if ((-not [Uri]::TryCreate(
+            $FoundryProjectEndpoint,
+            [UriKind]::Absolute,
+            [ref] $foundryEndpoint)) -or
+        $foundryEndpoint.Scheme -ne [Uri]::UriSchemeHttps -or
+        [string]::IsNullOrWhiteSpace($FoundryModelDeployment)) {
+        throw "Foundry deployment requires an HTTPS project endpoint and model deployment."
+    }
+}
+
 New-Item `
     -ItemType Directory `
     -Path $root, $dataDirectory, $keyDirectory `
@@ -345,7 +368,11 @@ try {
             "ASPNETCORE_ENVIRONMENT=Production",
             "ASPNETCORE_URLS=http://127.0.0.1:5055",
             "Storage__DataDirectory=$dataDirectory",
-            "DataProtection__KeyDirectory=$keyDirectory") `
+            "DataProtection__KeyDirectory=$keyDirectory",
+            "CoachAgent__Provider=$CoachAgentProvider",
+            "CoachAgent__Foundry__ProjectEndpoint=$FoundryProjectEndpoint",
+            "CoachAgent__Foundry__ModelDeployment=$FoundryModelDeployment",
+            "CoachAgent__Foundry__AgentName=$FoundryAgentName") `
         -Force | Out-Null
 
     Start-Service -Name $apiServiceName

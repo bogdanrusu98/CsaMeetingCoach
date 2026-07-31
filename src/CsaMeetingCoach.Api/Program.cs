@@ -79,34 +79,8 @@ else if (!Path.IsPathRooted(dataDirectory))
 
 builder.Services.AddSingleton<IMeetingSessionStore>(
     new JsonMeetingSessionStore(dataDirectory));
-
 var coachAgentProvider = builder.Configuration["CoachAgent:Provider"] ?? "Local";
-if (coachAgentProvider.Equals("Local", StringComparison.OrdinalIgnoreCase))
-{
-    builder.Services.AddSingleton<IConversationCoachAgent, HeuristicConversationCoachAgent>();
-}
-else if (coachAgentProvider.Equals("AzureOpenAI", StringComparison.OrdinalIgnoreCase))
-{
-    var endpoint = RequireConfiguration(builder.Configuration, "CoachAgent:AzureOpenAI:Endpoint");
-    var deployment = RequireConfiguration(builder.Configuration, "CoachAgent:AzureOpenAI:Deployment");
-    var apiVersion = RequireConfiguration(builder.Configuration, "CoachAgent:AzureOpenAI:ApiVersion");
-    var apiKey = RequireConfiguration(builder.Configuration, "CoachAgent:AzureOpenAI:ApiKey");
-    var options = new AzureOpenAiOptions(new Uri(endpoint), deployment, apiVersion, apiKey);
-
-    builder.Services.AddSingleton(new HttpClient
-    {
-        Timeout = TimeSpan.FromSeconds(30)
-    });
-    builder.Services.AddSingleton<IConversationCoachAgent>(services =>
-        new AzureOpenAiConversationCoachAgent(
-            services.GetRequiredService<HttpClient>(),
-            options));
-}
-else
-{
-    throw new InvalidOperationException(
-        $"Unsupported CoachAgent provider '{coachAgentProvider}'. Use Local or AzureOpenAI.");
-}
+builder.Services.AddCoachAgent(builder.Configuration);
 
 builder.Services.AddSingleton<MeetingSessionCoordinator>();
 

@@ -220,7 +220,31 @@ outside the deployment directory.
 The default `Local` provider is deterministic and supports development without
 sending meeting data to an external model.
 
-To use Azure OpenAI, set:
+The preferred cloud provider is an Azure AI Foundry declarative agent. It uses
+`DefaultAzureCredential`, so no model key is stored in configuration or source
+control:
+
+```powershell
+$env:CoachAgent__Provider = "Foundry"
+$env:CoachAgent__Foundry__ProjectEndpoint = "https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT"
+$env:CoachAgent__Foundry__ModelDeployment = "gpt-4.1-mini"
+$env:CoachAgent__Foundry__AgentName = "csa-meeting-coach-v1"
+```
+
+The application checks for the named agent before its first analysis and creates
+version 1 if the agent does not exist. Agent instructions reject transcript prompt
+injection, sensitive-attribute inference, unsupported checklist completion, and
+tasks without transcript sources. Responses use a strict JSON schema and are
+validated again before the session coordinator can apply them.
+
+On Azure, grant the VM system-assigned managed identity an approved Foundry role
+on the Foundry resource or project. Automatic agent creation requires a role that
+can manage agents, such as `Azure AI User`/`Foundry User` as exposed by the tenant.
+If an administrator pre-creates the agent, use the tenant-approved invocation-only
+role instead. The deployment remains on `Local` until the GitHub repository
+variable `COACH_AGENT_PROVIDER` is explicitly set to `Foundry`.
+
+The legacy Azure OpenAI adapter remains available for compatibility:
 
 ```powershell
 $env:CoachAgent__Provider = "AzureOpenAI"
@@ -230,11 +254,8 @@ $env:CoachAgent__AzureOpenAI__ApiVersion = "YOUR-APPROVED-API-VERSION"
 $env:CoachAgent__AzureOpenAI__ApiKey = "SET-OUTSIDE-SOURCE-CONTROL"
 ```
 
-The application fails at startup if Azure OpenAI is selected and a required
-setting is absent. It never silently falls back to a different agent.
-
-For production, replace API-key authentication with the organization's approved
-managed-identity pattern where supported.
+The application fails at startup when the selected provider is missing required
+settings. Provider errors are surfaced and never trigger a silent fallback.
 
 ## Teams app package
 

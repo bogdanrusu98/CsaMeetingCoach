@@ -1,0 +1,108 @@
+using Azure.Core;
+using Azure.Identity;
+using CsaMeetingCoach.Core;
+
+namespace CsaMeetingCoach.Api;
+
+public static class CoachAgentServiceCollectionExtensions
+{
+    public static IServiceCollection AddCoachAgent(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        TokenCredential? foundryCredential = null)
+    {
+        var provider = configuration["CoachAgent:Provider"] ?? "Local";
+        if (provider.Equals("Local", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddSingleton<IConversationCoachAgent, HeuristicConversationCoachAgent>();
+            return services;
+        }
+
+        if (provider.Equals("AzureOpenAI", StringComparison.OrdinalIgnoreCase))
+        {
+            var endpoint = RequireConfiguration(
+                configuration,
+                "CoachAgent:AzureOpenAI:Endpoint");
+            var deployment = RequireConfiguration(
+                configuration,
+                "CoachAgent:AzureOpenAI:Deployment");
+            var apiVersion = RequireConfiguration(
+                configuration,
+                "CoachAgent:AzureOpenAI:ApiVersion");
+            var apiKey = RequireConfiguration(
+                configuration,
+                "CoachAgent:AzureOpenAI:ApiKey");
+            var options = new AzureOpenAiOptions(
+                RequireHttpsUri(endpoint, "CoachAgent:AzureOpenAI:Endpoint"),
+                deployment,
+                apiVersion,
+                apiKey);
+
+            services.AddSingleton(new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(30)
+            });
+            services.AddSingleton<IConversationCoachAgent>(serviceProvider =>
+                new AzureOpenAiConversationCoachAgent(
+                    serviceProvider.GetRequiredService<HttpClient>(),
+                    options));
+            return services;
+        }
+
+        if (provider.Equals("Foundry", StringComparison.OrdinalIgnoreCase))
+        {
+            var endpoint = RequireConfiguration(
+                configuration,
+                "CoachAgent:Foundry:ProjectEndpoint");
+            var modelDeployment = RequireConfiguration(
+                configuration,
+                "CoachAgent:Foundry:ModelDeployment");
+            var agentName = RequireConfiguration(
+                configuration,
+                "CoachAgent:Foundry:AgentName");
+            if (agentName.Length > 64)
+            {
+                throw new InvalidOperationException(
+                    "Configuration 'CoachAgent:Foundry:AgentName' cannot exceed 64 characters.");
+            }
+
+            var options = new FoundryOptions(
+                RequireHttpsUri(endpoint, "CoachAgent:Foundry:ProjectEndpoint"),
+                modelDeployment,
+                agentName);
+            services.AddSingleton(options);
+            services.AddSingleton<TokenCredential>(
+                foundryCredential ?? new DefaultAzureCredential());
+            services.AddSingleton<IFoundryAgentClient, AzureFoundryAgentClient>();
+            services.AddSingleton<IConversationCoachAgent, FoundryConversationCoachAgent>();
+            return services;
+        }
+
+        throw new InvalidOperationException(
+            $"Unsupported CoachAgent provider '{provider}'. Use Local, AzureOpenAI, or Foundry.");
+    }
+
+    private static string RequireConfiguration(
+        IConfiguration configuration,
+        string key)
+    {
+        var value = configuration[key];
+        return string.IsNullOrWhiteSpace(value)
+            ? throw new InvalidOperationException($"Configuration '{key}' is required.")
+            : value.Trim();
+    }
+
+    private static Uri RequireHttpsUri(string value, string key)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            || !uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(uri.Host)
+            || !string.IsNullOrEmpty(uri.UserInfo))
+        {
+            throw new InvalidOperationException(
+                $"Configuration '{key}' must be an absolute HTTPS URI without user information.");
+        }
+
+        return uri;
+    }
+}
