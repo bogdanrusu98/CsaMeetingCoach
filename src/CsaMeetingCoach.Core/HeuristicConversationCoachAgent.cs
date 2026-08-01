@@ -138,7 +138,7 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
     {
         var matchedHints = item.EvidenceHints
             .Select(Normalize)
-            .Where(hint => hint.Length >= 3 && normalizedText.Contains(hint, StringComparison.Ordinal))
+            .Where(hint => hint.Length >= 3 && ContainsEvidenceHint(normalizedText, hint))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
@@ -229,7 +229,7 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         var matches = titleTerms.Count(term =>
-            normalizedText.Contains(term, StringComparison.Ordinal));
+            ContainsEvidenceHint(normalizedText, term));
         var requiredMatches = Math.Min(2, titleTerms.Length);
         if (matches < requiredMatches || requiredMatches == 0)
         {
@@ -261,6 +261,24 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
         return WhitespaceRegex()
             .Replace(NonWordRegex().Replace(builder.ToString(), " "), " ")
             .Trim();
+    }
+
+    private static bool ContainsEvidenceHint(string normalizedText, string normalizedHint)
+    {
+        var paddedText = $" {normalizedText} ";
+        var hintForms = new List<string>
+        {
+            normalizedHint,
+            $"{normalizedHint}s",
+            $"{normalizedHint}es"
+        };
+        if (normalizedHint.EndsWith('y'))
+        {
+            hintForms.Add($"{normalizedHint[..^1]}ies");
+        }
+
+        return hintForms.Any(form =>
+            paddedText.Contains($" {form} ", StringComparison.Ordinal));
     }
 
     [GeneratedRegex(@"[^\p{L}\p{N}]+", RegexOptions.CultureInvariant)]

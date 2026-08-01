@@ -46,6 +46,42 @@ public sealed class EvidenceBackedConversationCoachAgentTests
     }
 
     [Fact]
+    public async Task Analyze_PrimaryFalsePositiveForBusinessValue_IsRejected()
+    {
+        var purpose = TestData.CreatePurpose();
+        var checklist = new MeetingChecklistPlanner().CreateChecklist(
+            purpose,
+            requestedChecklist: null);
+        var businessValue = Assert.Single(checklist.Where(item =>
+            item.Title.Contains("business value", StringComparison.OrdinalIgnoreCase)));
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter microphone",
+            "The outcome was unsuccessful in phase 2; availability remains unclear.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var primaryEvaluation = new ChecklistEvaluation(
+            businessValue.Id,
+            ShouldComplete: true,
+            Confidence: 0.99,
+            "The provider treated a generic outcome as business value.",
+            latest.Text);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([primaryEvaluation], [], [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(purpose, checklist, [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.DoesNotContain(
+            decision.ChecklistEvaluations,
+            evaluation => evaluation.ChecklistItemId == businessValue.Id
+                && evaluation.ShouldComplete);
+    }
+
+    [Fact]
     public async Task Analyze_PrimaryFalsePositiveForSuccessCriteria_IsRejected()
     {
         var purpose = TestData.CreatePurpose();

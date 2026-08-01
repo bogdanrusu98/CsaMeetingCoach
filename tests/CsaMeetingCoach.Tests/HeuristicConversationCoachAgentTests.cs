@@ -18,6 +18,9 @@ public sealed class HeuristicConversationCoachAgentTests
     [InlineData(
         "business value",
         "This solution provides business value by reducing infrastructure costs by 20 percent.")]
+    [InlineData(
+        "risks",
+        "There are open questions about authentication.")]
     public async Task Analyze_ExplicitMeetingGoal_ReturnsCompletionEvaluation(
         string titleFragment,
         string transcript)
@@ -46,6 +49,33 @@ public sealed class HeuristicConversationCoachAgentTests
         Assert.True(evaluation.ShouldComplete);
         Assert.True(evaluation.Confidence >= MeetingSessionCoordinator.AutoCompletionThreshold);
         Assert.Equal(latest.Text, evaluation.EvidenceQuote);
+    }
+
+    [Fact]
+    public async Task Analyze_SubstringOnlyHint_DoesNotCompleteBusinessValue()
+    {
+        var purpose = TestData.CreatePurpose();
+        var checklist = new MeetingChecklistPlanner().CreateChecklist(
+            purpose,
+            requestedChecklist: null);
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter microphone",
+            "The outcome was unsuccessful in phase 2; availability remains unclear.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            new CoachAgentContext(purpose, checklist, [latest]),
+            latest,
+            CancellationToken.None);
+
+        var businessValue = Assert.Single(checklist.Where(item =>
+            item.Title.Contains("business value", StringComparison.OrdinalIgnoreCase)));
+        Assert.DoesNotContain(
+            decision.ChecklistEvaluations,
+            evaluation => evaluation.ChecklistItemId == businessValue.Id
+                && evaluation.ShouldComplete);
     }
 
     [Theory]
