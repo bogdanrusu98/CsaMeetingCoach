@@ -7,6 +7,53 @@ namespace CsaMeetingCoach.Core;
 
 public sealed partial class HeuristicConversationCoachAgent : IConversationCoachAgent
 {
+    private static readonly string[] ObjectiveMetaActions =
+    [
+        "discuss",
+        "clarify",
+        "define",
+        "review",
+        "identify",
+        "determine",
+        "agree",
+        "explore",
+        "understand",
+        "discuta",
+        "clarifica",
+        "defini",
+        "stabili"
+    ];
+
+    private static readonly string[] UncertainObjectiveCues =
+    [
+        "maybe",
+        "perhaps",
+        "possibly",
+        "might",
+        "may need",
+        "not sure",
+        "uncertain",
+        "unclear",
+        "i think",
+        "we think",
+        "poate",
+        "posibil",
+        "nu suntem siguri"
+    ];
+
+    private readonly ISemanticTermCatalog semanticTerms;
+
+    public HeuristicConversationCoachAgent()
+        : this(new BuiltInSemanticTermCatalog())
+    {
+    }
+
+    public HeuristicConversationCoachAgent(ISemanticTermCatalog semanticTerms)
+    {
+        this.semanticTerms = semanticTerms
+            ?? throw new ArgumentNullException(nameof(semanticTerms));
+    }
+
     private static readonly string[] CommitmentCues =
     [
         "we will",
@@ -131,23 +178,29 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
             recommendationEvaluations));
     }
 
-    private static ChecklistEvaluation? Evaluate(
+    private ChecklistEvaluation? Evaluate(
         ChecklistItemState item,
         TranscriptSegment segment,
         string normalizedText)
     {
         var matchedHints = item.EvidenceHints
             .Select(Normalize)
-            .Where(hint => hint.Length >= 3 && ContainsEvidenceHint(normalizedText, hint))
+            .Where(hint => hint.Length >= 3
+                && ContainsEquivalentTerm(normalizedText, hint))
             .Distinct(StringComparer.Ordinal)
-            .ToArray();
+            .ToList();
+        if (IsObjectiveItem(item)
+            && HasDirectConversationalObjective(normalizedText, segment.Text))
+        {
+            matchedHints.Add("direct conversational objective");
+        }
 
-        if (matchedHints.Length == 0)
+        if (matchedHints.Count == 0)
         {
             return null;
         }
 
-        var confidence = Math.Min(0.97, 0.84 + ((matchedHints.Length - 1) * 0.03));
+        var confidence = Math.Min(0.97, 0.84 + ((matchedHints.Count - 1) * 0.03));
         var normalizedTitle = Normalize(item.Title);
         var requiresMeasurableOutcome = RequiresMeasurableOutcome(item);
         var requiresCommitment = normalizedTitle.Contains("next step", StringComparison.Ordinal)
@@ -218,19 +271,33 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
         ];
     }
 
-    private static RecommendationEvaluation? EvaluateRecommendation(
+    private RecommendationEvaluation? EvaluateRecommendation(
         RecommendedTaskState recommendation,
         TranscriptSegment segment,
         string normalizedText)
     {
-        var titleTerms = Normalize(recommendation.Title)
+        var normalizedTitle = Normalize(recommendation.Title);
+        var semanticGroups = semanticTerms.FindEquivalentTermGroups(
+            normalizedTitle);
+        var semanticWords = semanticGroups
+            .SelectMany(group => group)
+            .SelectMany(alias => alias.Split(
+                ' ',
+                StringSplitOptions.RemoveEmptyEntries))
+            .ToHashSet(StringComparer.Ordinal);
+        var titleTerms = normalizedTitle
             .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Where(term => term.Length >= 5 && term is not "discuss")
+            .Where(term => term.Length >= 5
+                && term is not "discuss"
+                && !semanticWords.Contains(term))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         var matches = titleTerms.Count(term =>
-            ContainsEvidenceHint(normalizedText, term));
-        var requiredMatches = Math.Min(2, titleTerms.Length);
+                ContainsEquivalentTerm(normalizedText, term))
+            + semanticGroups.Count(group => group.Any(term =>
+                ContainsEvidenceHint(normalizedText, term)));
+        var candidateCount = titleTerms.Length + semanticGroups.Count;
+        var requiredMatches = Math.Min(2, candidateCount);
         if (matches < requiredMatches || requiredMatches == 0)
         {
             return null;
@@ -281,6 +348,71 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
             paddedText.Contains($" {form} ", StringComparison.Ordinal));
     }
 
+    private bool ContainsEquivalentTerm(
+        string normalizedText,
+        string normalizedTerm) =>
+        semanticTerms.Expand(normalizedTerm).Any(expansion =>
+            ContainsEvidenceHint(normalizedText, expansion));
+
+    private static bool IsObjectiveItem(ChecklistItemState item)
+    {
+        var title = Normalize(item.Title);
+        var criteria = Normalize(item.CompletionCriteria);
+        var explicitlyBusinessFocused =
+            ContainsEvidenceHint(title, "customer objective")
+            || ContainsEvidenceHint(title, "business objective")
+            || ContainsEvidenceHint(criteria, "business objective")
+            || ContainsEvidenceHint(title, "customer goal")
+            || ContainsEvidenceHint(title, "obiectivul clientului");
+        var objectiveClarification =
+            (ContainsEvidenceHint(title, "objective")
+                || ContainsEvidenceHint(title, "goal")
+                || ContainsEvidenceHint(title, "priority")
+                || ContainsEvidenceHint(title, "obiectiv")
+                || ContainsEvidenceHint(title, "scop"))
+            && (ContainsEvidenceHint(title, "clarify")
+                || ContainsEvidenceHint(title, "confirm")
+                || ContainsEvidenceHint(title, "identify")
+                || ContainsEvidenceHint(title, "define")
+                || ContainsEvidenceHint(title, "clarifica")
+                || ContainsEvidenceHint(title, "confirma"));
+        var isRecoveryMeasure =
+            ContainsEvidenceHint(title, "recovery time objective")
+            || ContainsEvidenceHint(title, "recovery point objective")
+            || ContainsEvidenceHint(title, "rto")
+            || ContainsEvidenceHint(title, "rpo");
+        return !isRecoveryMeasure
+            && (explicitlyBusinessFocused || objectiveClarification);
+    }
+
+    private static bool HasDirectConversationalObjective(
+        string normalizedText,
+        string originalText)
+    {
+        if (originalText.Contains('?')
+            || QuestionOpeningRegex().IsMatch(normalizedText)
+            || UncertainObjectiveCues.Any(cue =>
+                ContainsEvidenceHint(normalizedText, cue))
+            || NegatedObjectiveRegex().IsMatch(normalizedText))
+        {
+            return false;
+        }
+
+        var match = DirectObjectiveRegex().Match(normalizedText);
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        var action = match.Groups["action"].Value;
+        return action.Length >= 3
+            && !ObjectiveMetaActions.Any(meta =>
+                action.Equals(meta, StringComparison.Ordinal)
+                || action.StartsWith(meta, StringComparison.Ordinal))
+            && !action.StartsWith("not ", StringComparison.Ordinal)
+            && !action.StartsWith("nu ", StringComparison.Ordinal);
+    }
+
     [GeneratedRegex(@"[^\p{L}\p{N}]+", RegexOptions.CultureInvariant)]
     private static partial Regex NonWordRegex();
 
@@ -291,4 +423,19 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
         @"(?:\d+(?:[.,]\d+)?\s*(?:%|\b(?:percent(?:age)?|procente?|milliseconds?|milisecunde?|seconds?|secunde?|minutes?|minute|hours?|ore|days?|zile|weeks?|saptamani|months?|luni)\b)|\b(?:availability|disponibilitate|reduction|reducere|increase|crestere|decrease|scadere)\b(?:\s+\p{L}+){0,3}\s+\d+(?:[.,]\d+)?\s*%?)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex QuantitativeOutcomeRegex();
+
+    [GeneratedRegex(
+        @"^(?:(?:well|so|actually|currently|today)\s+)?(?:(?:we|i|you)\s+(?:need|want)\s+to|our\s+(?:priority|objective|goal)\s+is(?:\s+to)?|(?:(?:noi|eu)\s+)?(?:avem\s+nevoie|vrem|vreau|trebuie)\s+sa|(?:prioritatea|obiectivul|scopul)\s+nostru\s+este(?:\s+sa)?)\s+(?<action>.+)$",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex DirectObjectiveRegex();
+
+    [GeneratedRegex(
+        @"^(?:do|does|did|can|could|should|would|what|why|how|when|where|is|are|will)\b",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex QuestionOpeningRegex();
+
+    [GeneratedRegex(
+        @"\b(?:do\s+not|don\s+t|does\s+not|doesn\s+t|did\s+not|didn\s+t|no\s+need|need\s+not|cannot|can\s+t|not\s+an?\s+(?:objective|priority|goal)|nu\s+(?:avem|vrem|este|trebuie)|fara\s+(?:obiectiv|prioritate))\b",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex NegatedObjectiveRegex();
 }

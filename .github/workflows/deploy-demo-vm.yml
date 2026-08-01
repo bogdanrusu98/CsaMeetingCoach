@@ -5,6 +5,15 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Select deployment or one-time reviewed knowledge indexing
+        required: true
+        default: deploy
+        type: choice
+        options:
+          - deploy
+          - index-knowledge
 
 permissions:
   contents: read
@@ -20,7 +29,8 @@ env:
   COACH_AGENT_PROVIDER: ${{ vars.COACH_AGENT_PROVIDER || 'Local' }}
   FOUNDRY_PROJECT_ENDPOINT: https://csa-meeting-coach-resource.services.ai.azure.com/api/projects/csa-meeting-coach
   FOUNDRY_MODEL_DEPLOYMENT: gpt-4.1-mini
-  FOUNDRY_AGENT_NAME: csa-meeting-coach-v4
+  FOUNDRY_AGENT_NAME: csa-meeting-coach-v5
+  FOUNDRY_VECTOR_STORE_IDS: ${{ vars.FOUNDRY_VECTOR_STORE_IDS }}
   BROWSER_SPEECH_ENABLED: ${{ vars.BROWSER_SPEECH_ENABLED || 'false' }}
   BROWSER_SPEECH_ACCESS_KEY: ${{ secrets.BROWSER_SPEECH_ACCESS_KEY }}
   TRANSCRIPT_ADAPTER_AUTH_MODE: ${{ vars.TRANSCRIPT_ADAPTER_AUTH_MODE || 'Disabled' }}
@@ -44,8 +54,66 @@ env:
   MEDIA_BOT_CONTROL_ENTRA_AUDIENCE: ${{ vars.MEDIA_BOT_CONTROL_ENTRA_AUDIENCE }}
 
 jobs:
+  index-knowledge:
+    name: Index reviewed knowledge
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'index-knowledge' }}
+    runs-on:
+      - self-hosted
+      - Windows
+      - X64
+      - csa-demo
+    timeout-minutes: 20
+    outputs:
+      vector-store-id: ${{ steps.index.outputs.vector_store_id }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 8.0.423
+
+      - name: Restore indexer
+        shell: powershell
+        run: dotnet restore .\tools\CsaMeetingCoach.KnowledgeIndexer\CsaMeetingCoach.KnowledgeIndexer.csproj
+
+      - name: Build indexer
+        shell: powershell
+        run: dotnet build .\tools\CsaMeetingCoach.KnowledgeIndexer\CsaMeetingCoach.KnowledgeIndexer.csproj -c Release --no-restore
+
+      - name: Create reviewed vector store
+        id: index
+        shell: powershell
+        run: |
+          $diagnosticsPath = "$env:RUNNER_TEMP\knowledge-indexer-diagnostics.txt"
+          $output = & dotnet run `
+            --project .\tools\CsaMeetingCoach.KnowledgeIndexer `
+            -c Release `
+            --no-build `
+            --no-restore `
+            -- `
+            --project-endpoint $env:FOUNDRY_PROJECT_ENDPOINT `
+            --source-directory .\knowledge `
+            --store-name "CSA Meeting Coach Knowledge" `
+            2> $diagnosticsPath
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content $diagnosticsPath
+            throw "Knowledge indexing failed."
+          }
+
+          $vectorStoreId = ($output | Out-String).Trim()
+          if ($vectorStoreId -notmatch "^vs_[A-Za-z0-9]{1,125}$") {
+            throw "Knowledge indexer did not return one valid vector store ID."
+          }
+
+          "vector_store_id=$vectorStoreId" >> $env:GITHUB_OUTPUT
+          "Created reviewed vector store: ``$vectorStoreId``" >> $env:GITHUB_STEP_SUMMARY
+
   validate-and-deploy:
     name: Validate and deploy
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy') || (github.event_name == 'push' && (vars.COACH_AGENT_PROVIDER != 'Foundry' || vars.FOUNDRY_VECTOR_STORE_IDS != '')) }}
     runs-on:
       - self-hosted
       - Windows
@@ -108,6 +176,7 @@ jobs:
             FoundryProjectEndpoint = $env:FOUNDRY_PROJECT_ENDPOINT
             FoundryModelDeployment = $env:FOUNDRY_MODEL_DEPLOYMENT
             FoundryAgentName = $env:FOUNDRY_AGENT_NAME
+            FoundryVectorStoreIds = $env:FOUNDRY_VECTOR_STORE_IDS
             BrowserSpeechEnabled = $env:BROWSER_SPEECH_ENABLED -eq "true"
             BrowserSpeechSubscriptionKey = $env:MEDIA_BOT_SPEECH_KEY
             BrowserSpeechAccessKey = $env:BROWSER_SPEECH_ACCESS_KEY

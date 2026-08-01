@@ -1,10 +1,11 @@
 using Azure.Core;
 using Azure.Identity;
 using CsaMeetingCoach.Core;
+using System.Text.RegularExpressions;
 
 namespace CsaMeetingCoach.Api;
 
-public static class CoachAgentServiceCollectionExtensions
+public static partial class CoachAgentServiceCollectionExtensions
 {
     public static IServiceCollection AddCoachAgent(
         this IServiceCollection services,
@@ -12,6 +13,7 @@ public static class CoachAgentServiceCollectionExtensions
         TokenCredential? foundryCredential = null)
     {
         var provider = configuration["CoachAgent:Provider"] ?? "Local";
+        services.AddSingleton<ISemanticTermCatalog, BuiltInSemanticTermCatalog>();
         services.AddSingleton<HeuristicConversationCoachAgent>();
         if (provider.Equals("Local", StringComparison.OrdinalIgnoreCase))
         {
@@ -72,10 +74,19 @@ public static class CoachAgentServiceCollectionExtensions
                     "Configuration 'CoachAgent:Foundry:AgentName' cannot exceed 64 characters.");
             }
 
+            var vectorStoreIds = ParseVectorStoreIds(
+                configuration["CoachAgent:Foundry:VectorStoreIds"]);
+            if (vectorStoreIds.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "Configuration 'CoachAgent:Foundry:VectorStoreIds' must contain at least one reviewed vector store ID.");
+            }
+
             var options = new FoundryOptions(
                 RequireHttpsUri(endpoint, "CoachAgent:Foundry:ProjectEndpoint"),
                 modelDeployment,
-                agentName);
+                agentName,
+                vectorStoreIds);
             services.AddSingleton(options);
             services.AddSingleton<TokenCredential>(
                 foundryCredential ?? new DefaultAzureCredential());
@@ -115,4 +126,41 @@ public static class CoachAgentServiceCollectionExtensions
 
         return uri;
     }
+
+    internal static IReadOnlyList<string> ParseVectorStoreIds(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return [];
+        }
+
+        var ids = value.Split(',', StringSplitOptions.None)
+            .Select(id => id.Trim())
+            .ToArray();
+        if (ids.Any(string.IsNullOrEmpty))
+        {
+            throw new InvalidOperationException(
+                "Configuration 'CoachAgent:Foundry:VectorStoreIds' contains an empty identifier.");
+        }
+
+        var distinctIds = ids.Distinct(StringComparer.Ordinal).ToArray();
+        if (distinctIds.Length > 10)
+        {
+            throw new InvalidOperationException(
+                "Configuration 'CoachAgent:Foundry:VectorStoreIds' cannot contain more than 10 identifiers.");
+        }
+
+        if (distinctIds.Any(id => !VectorStoreIdRegex().IsMatch(id)))
+        {
+            throw new InvalidOperationException(
+                "Configuration 'CoachAgent:Foundry:VectorStoreIds' must contain only valid vs_ identifiers.");
+        }
+
+        return Array.AsReadOnly(distinctIds);
+    }
+
+    [GeneratedRegex(
+        @"^vs_[A-Za-z0-9]{1,125}$",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex VectorStoreIdRegex();
 }

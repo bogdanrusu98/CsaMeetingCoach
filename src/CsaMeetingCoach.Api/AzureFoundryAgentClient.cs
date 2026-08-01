@@ -1,4 +1,5 @@
 using System.ClientModel;
+using System.ClientModel.Primitives;
 using Azure.AI.Extensions.OpenAI;
 using Azure.AI.Projects;
 using Azure.AI.Projects.Agents;
@@ -11,7 +12,8 @@ namespace CsaMeetingCoach.Api;
 public sealed record FoundryOptions(
     Uri ProjectEndpoint,
     string ModelDeployment,
-    string AgentName);
+    string AgentName,
+    IReadOnlyList<string> VectorStoreIds);
 
 public sealed class AzureFoundryAgentClient : IFoundryAgentClient
 {
@@ -62,10 +64,11 @@ public sealed class AzureFoundryAgentClient : IFoundryAgentClient
 #pragma warning restore OPENAI001
 
     internal static DeclarativeAgentDefinition BuildAgentDefinition(
-        string modelDeployment)
+        string modelDeployment,
+        IReadOnlyList<string>? vectorStoreIds = null)
     {
 #pragma warning disable OPENAI001
-        return new DeclarativeAgentDefinition(modelDeployment)
+        var definition = new DeclarativeAgentDefinition(modelDeployment)
         {
             Instructions = FoundryAgentContract.Instructions,
             TextOptions = new ResponseTextOptions
@@ -77,7 +80,25 @@ public sealed class AzureFoundryAgentClient : IFoundryAgentClient
                     true)
             }
         };
+        if (vectorStoreIds is { Count: > 0 })
+        {
+            definition.Tools.Add(ResponseTool.CreateFileSearchTool(
+                vectorStoreIds: vectorStoreIds));
+        }
+
+        return definition;
 #pragma warning restore OPENAI001
+    }
+
+    internal static BinaryData BuildAgentUpdateBody(
+        string modelDeployment,
+        IReadOnlyList<string> vectorStoreIds)
+    {
+        var options = new ProjectsAgentVersionCreationOptions(
+            BuildAgentDefinition(modelDeployment, vectorStoreIds));
+        return ModelReaderWriter.Write(
+            options,
+            new ModelReaderWriterOptions("W"));
     }
 
     private async Task EnsureAgentAsync(CancellationToken cancellationToken)
@@ -95,16 +116,7 @@ public sealed class AzureFoundryAgentClient : IFoundryAgentClient
                 return;
             }
 
-            try
-            {
-                _ = await projectClient.AgentAdministrationClient.GetAgentAsync(
-                    options.AgentName,
-                    cancellationToken);
-            }
-            catch (ClientResultException exception) when (exception.Status == 404)
-            {
-                await CreateAgentAsync(cancellationToken);
-            }
+            await UpdateOrCreateAgentAsync(cancellationToken);
 
             agentReady = true;
         }
@@ -114,9 +126,42 @@ public sealed class AzureFoundryAgentClient : IFoundryAgentClient
         }
     }
 
+    private async Task UpdateOrCreateAgentAsync(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await UpdateExistingAgentAsync(cancellationToken);
+        }
+        catch (ClientResultException exception) when (exception.Status == 404)
+        {
+            await CreateAgentAsync(cancellationToken);
+        }
+    }
+
+    private async Task UpdateExistingAgentAsync(
+        CancellationToken cancellationToken)
+    {
+        var updateBody = BuildAgentUpdateBody(
+            options.ModelDeployment,
+            options.VectorStoreIds);
+        using var content = BinaryContent.Create(updateBody);
+        var requestOptions = new RequestOptions
+        {
+            CancellationToken = cancellationToken
+        };
+
+        _ = await projectClient.AgentAdministrationClient.UpdateAgentAsync(
+            options.AgentName,
+            content,
+            options: requestOptions);
+    }
+
     private async Task CreateAgentAsync(CancellationToken cancellationToken)
     {
-        var definition = BuildAgentDefinition(options.ModelDeployment);
+        var definition = BuildAgentDefinition(
+            options.ModelDeployment,
+            options.VectorStoreIds);
 
         try
         {
@@ -127,9 +172,7 @@ public sealed class AzureFoundryAgentClient : IFoundryAgentClient
         }
         catch (ClientResultException exception) when (exception.Status == 409)
         {
-            _ = await projectClient.AgentAdministrationClient.GetAgentAsync(
-                options.AgentName,
-                cancellationToken);
+            await UpdateExistingAgentAsync(cancellationToken);
         }
     }
 }

@@ -17,7 +17,9 @@ param(
     [string] $FoundryModelDeployment = "gpt-4.1-mini",
 
     [ValidateLength(1, 64)]
-    [string] $FoundryAgentName = "csa-meeting-coach-v4",
+    [string] $FoundryAgentName = "csa-meeting-coach-v5",
+
+    [string] $FoundryVectorStoreIds = "",
 
     [switch] $BrowserSpeechEnabled,
 
@@ -405,6 +407,29 @@ if ($CoachAgentProvider -eq "Foundry") {
     }
 }
 
+$normalizedVectorStoreIds = [Collections.Generic.List[string]]::new()
+$seenVectorStoreIds = [Collections.Generic.HashSet[string]]::new(
+    [StringComparer]::Ordinal)
+if (-not [string]::IsNullOrWhiteSpace($FoundryVectorStoreIds)) {
+    foreach ($candidate in $FoundryVectorStoreIds.Split(",")) {
+        $identifier = $candidate.Trim()
+        if ($identifier -notmatch "^vs_[A-Za-z0-9]{1,125}$") {
+            throw "Foundry vector store IDs must be comma-separated valid vs_ identifiers."
+        }
+        if ($seenVectorStoreIds.Add($identifier)) {
+            $normalizedVectorStoreIds.Add($identifier)
+        }
+    }
+}
+if ($normalizedVectorStoreIds.Count -gt 10) {
+    throw "No more than 10 Foundry vector store IDs may be configured."
+}
+if ($CoachAgentProvider -eq "Foundry" -and
+    $normalizedVectorStoreIds.Count -eq 0) {
+    throw "Foundry deployment requires at least one reviewed vector store ID."
+}
+$FoundryVectorStoreIds = $normalizedVectorStoreIds -join ","
+
 if ($BrowserSpeechEnabled) {
     if ([string]::IsNullOrWhiteSpace($BrowserSpeechSubscriptionKey) -or
         $BrowserSpeechAccessKey.Length -lt 32 -or
@@ -523,6 +548,7 @@ try {
             "CoachAgent__Foundry__ProjectEndpoint=$FoundryProjectEndpoint",
             "CoachAgent__Foundry__ModelDeployment=$FoundryModelDeployment",
             "CoachAgent__Foundry__AgentName=$FoundryAgentName",
+            "CoachAgent__Foundry__VectorStoreIds=$FoundryVectorStoreIds",
             "BrowserSpeech__Enabled=$($BrowserSpeechEnabled.IsPresent.ToString().ToLowerInvariant())",
             "BrowserSpeech__SubscriptionKey=$BrowserSpeechSubscriptionKey",
             "BrowserSpeech__AccessKey=$BrowserSpeechAccessKey",

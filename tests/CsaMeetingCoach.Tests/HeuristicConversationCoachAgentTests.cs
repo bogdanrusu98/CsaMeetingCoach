@@ -206,4 +206,177 @@ public sealed class HeuristicConversationCoachAgentTests
         Assert.True(evaluation.ShouldComplete);
         Assert.Equal(latest.Text, evaluation.EvidenceQuote);
     }
+
+    [Theory]
+    [InlineData("business benefit", "The business value is faster market entry.")]
+    [InlineData("total cost of ownership", "The TCO baseline is now documented.")]
+    [InlineData("roi", "The return on investment supports the migration.")]
+    [InlineData("landing zone", "The cloud foundation design is approved.")]
+    public async Task Analyze_EquivalentEvidenceHint_CompletesItem(
+        string evidenceHint,
+        string transcript)
+    {
+        var item = CreatePendingItem(
+            "Discuss the customer topic",
+            "The customer topic is explicitly discussed.",
+            evidenceHint);
+        var latest = CreateFinalSegment(transcript);
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [item], [latest]),
+            latest,
+            CancellationToken.None);
+
+        var evaluation = Assert.Single(decision.ChecklistEvaluations);
+        Assert.True(evaluation.ShouldComplete);
+        Assert.Equal(latest.Text, evaluation.EvidenceQuote);
+    }
+
+    [Fact]
+    public async Task Analyze_AcceptedTalkingPoint_UsesEquivalentTerms()
+    {
+        var latest = CreateFinalSegment(
+            "TCO is lower with the managed platform.");
+        var accepted = new RecommendedTaskState(
+            Guid.NewGuid(),
+            "Discuss total cost of ownership",
+            "Compare the cost baseline.",
+            0.9,
+            [Guid.NewGuid()],
+            RecommendationStatus.Accepted,
+            latest.OccurredAtUtc.AddMinutes(-2),
+            latest.OccurredAtUtc.AddMinutes(-1),
+            Evidence: []);
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [],
+                [latest],
+                [accepted]),
+            latest,
+            CancellationToken.None);
+
+        var evaluation = Assert.Single(decision.RecommendationEvaluations!);
+        Assert.True(evaluation.ShouldComplete);
+        Assert.Equal(accepted.Id, evaluation.RecommendationId);
+    }
+
+    [Theory]
+    [InlineData("We need to migrate the billing platform.")]
+    [InlineData("We want to modernize the customer portal.")]
+    [InlineData("Our priority is reducing release lead time.")]
+    [InlineData("Our objective is to retire the legacy service.")]
+    [InlineData("I need to reduce infrastructure cost.")]
+    [InlineData("You want to improve operational resilience.")]
+    [InlineData("Obiectivul nostru este să reducem costurile.")]
+    public async Task Analyze_DirectConversationalObjective_CompletesObjective(
+        string transcript)
+    {
+        var item = CreatePendingItem(
+            "Clarify the customer objective",
+            "The business objective is explicitly confirmed.",
+            "unrelated transformation");
+        var latest = CreateFinalSegment(transcript);
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [item], [latest]),
+            latest,
+            CancellationToken.None);
+
+        var evaluation = Assert.Single(decision.ChecklistEvaluations);
+        Assert.True(evaluation.ShouldComplete);
+    }
+
+    [Theory]
+    [InlineData("We need to discuss the objective.")]
+    [InlineData("We need to clarify our objective.")]
+    [InlineData("We need to define the objective.")]
+    [InlineData("We do not need to migrate the billing platform.")]
+    [InlineData("We may need to migrate the billing platform.")]
+    [InlineData("Maybe we need to migrate the billing platform.")]
+    [InlineData("Do we need to migrate the billing platform?")]
+    [InlineData("Our objective is unclear.")]
+    [InlineData("We need to discuss success criteria.")]
+    [InlineData("Trebuie să clarificăm obiectivul.")]
+    [InlineData("The customer asked do we need to migrate.")]
+    [InlineData("It is not true that we need to migrate.")]
+    [InlineData("Someone said we need to migrate.")]
+    public async Task Analyze_NonExplicitObjectiveLanguage_DoesNotComplete(
+        string transcript)
+    {
+        var item = CreatePendingItem(
+            "Clarify the customer objective",
+            "The business objective is explicitly confirmed.",
+            "unrelated transformation");
+        var latest = CreateFinalSegment(transcript);
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [item], [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.DoesNotContain(
+            decision.ChecklistEvaluations,
+            evaluation => evaluation.ShouldComplete);
+    }
+
+    [Fact]
+    public async Task Analyze_TcoMention_DoesNotBypassMeasurableOutcomeGuard()
+    {
+        var item = CreatePendingItem(
+            "Validate the expected result",
+            "A measurable outcome is defined.",
+            "total cost of ownership");
+        var latest = CreateFinalSegment("The TCO is still unclear.");
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [item], [latest]),
+            latest,
+            CancellationToken.None);
+
+        var evaluation = Assert.Single(decision.ChecklistEvaluations);
+        Assert.False(evaluation.ShouldComplete);
+    }
+
+    [Fact]
+    public async Task Analyze_DirectObjective_DoesNotCompleteRecoveryObjectiveItem()
+    {
+        var item = CreatePendingItem(
+            "Confirm the recovery time objective",
+            "An RTO is explicitly confirmed.",
+            "unrelated recovery measure");
+        var latest = CreateFinalSegment("We need to migrate the billing platform.");
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [item], [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.Empty(decision.ChecklistEvaluations);
+    }
+
+    private static ChecklistItemState CreatePendingItem(
+        string title,
+        string completionCriteria,
+        string evidenceHint) =>
+        new(
+            Guid.NewGuid(),
+            title,
+            completionCriteria,
+            [evidenceHint],
+            ChecklistItemStatus.Pending,
+            AutoCompleted: false,
+            Confidence: null,
+            CompletionReason: null,
+            CompletedAtUtc: null,
+            Evidence: []);
+
+    private static TranscriptSegment CreateFinalSegment(string text) =>
+        new(
+            Guid.NewGuid(),
+            "Meeting participant",
+            text,
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
 }

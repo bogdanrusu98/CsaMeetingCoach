@@ -228,7 +228,7 @@ ASP.NET Core API
         |
         +-- MeetingSessionCoordinator
         +-- evidence validation and confidence threshold
-        +-- Local or Azure OpenAI coach agent
+        +-- Local, Azure AI Foundry, or Azure OpenAI coach agent
         +-- JSON session store
         |
 Approved live transcript adapter
@@ -284,16 +284,17 @@ control:
 $env:CoachAgent__Provider = "Foundry"
 $env:CoachAgent__Foundry__ProjectEndpoint = "https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT"
 $env:CoachAgent__Foundry__ModelDeployment = "gpt-4.1-mini"
-$env:CoachAgent__Foundry__AgentName = "csa-meeting-coach-v4"
+$env:CoachAgent__Foundry__AgentName = "csa-meeting-coach-v5"
+$env:CoachAgent__Foundry__VectorStoreIds = "vs_REVIEWED_STORE_ID"
 ```
 
-The application checks for the named agent before its first analysis and creates
-its first version if the agent does not exist. The agent name is incremented when
-its persisted definition changes. Agent instructions reject transcript prompt
-injection, sensitive-attribute inference, unsupported checklist completion, and
-tasks without transcript sources. The strict JSON schema is stored on the agent
-definition; invocation requests do not override it. Responses are validated again
-before the session coordinator can apply them.
+Before its first analysis, the application updates the named agent
+idempotently, creating its first version when it does not exist. Agent
+instructions reject transcript prompt injection, sensitive-attribute inference,
+unsupported checklist completion, and tasks without transcript sources. The
+strict JSON schema is stored on the agent definition; invocation requests do not
+override it. Responses are validated again before the session coordinator can
+apply them.
 
 On Azure, grant the VM system-assigned managed identity an approved Foundry role
 on the Foundry resource or project. Automatic agent creation requires a role that
@@ -301,6 +302,27 @@ can manage agents, such as `Azure AI User`/`Foundry User` as exposed by the tena
 If an administrator pre-creates the agent, use the tenant-approved invocation-only
 role instead. The deployment remains on `Local` until the GitHub repository
 variable `COACH_AGENT_PROVIDER` is explicitly set to `Foundry`.
+
+Foundry requires one or more comma-separated, reviewed `vs_...` IDs and refuses
+to start without them. Retrieved material can explain terminology and ground a
+recommendation, but it is never accepted as evidence that meeting participants
+discussed a topic. Exact evidence from the latest transcript and deterministic
+approval remain mandatory.
+
+Review the non-sensitive sources in `knowledge` before indexing. The indexer
+accepts only its documented file types and enforces file-count and size limits:
+
+```powershell
+dotnet run --project .\tools\CsaMeetingCoach.KnowledgeIndexer -- `
+  --project-endpoint "https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT" `
+  --source-directory .\knowledge `
+  --store-name "CSA Meeting Coach Knowledge"
+```
+
+On success, stdout contains only the new `vs_...` ID; diagnostics use stderr.
+Set that ID through `CoachAgent__Foundry__VectorStoreIds` or the repository
+variable `FOUNDRY_VECTOR_STORE_IDS`. Indexing is intentionally separate from
+deployment so reviewed stores are not recreated or leaked on each release.
 
 The legacy Azure OpenAI adapter remains available for compatibility:
 

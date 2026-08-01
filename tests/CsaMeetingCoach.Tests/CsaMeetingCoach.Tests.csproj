@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\CsaMeetingCoach.Contracts\CsaMeetingCoach.Contracts.csproj" />
     <ProjectReference Include="..\..\src\CsaMeetingCoach.Core\CsaMeetingCoach.Core.csproj" />
     <ProjectReference Include="..\..\src\CsaMeetingCoach.Api\CsaMeetingCoach.Api.csproj" />
+    <ProjectReference Include="..\..\tools\CsaMeetingCoach.KnowledgeIndexer\CsaMeetingCoach.KnowledgeIndexer.csproj" />
   </ItemGroup>
 
 </Project>
