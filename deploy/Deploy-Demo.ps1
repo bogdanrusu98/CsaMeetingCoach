@@ -228,7 +228,10 @@ function Ensure-ServiceDefinition {
 }
 
 function Start-ServiceBounded {
-    param([Parameter(Mandatory)][string] $Name)
+    param(
+        [Parameter(Mandatory)][string] $Name,
+        [ValidateRange(1, 300)][int] $TimeoutSeconds = 30
+    )
 
     $service = Get-Service -Name $Name -ErrorAction Stop
     if ($service.Status -eq "Running") {
@@ -237,7 +240,7 @@ function Start-ServiceBounded {
 
     $startOutput = & "$env:SystemRoot\System32\sc.exe" start $Name 2>&1
     $startExitCode = $LASTEXITCODE
-    $deadline = [DateTime]::UtcNow.AddSeconds(30)
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
 
     do {
         $service = Get-Service -Name $Name -ErrorAction Stop
@@ -259,9 +262,10 @@ function Start-ServiceBounded {
     } while ([DateTime]::UtcNow -lt $deadline)
 
     $queryOutput = & "$env:SystemRoot\System32\sc.exe" queryex $Name 2>&1
-    throw ("Service '{0}' did not reach Running within 30 seconds. " +
-        "Start exit code: {1}. Start output: {2}. Status: {3}" -f
+    throw (("Service '{0}' did not reach Running within {1} seconds. " +
+        "Start exit code: {2}. Start output: {3}. Status: {4}") -f
         $Name,
+        $TimeoutSeconds,
         $startExitCode,
         ($startOutput -join " "),
         ($queryOutput -join " "))
@@ -573,7 +577,7 @@ try {
         -Name $caddyServiceName `
         -DisplayName "CSA Meeting Coach HTTPS Proxy" `
         -BinaryPath $caddyBinaryPath
-    Start-ServiceBounded -Name $caddyServiceName
+    Start-ServiceBounded -Name $caddyServiceName -TimeoutSeconds 90
     Wait-HttpsHealth -PublicHostname $Hostname
 }
 catch {
@@ -615,7 +619,7 @@ catch {
         Remove-Item $caddyConfig -Force -ErrorAction SilentlyContinue
     }
     if ($caddyServiceExisted) {
-        Start-ServiceBounded -Name $caddyServiceName
+        Start-ServiceBounded -Name $caddyServiceName -TimeoutSeconds 90
     }
     else {
         Remove-ServiceDefinition -Name $caddyServiceName
