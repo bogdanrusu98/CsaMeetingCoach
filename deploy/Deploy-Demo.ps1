@@ -17,7 +17,7 @@ param(
     [string] $FoundryModelDeployment = "gpt-4.1-mini",
 
     [ValidateLength(1, 64)]
-    [string] $FoundryAgentName = "csa-meeting-coach-v3",
+    [string] $FoundryAgentName = "csa-meeting-coach-v4",
 
     [switch] $BrowserSpeechEnabled,
 

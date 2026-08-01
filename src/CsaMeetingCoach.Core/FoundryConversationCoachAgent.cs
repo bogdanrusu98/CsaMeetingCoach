@@ -24,6 +24,15 @@ public static class FoundryAgentContract
         every completion, evidenceQuote must be an exact ordinal substring of
         latestSegment.text.
 
+        Evaluate every pending checklist item independently on every request.
+        A success-criteria item requires an explicitly stated criterion, metric,
+        or quantitative outcome; generic uses of outcome, target, successful, or
+        unsuccessful are not sufficient.
+        When the latest segment explicitly satisfies an item's completionCriteria,
+        return a completion evaluation even when you also create or evaluate a
+        recommendation. Do not omit an evidence-backed checklist completion merely
+        because another coaching action is present.
+
         Recommend a concise talking point describing what the CSA should discuss,
         show, or ask next only when an explicit customer need, question, or meeting
         context supports it. Its rationale must explain why it helps the customer.

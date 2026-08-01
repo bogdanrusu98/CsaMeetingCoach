@@ -21,11 +21,11 @@ public sealed class CoachAgentServiceCollectionExtensionsTests
         Assert.Same(credential, provider.GetRequiredService<TokenCredential>());
         Assert.IsType<AzureFoundryAgentClient>(
             provider.GetRequiredService<IFoundryAgentClient>());
-        Assert.IsType<FoundryConversationCoachAgent>(
+        Assert.IsType<EvidenceBackedConversationCoachAgent>(
             provider.GetRequiredService<IConversationCoachAgent>());
         var options = provider.GetRequiredService<FoundryOptions>();
         Assert.Equal("gpt-4.1-mini", options.ModelDeployment);
-        Assert.Equal("csa-meeting-coach-v3", options.AgentName);
+        Assert.Equal("csa-meeting-coach-v4", options.AgentName);
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class CoachAgentServiceCollectionExtensionsTests
                 ["CoachAgent:Provider"] = "Foundry",
                 ["CoachAgent:Foundry:ProjectEndpoint"] = projectEndpoint,
                 ["CoachAgent:Foundry:ModelDeployment"] = "gpt-4.1-mini",
-                ["CoachAgent:Foundry:AgentName"] = "csa-meeting-coach-v3"
+                ["CoachAgent:Foundry:AgentName"] = "csa-meeting-coach-v4"
             })
             .Build();
 

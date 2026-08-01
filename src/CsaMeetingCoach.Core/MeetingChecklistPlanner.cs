@@ -78,7 +78,18 @@ public sealed partial class MeetingChecklistPlanner : IMeetingChecklistPlanner
             new(
                 "Validate success criteria",
                 "At least one measurable outcome or success criterion is discussed.",
-                BuildHints(string.Join(' ', purpose.SuccessCriteria), "success criteria", "outcome", "metric", "criteriu", "rezultat")),
+                BuildHints(
+                    string.Join(' ', purpose.SuccessCriteria),
+                    "success criteria",
+                    "success means",
+                    "success is measured",
+                    "outcome",
+                    "metric",
+                    "target",
+                    "KPI",
+                    "percent",
+                    "criteriu",
+                    "rezultat")),
             new(
                 "Capture risks and open questions",
                 "A risk, blocker, constraint, concern, or unresolved question is explicitly discussed.",

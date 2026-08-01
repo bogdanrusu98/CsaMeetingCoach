@@ -12,9 +12,11 @@ public static class CoachAgentServiceCollectionExtensions
         TokenCredential? foundryCredential = null)
     {
         var provider = configuration["CoachAgent:Provider"] ?? "Local";
+        services.AddSingleton<HeuristicConversationCoachAgent>();
         if (provider.Equals("Local", StringComparison.OrdinalIgnoreCase))
         {
-            services.AddSingleton<IConversationCoachAgent, HeuristicConversationCoachAgent>();
+            services.AddSingleton<IConversationCoachAgent>(serviceProvider =>
+                serviceProvider.GetRequiredService<HeuristicConversationCoachAgent>());
             return services;
         }
 
@@ -42,10 +44,14 @@ public static class CoachAgentServiceCollectionExtensions
             {
                 Timeout = TimeSpan.FromSeconds(30)
             });
-            services.AddSingleton<IConversationCoachAgent>(serviceProvider =>
+            services.AddSingleton<AzureOpenAiConversationCoachAgent>(serviceProvider =>
                 new AzureOpenAiConversationCoachAgent(
                     serviceProvider.GetRequiredService<HttpClient>(),
                     options));
+            services.AddSingleton<IConversationCoachAgent>(serviceProvider =>
+                new EvidenceBackedConversationCoachAgent(
+                    serviceProvider.GetRequiredService<AzureOpenAiConversationCoachAgent>(),
+                    serviceProvider.GetRequiredService<HeuristicConversationCoachAgent>()));
             return services;
         }
 
@@ -74,7 +80,11 @@ public static class CoachAgentServiceCollectionExtensions
             services.AddSingleton<TokenCredential>(
                 foundryCredential ?? new DefaultAzureCredential());
             services.AddSingleton<IFoundryAgentClient, AzureFoundryAgentClient>();
-            services.AddSingleton<IConversationCoachAgent, FoundryConversationCoachAgent>();
+            services.AddSingleton<FoundryConversationCoachAgent>();
+            services.AddSingleton<IConversationCoachAgent>(serviceProvider =>
+                new EvidenceBackedConversationCoachAgent(
+                    serviceProvider.GetRequiredService<FoundryConversationCoachAgent>(),
+                    serviceProvider.GetRequiredService<HeuristicConversationCoachAgent>()));
             return services;
         }
 

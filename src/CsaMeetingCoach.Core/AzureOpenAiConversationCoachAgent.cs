@@ -44,6 +44,13 @@ public sealed class AzureOpenAiConversationCoachAgent(
                         contains direct evidence. For every completion, evidenceQuote must be an exact
                         ordinal substring of the latest final segment.
 
+                        Evaluate every pending checklist item independently on every request. When the
+                        item concerns success criteria, require an explicitly stated criterion, metric,
+                        or quantitative outcome; generic uses of outcome, target, successful, or
+                        unsuccessful are not sufficient. When the
+                        latest segment explicitly satisfies an item's completion criteria, return a
+                        completion evaluation even when another coaching action is also present.
+
                         Recommend a concise talking point describing what the CSA should discuss,
                         show, or ask next only when an explicit customer need, question, or meeting
                         context supports it. Its rationale must say why it helps the customer. Do not

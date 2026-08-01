@@ -47,6 +47,57 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
         "putem"
     ];
 
+    private static readonly string[] ExplicitMeasurableOutcomeCues =
+    [
+        "success means",
+        "success is measured",
+        "success metric is",
+        "success metric will",
+        "metric is",
+        "metric will",
+        "measured by",
+        "measure success",
+        "kpi is",
+        "kpi will",
+        "target is",
+        "target of",
+        "success criteria are",
+        "success criteria include",
+        "success criteria will",
+        "success criterion is",
+        "succesul inseamna",
+        "succesul este masurat",
+        "succesul se masoara",
+        "masuram succesul",
+        "metrica este",
+        "kpi este",
+        "tinta este",
+        "criteriile de succes sunt",
+        "criteriul de succes este"
+    ];
+
+    private static readonly string[] NegatedMeasurableOutcomeCues =
+    [
+        "no success criteria",
+        "without success criteria",
+        "success criteria are not",
+        "success criteria have not",
+        "success criteria remain undefined",
+        "success criteria remain unclear",
+        "metric is not",
+        "metric has not",
+        "metric remains undefined",
+        "target is not",
+        "target has not",
+        "target remains undefined",
+        "target remains unclear",
+        "nu exista criterii de succes",
+        "fara criterii de succes",
+        "criteriile de succes nu",
+        "metrica nu este",
+        "tinta nu este"
+    ];
+
     public Task<CoachAgentDecision> AnalyzeAsync(
         CoachAgentContext context,
         TranscriptSegment latestSegment,
@@ -98,9 +149,23 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
 
         var confidence = Math.Min(0.97, 0.84 + ((matchedHints.Length - 1) * 0.03));
         var normalizedTitle = Normalize(item.Title);
+        var requiresMeasurableOutcome = RequiresMeasurableOutcome(item);
         var requiresCommitment = normalizedTitle.Contains("next step", StringComparison.Ordinal)
             || normalizedTitle.Contains("owner", StringComparison.Ordinal)
             || normalizedTitle.Contains("urmator", StringComparison.Ordinal);
+
+        var hasQuantitativeOutcome =
+            QuantitativeOutcomeRegex().IsMatch(segment.Text);
+        var hasExplicitMeasurableOutcome =
+            ExplicitMeasurableOutcomeCues.Any(normalizedText.Contains)
+            && !NegatedMeasurableOutcomeCues.Any(normalizedText.Contains);
+        var hasMeasurableOutcomeEvidence =
+            hasQuantitativeOutcome || hasExplicitMeasurableOutcome;
+
+        if (requiresMeasurableOutcome && !hasMeasurableOutcomeEvidence)
+        {
+            confidence = Math.Min(confidence, 0.70);
+        }
 
         if (requiresCommitment && !CommitmentCues.Any(normalizedText.Contains))
         {
@@ -113,6 +178,17 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
             confidence,
             $"Matched discussion evidence: {string.Join(", ", matchedHints)}.",
             segment.Text.Trim());
+    }
+
+    internal static bool RequiresMeasurableOutcome(ChecklistItemState item)
+    {
+        var definition = Normalize($"{item.Title} {item.CompletionCriteria}");
+        return definition.Contains("success criteria", StringComparison.Ordinal)
+            || definition.Contains("success criterion", StringComparison.Ordinal)
+            || definition.Contains("success metric", StringComparison.Ordinal)
+            || definition.Contains("measurable outcome", StringComparison.Ordinal)
+            || definition.Contains("criteriu de succes", StringComparison.Ordinal)
+            || definition.Contains("rezultat masurabil", StringComparison.Ordinal);
     }
 
     private static IReadOnlyList<RecommendedTaskProposal> CreateRecommendations(
@@ -192,4 +268,9 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
 
     [GeneratedRegex(@"\s+", RegexOptions.CultureInvariant)]
     private static partial Regex WhitespaceRegex();
+
+    [GeneratedRegex(
+        @"(?:\d+(?:[.,]\d+)?\s*(?:%|\b(?:percent(?:age)?|procente?|milliseconds?|milisecunde?|seconds?|secunde?|minutes?|minute|hours?|ore|days?|zile|weeks?|saptamani|months?|luni)\b)|\b(?:availability|disponibilitate|reduction|reducere|increase|crestere|decrease|scadere)\b(?:\s+\p{L}+){0,3}\s+\d+(?:[.,]\d+)?\s*%?)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex QuantitativeOutcomeRegex();
 }

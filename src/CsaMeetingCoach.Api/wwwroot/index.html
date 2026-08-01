@@ -5,168 +5,188 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CSA Meeting Coach</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="styles.css?v=20260801">
+  <link rel="stylesheet" href="styles.css?v=20260801c">
 </head>
 <body>
-  <header class="app-header">
-    <div>
-      <p class="eyebrow">Private meeting assistant</p>
-      <h1>CSA Meeting Coach</h1>
-    </div>
-    <span id="connection-status" class="status neutral">Not connected</span>
-  </header>
+  <main class="app-shell">
+    <section id="setup-view" class="setup-view" aria-labelledby="setup-title">
+      <div class="brand-mark" aria-hidden="true">C</div>
+      <div class="setup-heading">
+        <p class="eyebrow">Private meeting assistant</p>
+        <h1 id="setup-title">Start live coaching</h1>
+        <p>
+          Get evidence-backed talking points from what participants explicitly discuss.
+          The coach never evaluates emotion or tone.
+        </p>
+      </div>
 
-  <main>
-    <section id="setup-view" class="panel">
-      <h2>Start a coaching session</h2>
-      <p class="muted">
-        The coach uses the meeting purpose and what people explicitly discuss to
-        suggest useful topics to cover next—not emotion or tone.
-      </p>
-      <form id="session-form">
+      <form id="session-form" class="setup-form">
         <label>
           Meeting title
           <input id="meeting-title" required value="Contoso cloud modernization VBD">
         </label>
+        <div class="field-grid">
+          <label>
+            Meeting type
+            <select id="meeting-type">
+              <option>VBD</option>
+              <option>Architecture review</option>
+              <option>Technical workshop</option>
+              <option>Customer follow-up</option>
+            </select>
+          </label>
+          <label>
+            Objective
+            <textarea id="meeting-objective" required>Align the modernization proposal to measurable customer business value.</textarea>
+          </label>
+        </div>
         <label>
-          Meeting type
-          <select id="meeting-type">
-            <option>VBD</option>
-            <option>Architecture review</option>
-            <option>Technical workshop</option>
-            <option>Customer follow-up</option>
-          </select>
-        </label>
-        <label>
-          Objective
-          <textarea id="meeting-objective" required>Align the modernization proposal to measurable customer business value.</textarea>
-        </label>
-        <label>
-          Success criteria, one per line
+          Success criteria <span class="field-hint">one per line</span>
           <textarea id="success-criteria">Confirm the priority workloads
 Agree measurable business outcomes
 Define owners and next steps</textarea>
         </label>
-        <button type="submit" class="primary">Start live coaching</button>
+        <button type="submit" class="button primary full-width">
+          Start live coaching
+        </button>
       </form>
-      <aside class="privacy-note">
-        <strong>Privacy</strong>
-        <span>Use with participant notice and a lawful basis. Discussion text is processed only to coach this meeting; review your GDPR obligations.</span>
-      </aside>
+
+      <p class="privacy-line">
+        Use only after participant notice and with a valid lawful basis.
+      </p>
     </section>
 
-    <section id="session-view" class="hidden">
-      <article class="panel purpose-card" aria-labelledby="purpose-title">
-        <div>
-          <p id="meeting-type-label" class="eyebrow"></p>
-          <h2 id="purpose-title"></h2>
-          <p id="purpose-objective" class="muted"></p>
+    <section id="session-view" class="session-view hidden">
+      <header class="session-bar">
+        <div class="session-identity">
+          <span class="live-dot" aria-hidden="true"></span>
+          <div>
+            <h1 id="purpose-title"></h1>
+            <p><span id="meeting-type-label"></span> · <span id="connection-status">Connecting</span></p>
+          </div>
         </div>
-        <button id="complete-meeting" class="secondary">End session</button>
-      </article>
+        <div class="bar-actions">
+          <button id="open-diagnostics" type="button" class="icon-button"
+                  aria-label="Open diagnostics" title="Diagnostics">•••</button>
+          <button id="complete-meeting" type="button" class="button subtle">End</button>
+        </div>
+        <p id="purpose-objective" class="visually-hidden"></p>
+      </header>
 
-      <article id="microphone-panel" class="panel microphone-panel hidden" aria-labelledby="microphone-heading">
-        <p class="eyebrow">Local microphone</p>
-        <h2 id="microphone-heading">Listen to this device</h2>
-        <p class="muted compact-copy">
-          Captures only audio reaching this device's microphone—not the full Teams
-          audio stream. Azure Speech processes it in the configured region; audio is not stored.
-        </p>
-        <label class="consent-option">
-          <input id="microphone-consent" type="checkbox">
-          <span>I have notified participants and have permission to transcribe this discussion.</span>
-        </label>
-        <label>
-          Access code
-          <input id="microphone-access-key" type="password" autocomplete="off">
-          <span class="field-help">
-            Required to protect the Azure Speech quota. Kept only in this page's memory.
-          </span>
-        </label>
-        <div class="microphone-controls">
-          <button id="microphone-toggle" type="button" class="primary"
-                  aria-label="Start listening to the local microphone"
-                  aria-pressed="false" disabled>
+      <article id="microphone-panel" class="microphone-card hidden"
+               aria-labelledby="microphone-heading">
+        <div class="microphone-main">
+          <button id="microphone-toggle" type="button" class="microphone-button"
+                  aria-label="Set up the local microphone" aria-pressed="false">
+            <span class="microphone-icon" aria-hidden="true"></span>
+          </button>
+          <div class="microphone-copy">
+            <div class="microphone-title-row">
+              <h2 id="microphone-heading">Microphone</h2>
+              <span id="microphone-status" class="status neutral">Off</span>
+            </div>
+            <p id="microphone-preview" class="live-caption" aria-live="polite">
+              Tap the microphone to start live coaching.
+            </p>
+          </div>
+        </div>
+
+        <div id="microphone-unlock" class="microphone-unlock hidden">
+          <div class="unlock-heading">
+            <strong>Enable this device</strong>
+            <button id="close-microphone-unlock" type="button" class="icon-button"
+                    aria-label="Close microphone setup">×</button>
+          </div>
+          <p>
+            Captures only audio reaching this microphone. Azure Speech processes
+            the audio; raw audio is not stored by the coach.
+          </p>
+          <label class="consent-option">
+            <input id="microphone-consent" type="checkbox">
+            <span>I notified participants and have permission to transcribe.</span>
+          </label>
+          <label>
+            Demo access code
+            <input id="microphone-access-key" type="password" autocomplete="off">
+            <span class="field-hint">Kept only in this page's memory.</span>
+          </label>
+          <button id="confirm-microphone" type="button" class="button primary full-width">
             Start listening
           </button>
-          <span id="microphone-status" class="status neutral">Microphone off</span>
-        </div>
-        <p id="microphone-preview" class="live-caption" aria-live="polite">
-          Recognized speech will appear here before final segments are sent to the coach.
-        </p>
-      </article>
-
-      <article class="panel next-discussion" aria-labelledby="next-discussion-heading">
-        <p class="eyebrow">Live guidance</p>
-        <h2 id="next-discussion-heading">What to discuss next</h2>
-        <div id="recommendations" class="stack empty-state" aria-live="polite">
-          Listening for explicit discussion to suggest what to cover next.
         </div>
       </article>
 
-      <article id="live-plan" class="panel live-plan" aria-labelledby="live-plan-heading">
-        <div class="section-heading">
+      <article class="focus-card" aria-labelledby="next-discussion-heading">
+        <div class="section-label">
+          <span class="spark" aria-hidden="true">✦</span>
+          <span>Next up</span>
+        </div>
+        <h2 id="next-discussion-heading" class="visually-hidden">Next up</h2>
+        <div id="recommendations" class="recommendation-list empty-state" aria-live="polite">
+          Listening for a customer need or question…
+        </div>
+      </article>
+
+      <article id="live-plan" class="progress-card" aria-labelledby="live-plan-heading">
+        <div class="progress-header">
           <div>
-            <p class="eyebrow">Discussion progress</p>
-            <h2 id="live-plan-heading">Your live plan</h2>
+            <p class="eyebrow">Meeting progress</p>
+            <h2 id="live-plan-heading">Discussion plan</h2>
           </div>
-          <span id="progress-label" aria-live="polite"></span>
+          <span id="progress-label" class="progress-count" aria-live="polite">0/5</span>
         </div>
-        <div id="accepted-recommendations" class="stack accepted-recommendations"></div>
-        <section class="meeting-goals" aria-labelledby="meeting-goals-heading">
-          <h3 id="meeting-goals-heading">Meeting goals</h3>
-          <div id="checklist" class="stack"></div>
-        </section>
+        <div class="progress-track" aria-hidden="true">
+          <span id="progress-fill"></span>
+        </div>
+        <div id="accepted-recommendations" class="compact-list"></div>
+        <div id="checklist" class="compact-list goals-list"></div>
       </article>
-
-      <details class="panel diagnostics simulator">
-        <summary>
-          <span class="eyebrow">Development tool</span>
-          <span class="details-title">Transcript simulator</span>
-        </summary>
-        <div class="details-content">
-          <h2 class="visually-hidden">Simulate a live transcript segment</h2>
-          <p class="muted">
-            Sends a final segment through the same approved transcript-adapter boundary.
-          </p>
-          <form id="transcript-form">
-            <label>
-              Speaker
-              <input id="speaker" required value="CSA">
-            </label>
-            <label>
-              Final transcript segment
-              <textarea id="transcript-text" required placeholder="Example: We will send the migration assessment by Friday."></textarea>
-            </label>
-            <button type="submit" class="primary">Send segment</button>
-          </form>
-        </div>
-      </details>
-
-      <details class="panel diagnostics">
-        <summary>
-          <span class="eyebrow">Recent discussion</span>
-          <span class="details-title">Transcript evidence</span>
-        </summary>
-        <div class="details-content">
-          <h2 class="visually-hidden">Transcript evidence</h2>
-          <div id="transcript" class="transcript empty-state">No transcript segments yet.</div>
-        </div>
-      </details>
-
-      <details id="warnings-panel" class="panel diagnostics warning-panel hidden">
-        <summary>
-          <span class="eyebrow">Agent safeguards</span>
-          <span class="details-title">Rejected agent decisions</span>
-        </summary>
-        <div id="warnings" class="stack details-content"></div>
-      </details>
     </section>
   </main>
+
+  <dialog id="diagnostics-dialog" class="diagnostics-dialog"
+          aria-labelledby="diagnostics-title">
+    <div class="dialog-bar">
+      <div>
+        <p class="eyebrow">Development and safety</p>
+        <h2 id="diagnostics-title">Diagnostics</h2>
+      </div>
+      <button id="close-diagnostics" type="button" class="icon-button"
+              aria-label="Close diagnostics">×</button>
+    </div>
+
+    <details class="diagnostic-section">
+      <summary>Transcript simulator</summary>
+      <form id="transcript-form" class="diagnostic-content">
+        <label>
+          Speaker
+          <input id="speaker" required value="CSA">
+        </label>
+        <label>
+          Final transcript segment
+          <textarea id="transcript-text" required
+                    placeholder="Example: Our objective is to migrate the customer portal to Azure."></textarea>
+        </label>
+        <button type="submit" class="button primary">Send segment</button>
+      </form>
+    </details>
+
+    <details class="diagnostic-section">
+      <summary>Transcript evidence</summary>
+      <div id="transcript" class="transcript diagnostic-content empty-state">
+        No transcript segments yet.
+      </div>
+    </details>
+
+    <details id="warnings-panel" class="diagnostic-section warning-panel hidden">
+      <summary>Rejected agent decisions</summary>
+      <div id="warnings" class="diagnostic-content compact-list"></div>
+    </details>
+  </dialog>
 
   <div id="toast" role="status" aria-live="polite" class="toast hidden"></div>
   <script src="https://res.cdn.office.net/teams-js/2.31.0/js/MicrosoftTeams.min.js"></script>
   <script src="vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0"></script>
-  <script src="app.js?v=20260801"></script>
+  <script src="app.js?v=20260801c"></script>
 </body>
 </html>

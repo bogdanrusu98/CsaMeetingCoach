@@ -203,6 +203,19 @@ $env:TranscriptAdapter__Entra__RequiredRole = "TranscriptIngestor"
 The calling application needs the `TranscriptIngestor` app role in its access
 token. No client secret belongs in this repository.
 
+## Frontend
+
+The compact Teams side-panel client is served directly from
+`src/CsaMeetingCoach.Api/wwwroot`. It uses dependency-free HTML, CSS, and
+JavaScript so it can build and deploy in corporate environments where npm is
+blocked. Its visual system follows Microsoft Fluent and Teams interaction
+patterns without downloading runtime UI dependencies.
+
+The live view intentionally keeps only the meeting bar, microphone, next
+coaching action, and compact progress visible. Consent and the memory-only
+access code are shown during microphone activation. Transcript simulation,
+evidence, and safety warnings are kept in a single diagnostics dialog.
+
 ## Architecture
 
 ```text
@@ -271,7 +284,7 @@ control:
 $env:CoachAgent__Provider = "Foundry"
 $env:CoachAgent__Foundry__ProjectEndpoint = "https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT"
 $env:CoachAgent__Foundry__ModelDeployment = "gpt-4.1-mini"
-$env:CoachAgent__Foundry__AgentName = "csa-meeting-coach-v3"
+$env:CoachAgent__Foundry__AgentName = "csa-meeting-coach-v4"
 ```
 
 The application checks for the named agent before its first analysis and creates

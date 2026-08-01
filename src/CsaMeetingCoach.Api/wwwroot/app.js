@@ -24,8 +24,12 @@ const elements = {
   microphoneConsent: document.querySelector("#microphone-consent"),
   microphoneAccessKey: document.querySelector("#microphone-access-key"),
   microphoneToggle: document.querySelector("#microphone-toggle"),
+  microphoneUnlock: document.querySelector("#microphone-unlock"),
+  closeMicrophoneUnlock: document.querySelector("#close-microphone-unlock"),
+  confirmMicrophone: document.querySelector("#confirm-microphone"),
   microphoneStatus: document.querySelector("#microphone-status"),
   microphonePreview: document.querySelector("#microphone-preview"),
+  progressFill: document.querySelector("#progress-fill"),
   checklist: document.querySelector("#checklist"),
   recommendations: document.querySelector("#recommendations"),
   acceptedRecommendations: document.querySelector("#accepted-recommendations"),
@@ -33,6 +37,9 @@ const elements = {
   warningsPanel: document.querySelector("#warnings-panel"),
   warnings: document.querySelector("#warnings"),
   connectionStatus: document.querySelector("#connection-status"),
+  diagnosticsDialog: document.querySelector("#diagnostics-dialog"),
+  openDiagnostics: document.querySelector("#open-diagnostics"),
+  closeDiagnostics: document.querySelector("#close-diagnostics"),
   toast: document.querySelector("#toast")
 };
 
@@ -57,6 +64,17 @@ initializeBrowserSpeechAvailability();
 elements.microphoneConsent.addEventListener("change", renderMicrophoneControls);
 elements.microphoneAccessKey.addEventListener("input", renderMicrophoneControls);
 elements.microphoneToggle.addEventListener("click", async () => {
+  if (!state.microphoneRecognizer
+      && (!elements.microphoneConsent.checked
+        || !elements.microphoneAccessKey.value)) {
+    elements.microphoneUnlock.classList.remove("hidden");
+    elements.microphoneUnlock.querySelector(
+      elements.microphoneConsent.checked
+        ? "#microphone-access-key"
+        : "#microphone-consent")?.focus();
+    return;
+  }
+
   try {
     await queueMicrophoneOperation(async () => {
       if (state.microphoneRecognizer) {
@@ -69,6 +87,30 @@ elements.microphoneToggle.addEventListener("click", async () => {
     });
   } catch (error) {
     showToast(normalizeMicrophoneError(error));
+  }
+});
+elements.confirmMicrophone.addEventListener("click", async () => {
+  try {
+    await queueMicrophoneOperation(startMicrophone);
+    elements.microphoneUnlock.classList.add("hidden");
+    showToast("Microphone transcription started.");
+  } catch (error) {
+    showToast(normalizeMicrophoneError(error));
+  }
+});
+elements.closeMicrophoneUnlock.addEventListener("click", () => {
+  elements.microphoneUnlock.classList.add("hidden");
+  elements.microphoneToggle.focus();
+});
+elements.openDiagnostics.addEventListener("click", () => {
+  elements.diagnosticsDialog.showModal();
+});
+elements.closeDiagnostics.addEventListener("click", () => {
+  elements.diagnosticsDialog.close();
+});
+elements.diagnosticsDialog.addEventListener("click", event => {
+  if (event.target === elements.diagnosticsDialog) {
+    elements.diagnosticsDialog.close();
   }
 });
 
@@ -229,32 +271,28 @@ function render() {
     + liveRecommendations.filter(task => task.status === "completed").length;
   const total = session.checklist.length + liveRecommendations.length;
   document.querySelector("#progress-label").textContent =
-    `${completed}/${total} discussed`;
+    `${completed}/${total}`;
+  elements.progressFill.style.width =
+    total === 0 ? "0" : `${Math.round((completed / total) * 100)}%`;
 
   elements.acceptedRecommendations.innerHTML = liveRecommendations.map(task => {
     const isComplete = task.status === "completed";
     const evidence = task.evidence?.at(-1);
     return `
-      <div class="plan-item recommendation ${isComplete ? "completed" : ""}">
-        <div class="item-row">
+      <div class="compact-item ${isComplete ? "completed" : "ready"}">
+        <span class="item-indicator" aria-hidden="true">${isComplete ? "✓" : "→"}</span>
+        <div class="item-copy">
           <span class="item-title">${escapeHtml(task.title)}</span>
-          <span class="badge ${isComplete ? "success" : "ready"}">
-            ${isComplete ? "Discussed" : "Ready to cover"}
+          <span class="item-meta">
+            ${isComplete && evidence
+              ? `Discussed: “${escapeHtml(evidence.quote)}”`
+              : escapeHtml(task.rationale)}
           </span>
         </div>
-        <p class="muted">${escapeHtml(task.rationale)}</p>
-        ${isComplete && evidence ? `
-          <blockquote class="evidence">
-            “${escapeHtml(evidence.quote)}”
-            <br><strong>${escapeHtml(evidence.speaker)}</strong>
-          </blockquote>
-        ` : ""}
         ${isComplete ? `
-          <div class="actions">
-            <button class="secondary" type="button"
-                    data-recommendation-reopen="${task.id}">Undo</button>
-          </div>
-        ` : ""}
+          <button class="undo-button" type="button"
+                  data-recommendation-reopen="${task.id}">Undo</button>
+        ` : `<span class="badge ready">Ready</span>`}
       </div>`;
   }).join("");
 
@@ -262,24 +300,19 @@ function render() {
     const isComplete = item.status === "completed";
     const evidence = item.evidence.at(-1);
     return `
-      <div class="checklist-item meeting-goal ${isComplete ? "completed" : ""}">
-        <div class="item-row">
+      <div class="compact-item ${isComplete ? "completed" : ""}">
+        <span class="item-indicator" aria-hidden="true">${isComplete ? "✓" : ""}</span>
+        <div class="item-copy">
           <span class="item-title">${escapeHtml(item.title)}</span>
-          <span class="badge ${isComplete ? "success" : "pending"}">
-            ${isComplete ? "Discussed" : "To discuss"}
+          <span class="item-meta">
+            ${evidence
+              ? `“${escapeHtml(evidence.quote)}” · ${Math.round(evidence.confidence * 100)}%`
+              : escapeHtml(item.completionCriteria)}
           </span>
         </div>
-        <p class="muted">${escapeHtml(item.completionCriteria)}</p>
         ${evidence ? `
-          <blockquote class="evidence">
-            “${escapeHtml(evidence.quote)}”
-            <br><strong>${escapeHtml(evidence.speaker)}</strong>
-            · ${Math.round(evidence.confidence * 100)}% confidence
-          </blockquote>
-          <div class="actions">
-            <button class="secondary" data-reopen="${item.id}">Undo completion</button>
-          </div>
-        ` : ""}
+          <button class="undo-button" data-reopen="${item.id}">Undo</button>
+        ` : `<span class="badge">Open</span>`}
       </div>`;
   }).join("");
 
@@ -297,17 +330,17 @@ function render() {
         return `
         <div class="recommendation">
           <h3>${escapeHtml(task.title)}</h3>
-          <p><strong>Why this helps</strong><br>${escapeHtml(task.rationale)}</p>
+          <p>${escapeHtml(task.rationale)}</p>
           <div class="based-on">
-            <strong>Based on</strong>
+            <strong>Based on:</strong>
             ${basedOn.map(segment => `
               <blockquote>“${escapeHtml(segment.text)}”</blockquote>
             `).join("")}
           </div>
           <div class="actions">
-            <button class="primary" type="button"
+            <button class="button primary" type="button"
                     data-recommendation="${task.id}" data-status="accepted">Accept</button>
-            <button class="secondary" type="button"
+            <button class="button subtle" type="button"
                     data-recommendation="${task.id}" data-status="dismissed">Dismiss</button>
           </div>
         </div>`;
@@ -420,6 +453,8 @@ async function startMicrophone() {
     await startContinuousRecognition(recognizer);
     recognitionStarted = true;
     ensureMicrophoneSessionActive(sessionId);
+    elements.microphoneUnlock.classList.add("hidden");
+    elements.microphonePreview.textContent = "Listening for the next discussion point…";
     scheduleSpeechTokenRefresh(token, recognizer);
   } catch (error) {
     state.microphoneRecognizer = null;
@@ -472,7 +507,7 @@ async function stopMicrophone() {
     }
     state.microphoneBusy = false;
     elements.microphonePreview.textContent =
-      "Recognized speech will appear here before final segments are sent to the coach.";
+      "Tap the microphone to resume live coaching.";
     renderMicrophoneControls();
   }
 }
@@ -641,17 +676,23 @@ function renderMicrophoneControls() {
     !state.browserSpeechAvailable);
   const listening = Boolean(state.microphoneRecognizer);
   const sessionCompleted = state.session?.status === "completed";
-  elements.microphoneToggle.textContent = listening ? "Stop listening" : "Start listening";
+  elements.microphoneToggle.classList.toggle("listening", listening);
   elements.microphoneToggle.disabled = state.microphoneBusy
     || sessionCompleted
-    || (!listening
-      && (!elements.microphoneConsent.checked
-        || !elements.microphoneAccessKey.value));
+    || !state.browserSpeechAvailable;
+  elements.confirmMicrophone.disabled = state.microphoneBusy
+    || sessionCompleted
+    || !elements.microphoneConsent.checked
+    || !elements.microphoneAccessKey.value;
   elements.microphoneConsent.disabled =
     state.microphoneBusy || listening || sessionCompleted;
   elements.microphoneAccessKey.disabled =
     state.microphoneBusy || listening || sessionCompleted;
-  elements.microphoneStatus.textContent = listening ? "Listening" : "Microphone off";
+  elements.microphoneStatus.textContent = state.microphoneBusy
+    ? "Starting"
+    : listening
+      ? "Listening"
+      : "Off";
   elements.microphoneStatus.className =
     `status ${listening ? "listening" : "neutral"}`;
   elements.microphoneToggle.setAttribute("aria-pressed", listening ? "true" : "false");
@@ -659,7 +700,9 @@ function renderMicrophoneControls() {
     "aria-label",
     listening
       ? "Stop listening to the local microphone"
-      : "Start listening to the local microphone");
+      : elements.microphoneConsent.checked && elements.microphoneAccessKey.value
+        ? "Start listening to the local microphone"
+        : "Set up the local microphone");
 }
 
 function queueMicrophoneOperation(operation) {
