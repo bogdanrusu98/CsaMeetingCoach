@@ -7,6 +7,9 @@ namespace CsaMeetingCoach.Core;
 
 public sealed partial class HeuristicConversationCoachAgent : IConversationCoachAgent
 {
+    private const string AssignedActionPattern =
+        @"(?:send|deliver|finish|complete|validate|review|prepare|present|submit|share|provide|schedule|create|draft|publish|confirm|assess|coordinate|lead|own|handle|document|finalize|finalise)";
+
     private static readonly string[] ObjectiveMetaActions =
     [
         "discuss",
@@ -92,6 +95,85 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
         "cum ",
         "ce ",
         "putem"
+    ];
+
+    private static readonly string[] UncertainCommitmentCues =
+    [
+        "maybe",
+        "perhaps",
+        "possibly",
+        "might",
+        "not sure",
+        "unclear",
+        "not confirmed",
+        "not agreed",
+        "not decided",
+        "i think",
+        "we think",
+        "don t think",
+        "do not think",
+        "don t believe",
+        "do not believe",
+        "unlikely",
+        "need to decide",
+        "need to determine",
+        "do not know",
+        "don t know",
+        "poate",
+        "posibil",
+        "nu este clar",
+        "nu am stabilit"
+    ];
+
+    private static readonly HashSet<string> InvalidAssignmentSubjectTerms =
+    [
+        "it",
+        "this",
+        "that",
+        "the",
+        "a",
+        "an",
+        "who",
+        "whom",
+        "whose",
+        "what",
+        "which",
+        "whether",
+        "if",
+        "no",
+        "none",
+        "nobody",
+        "nothing",
+        "neither",
+        "nor",
+        "someone",
+        "somebody",
+        "anyone",
+        "anybody",
+        "everyone",
+        "everybody",
+        "one",
+        "platform",
+        "application",
+        "service",
+        "solution",
+        "system",
+        "migration",
+        "architecture",
+        "project",
+        "pilot",
+        "workload",
+        "process",
+        "technology",
+        "modernization"
+    ];
+
+    private static readonly HashSet<string> PersonalAssignmentSubjects =
+    [
+        "i",
+        "we",
+        "you",
+        "they"
     ];
 
     private static readonly string[] ExplicitMeasurableOutcomeCues =
@@ -189,6 +271,14 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
                 && ContainsEquivalentTerm(normalizedText, hint))
             .Distinct(StringComparer.Ordinal)
             .ToList();
+        var requiresCommitment = IsCommitmentItem(item);
+        var hasNamedAssignment = IsNextStepCommitmentItem(item)
+            && HasConfirmedActionAssignment(normalizedText, segment.Text);
+        if (hasNamedAssignment)
+        {
+            matchedHints.Add("named action assignment");
+        }
+
         if (IsObjectiveItem(item)
             && HasDirectConversationalObjective(normalizedText, segment.Text))
         {
@@ -201,11 +291,7 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
         }
 
         var confidence = Math.Min(0.97, 0.84 + ((matchedHints.Count - 1) * 0.03));
-        var normalizedTitle = Normalize(item.Title);
         var requiresMeasurableOutcome = RequiresMeasurableOutcome(item);
-        var requiresCommitment = normalizedTitle.Contains("next step", StringComparison.Ordinal)
-            || normalizedTitle.Contains("owner", StringComparison.Ordinal)
-            || normalizedTitle.Contains("urmator", StringComparison.Ordinal);
 
         var hasQuantitativeOutcome =
             QuantitativeOutcomeRegex().IsMatch(segment.Text);
@@ -220,7 +306,9 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
             confidence = Math.Min(confidence, 0.70);
         }
 
-        if (requiresCommitment && !CommitmentCues.Any(normalizedText.Contains))
+        if (requiresCommitment
+            && !hasNamedAssignment
+            && !CommitmentCues.Any(normalizedText.Contains))
         {
             confidence = Math.Min(confidence, 0.70);
         }
@@ -242,6 +330,56 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
             || definition.Contains("measurable outcome", StringComparison.Ordinal)
             || definition.Contains("criteriu de succes", StringComparison.Ordinal)
             || definition.Contains("rezultat masurabil", StringComparison.Ordinal);
+    }
+
+    private static bool IsCommitmentItem(ChecklistItemState item)
+    {
+        var definition = Normalize($"{item.Title} {item.CompletionCriteria}");
+        return definition.Contains("next step", StringComparison.Ordinal)
+            || definition.Contains("follow up", StringComparison.Ordinal)
+            || definition.Contains("owner", StringComparison.Ordinal)
+            || definition.Contains("due date", StringComparison.Ordinal)
+            || definition.Contains("deadline", StringComparison.Ordinal)
+            || definition.Contains("concrete commitment", StringComparison.Ordinal)
+            || definition.Contains("urmator", StringComparison.Ordinal)
+            || definition.Contains("responsabil", StringComparison.Ordinal)
+            || definition.Contains("termen", StringComparison.Ordinal);
+    }
+
+    private static bool IsNextStepCommitmentItem(ChecklistItemState item)
+    {
+        var title = Normalize(item.Title);
+        return title.Contains("next step", StringComparison.Ordinal)
+            || title.Contains("follow up", StringComparison.Ordinal)
+            || title.Contains("urmatorul pas", StringComparison.Ordinal);
+    }
+
+    private static bool HasConfirmedActionAssignment(
+        string normalizedText,
+        string originalText)
+    {
+        if (originalText.Contains('?')
+            || QuestionOpeningRegex().IsMatch(normalizedText)
+            || UncertainCommitmentCues.Any(cue =>
+                ContainsEvidenceHint(normalizedText, cue)))
+        {
+            return false;
+        }
+
+        var hasProperName = ProperNameActionAssignmentRegex().IsMatch(originalText);
+        var hasExplicitTiming = ExplicitTimingRegex().IsMatch(normalizedText);
+        return ActionAssignmentRegex()
+            .Matches(normalizedText)
+            .Select(match => match.Groups["subject"].Value)
+            .Any(subject =>
+            {
+                var subjectTerms = subject
+                    .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                return !subjectTerms.Any(InvalidAssignmentSubjectTerms.Contains)
+                    && (PersonalAssignmentSubjects.Contains(subject)
+                        || hasProperName
+                        || hasExplicitTiming);
+            });
     }
 
     private static IReadOnlyList<RecommendedTaskProposal> CreateRecommendations(
@@ -430,7 +568,7 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
     private static partial Regex DirectObjectiveRegex();
 
     [GeneratedRegex(
-        @"^(?:do|does|did|can|could|should|would|what|why|how|when|where|is|are|will)\b",
+        @"^(?:do|does|did|can|could|should|would|who|whom|whose|what|which|why|how|when|where|whether|is|are|will)\b",
         RegexOptions.CultureInvariant)]
     private static partial Regex QuestionOpeningRegex();
 
@@ -438,4 +576,23 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
         @"\b(?:do\s+not|don\s+t|does\s+not|doesn\s+t|did\s+not|didn\s+t|no\s+need|need\s+not|cannot|can\s+t|not\s+an?\s+(?:objective|priority|goal)|nu\s+(?:avem|vrem|este|trebuie)|fara\s+(?:obiectiv|prioritate))\b",
         RegexOptions.CultureInvariant)]
     private static partial Regex NegatedObjectiveRegex();
+
+    [GeneratedRegex(
+        @"(?:^|\s)(?<subject>[\p{L}\p{M}][\p{L}\p{M}'’-]*(?:\s+[\p{L}\p{M}][\p{L}\p{M}'’-]*)?)\s+(?:will|shall)\s+"
+            + AssignedActionPattern
+            + @"\b",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex ActionAssignmentRegex();
+
+    [GeneratedRegex(
+        @"\b\p{Lu}[\p{L}\p{M}'’-]*(?:\s+\p{Lu}[\p{L}\p{M}'’-]*)?\s+(?:will|shall)\s+"
+            + AssignedActionPattern
+            + @"\b",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex ProperNameActionAssignmentRegex();
+
+    [GeneratedRegex(
+        @"\b(?:(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}|(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|today|tomorrow|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex ExplicitTimingRegex();
 }

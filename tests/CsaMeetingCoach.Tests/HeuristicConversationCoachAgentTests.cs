@@ -51,6 +51,116 @@ public sealed class HeuristicConversationCoachAgentTests
         Assert.Equal(latest.Text, evaluation.EvidenceQuote);
     }
 
+    [Theory]
+    [InlineData(
+        "Radu will send the dependency assessment before close of business on August 6. "
+        + "Ioana will finish the security review by August 9, and Mihai will present "
+        + "the pilot proposal on August 11.")]
+    [InlineData("Radu will send the dependency assessment.")]
+    [InlineData("radu will send the dependency assessment on august 6.")]
+    [InlineData("李 will deliver the dependency assessment on august 6.")]
+    public async Task Analyze_NamedAssignmentsWithoutLiteralHints_CompletesNextSteps(
+        string transcript)
+    {
+        var purpose = TestData.CreatePurpose();
+        var checklist = new MeetingChecklistPlanner().CreateChecklist(
+            purpose,
+            requestedChecklist: null);
+        var latest = CreateFinalSegment(transcript);
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            new CoachAgentContext(purpose, checklist, [latest]),
+            latest,
+            CancellationToken.None);
+
+        var item = Assert.Single(checklist.Where(entry =>
+            entry.Title.Contains("next steps", StringComparison.OrdinalIgnoreCase)));
+        var evaluation = Assert.Single(decision.ChecklistEvaluations.Where(entry =>
+            entry.ChecklistItemId == item.Id));
+        Assert.True(evaluation.ShouldComplete);
+        Assert.Equal(latest.Text, evaluation.EvidenceQuote);
+    }
+
+    [Theory]
+    [InlineData("The platform will reduce annual costs by August 9.")]
+    [InlineData("We need to decide who will own the assessment and when it will be delivered.")]
+    [InlineData("Do we know whether Radu will send the report?")]
+    [InlineData("We need to know whether Radu will send the report.")]
+    [InlineData("Who will send the report")]
+    [InlineData("Whether Radu will send the report remains undecided.")]
+    [InlineData("Maybe Radu will send the report.")]
+    [InlineData("I think Radu will send the report.")]
+    [InlineData("I don't think Radu will send the report.")]
+    [InlineData("It is unclear whether Radu will send the report.")]
+    [InlineData("The new platform will send the report.")]
+    [InlineData("The robot will send the report.")]
+    [InlineData("No one will send the report.")]
+    [InlineData("Neither Radu nor Ioana will send the report.")]
+    public async Task Analyze_UnassignedFutureStatement_DoesNotCompleteNextSteps(
+        string transcript)
+    {
+        var purpose = TestData.CreatePurpose();
+        var checklist = new MeetingChecklistPlanner().CreateChecklist(
+            purpose,
+            requestedChecklist: null);
+        var latest = CreateFinalSegment(transcript);
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            new CoachAgentContext(purpose, checklist, [latest]),
+            latest,
+            CancellationToken.None);
+
+        var item = Assert.Single(checklist.Where(entry =>
+            entry.Title.Contains("next steps", StringComparison.OrdinalIgnoreCase)));
+        Assert.DoesNotContain(
+            decision.ChecklistEvaluations,
+            evaluation => evaluation.ChecklistItemId == item.Id
+                && evaluation.ShouldComplete);
+    }
+
+    [Fact]
+    public async Task Analyze_AssignedAssessmentWithWhetherClause_CompletesNextSteps()
+    {
+        var purpose = TestData.CreatePurpose();
+        var checklist = new MeetingChecklistPlanner().CreateChecklist(
+            purpose,
+            requestedChecklist: null);
+        var latest = CreateFinalSegment(
+            "Radu will assess whether the application supports SSO.");
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            new CoachAgentContext(purpose, checklist, [latest]),
+            latest,
+            CancellationToken.None);
+
+        var item = Assert.Single(checklist.Where(entry =>
+            entry.Title.Contains("next steps", StringComparison.OrdinalIgnoreCase)));
+        Assert.Contains(
+            decision.ChecklistEvaluations,
+            evaluation => evaluation.ChecklistItemId == item.Id
+                && evaluation.ShouldComplete);
+    }
+
+    [Fact]
+    public async Task Analyze_NamedAssignment_DoesNotCompleteUnrelatedOwnerItem()
+    {
+        var item = CreatePendingItem(
+            "Confirm the architecture owner",
+            "The architecture owner confirms the design.",
+            "architecture owner");
+        var latest = CreateFinalSegment("Radu will send the dependency assessment.");
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [item], [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.DoesNotContain(
+            decision.ChecklistEvaluations,
+            evaluation => evaluation.ChecklistItemId == item.Id
+                && evaluation.ShouldComplete);
+    }
+
     [Fact]
     public async Task Analyze_SubstringOnlyHint_DoesNotCompleteBusinessValue()
     {
