@@ -88,17 +88,26 @@ jobs:
         shell: powershell
         run: |
           $diagnosticsPath = "$env:RUNNER_TEMP\knowledge-indexer-diagnostics.txt"
-          $output = & dotnet run `
-            --project .\tools\CsaMeetingCoach.KnowledgeIndexer `
-            -c Release `
-            --no-build `
-            --no-restore `
-            -- `
-            --project-endpoint $env:FOUNDRY_PROJECT_ENDPOINT `
-            --source-directory .\knowledge `
-            --store-name "CSA Meeting Coach Knowledge" `
-            2> $diagnosticsPath
-          if ($LASTEXITCODE -ne 0) {
+          $previousErrorActionPreference = $ErrorActionPreference
+          try {
+            # Windows PowerShell 5.1 wraps native stderr as error records.
+            $ErrorActionPreference = "Continue"
+            $output = & dotnet run `
+              --project .\tools\CsaMeetingCoach.KnowledgeIndexer `
+              -c Release `
+              --no-build `
+              --no-restore `
+              -- `
+              --project-endpoint $env:FOUNDRY_PROJECT_ENDPOINT `
+              --source-directory .\knowledge `
+              --store-name "CSA Meeting Coach Knowledge" `
+              2> $diagnosticsPath
+            $indexerExitCode = $LASTEXITCODE
+          }
+          finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+          }
+          if ($indexerExitCode -ne 0) {
             Get-Content $diagnosticsPath
             throw "Knowledge indexing failed."
           }
