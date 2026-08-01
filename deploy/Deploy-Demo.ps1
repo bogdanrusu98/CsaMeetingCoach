@@ -230,7 +230,8 @@ function Ensure-ServiceDefinition {
 function Start-ServiceBounded {
     param(
         [Parameter(Mandatory)][string] $Name,
-        [ValidateRange(1, 300)][int] $TimeoutSeconds = 30
+        [ValidateRange(1, 300)][int] $TimeoutSeconds = 30,
+        [switch] $AcceptStartPending
     )
 
     $service = Get-Service -Name $Name -ErrorAction Stop
@@ -245,6 +246,9 @@ function Start-ServiceBounded {
     do {
         $service = Get-Service -Name $Name -ErrorAction Stop
         if ($service.Status -eq "Running") {
+            return
+        }
+        if ($AcceptStartPending -and $service.Status -eq "StartPending") {
             return
         }
         if ($service.Status -eq "Stopped") {
@@ -293,11 +297,24 @@ function Wait-ApiHealth {
 }
 
 function Wait-HttpsHealth {
-    param([Parameter(Mandatory)][string] $PublicHostname)
+    param(
+        [Parameter(Mandatory)][string] $PublicHostname,
+        [ValidateRange(1, 300)][int] $TimeoutSeconds = 120
+    )
 
     $curl = Get-Command "curl.exe" -ErrorAction Stop
     $lastError = $null
-    for ($attempt = 0; $attempt -lt 60; $attempt++) {
+    $timeoutMilliseconds = [long]$TimeoutSeconds * 1000
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    while ($stopwatch.ElapsedMilliseconds -lt $timeoutMilliseconds) {
+        $remainingSeconds = [int][Math]::Floor((
+            $timeoutMilliseconds - $stopwatch.ElapsedMilliseconds) / 1000)
+        if ($remainingSeconds -lt 1) {
+            break
+        }
+        $probeTimeoutSeconds = [Math]::Min(10, $remainingSeconds)
+        $connectTimeoutSeconds = [Math]::Min(5, $probeTimeoutSeconds)
+
         $previousErrorActionPreference = $ErrorActionPreference
         try {
             $ErrorActionPreference = "Continue"
@@ -305,8 +322,8 @@ function Wait-HttpsHealth {
                 --fail `
                 --silent `
                 --show-error `
-                --connect-timeout 5 `
-                --max-time 10 `
+                --connect-timeout $connectTimeoutSeconds `
+                --max-time $probeTimeoutSeconds `
                 --resolve "${PublicHostname}:443:127.0.0.1" `
                 "https://$PublicHostname/api/health" 2>&1
             $curlExitCode = $LASTEXITCODE
@@ -330,10 +347,15 @@ function Wait-HttpsHealth {
             $lastError = $response -join [Environment]::NewLine
         }
 
-        Start-Sleep -Seconds 2
+        $remainingMilliseconds =
+            $timeoutMilliseconds - $stopwatch.ElapsedMilliseconds
+        if ($remainingMilliseconds -le 0) {
+            break
+        }
+        Start-Sleep -Milliseconds ([Math]::Min(2000, $remainingMilliseconds))
     }
 
-    throw "The HTTPS endpoint did not become healthy. Last error: $lastError"
+    throw "The HTTPS endpoint did not become healthy within $TimeoutSeconds seconds. Last error: $lastError"
 }
 
 function Ensure-HttpsFirewallRule {
@@ -578,8 +600,11 @@ try {
         -Name $caddyServiceName `
         -DisplayName "CSA Meeting Coach HTTPS Proxy" `
         -BinaryPath $caddyBinaryPath
-    Start-ServiceBounded -Name $caddyServiceName -TimeoutSeconds 180
-    Wait-HttpsHealth -PublicHostname $Hostname
+    Start-ServiceBounded `
+        -Name $caddyServiceName `
+        -TimeoutSeconds 180 `
+        -AcceptStartPending
+    Wait-HttpsHealth -PublicHostname $Hostname -TimeoutSeconds 180
 }
 catch {
     $deploymentError = $_
@@ -620,7 +645,11 @@ catch {
         Remove-Item $caddyConfig -Force -ErrorAction SilentlyContinue
     }
     if ($caddyServiceExisted) {
-        Start-ServiceBounded -Name $caddyServiceName -TimeoutSeconds 180
+        Start-ServiceBounded `
+            -Name $caddyServiceName `
+            -TimeoutSeconds 180 `
+            -AcceptStartPending
+        Wait-HttpsHealth -PublicHostname $Hostname -TimeoutSeconds 180
     }
     else {
         Remove-ServiceDefinition -Name $caddyServiceName
