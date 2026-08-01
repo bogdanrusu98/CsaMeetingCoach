@@ -137,6 +137,72 @@ public sealed class CoachApiIntegrationTests
         Assert.Equal(sourceSegmentId, persisted.SourceSegmentId);
     }
 
+    [Fact]
+    public async Task RecommendationStatusAndReopenEndpointsUpdateTheLivePlan()
+    {
+        using var factory = new CoachApiFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = TestBaseAddress
+        });
+        var session = await CreateSessionAsync(client, "meeting-recommendations");
+        session = await AddTranscriptAsync(
+            client,
+            session.Id,
+            "Can we agree an owner for the migration assessment?");
+        var recommendation = Assert.Single(session.RecommendedTasks);
+        Assert.Equal(RecommendationStatus.Proposed, recommendation.Status);
+
+        using var acceptResponse = await client.PostAsJsonAsync(
+            $"/api/sessions/{session.Id:D}/recommendations/{recommendation.Id:D}/status",
+            new { status = "accepted" });
+        acceptResponse.EnsureSuccessStatusCode();
+        var accepted = (await acceptResponse.Content.ReadFromJsonAsync<MeetingSessionState>(
+            JsonOptions))!;
+        var acceptedRecommendation = Assert.Single(accepted.RecommendedTasks);
+        Assert.Equal(RecommendationStatus.Accepted, acceptedRecommendation.Status);
+        Assert.NotNull(acceptedRecommendation.AcceptedAtUtc);
+
+        var completed = await AddTranscriptAsync(
+            client,
+            session.Id,
+            "We agreed the owner for the migration assessment and will send it Friday.");
+        var completedRecommendation = Assert.Single(
+            completed.RecommendedTasks.Where(task => task.Id == recommendation.Id));
+        Assert.Equal(RecommendationStatus.Completed, completedRecommendation.Status);
+        Assert.NotNull(completedRecommendation.CompletedAtUtc);
+        Assert.False(string.IsNullOrWhiteSpace(completedRecommendation.CompletionReason));
+        Assert.NotEmpty(completedRecommendation.Evidence!);
+
+        using var reopenResponse = await client.PostAsync(
+            $"/api/sessions/{session.Id:D}/recommendations/{recommendation.Id:D}/reopen",
+            content: null);
+        reopenResponse.EnsureSuccessStatusCode();
+        var reopened = (await reopenResponse.Content.ReadFromJsonAsync<MeetingSessionState>(
+            JsonOptions))!;
+        var reopenedRecommendation = Assert.Single(
+            reopened.RecommendedTasks.Where(task => task.Id == recommendation.Id));
+        Assert.Equal(RecommendationStatus.Accepted, reopenedRecommendation.Status);
+        Assert.Null(reopenedRecommendation.CompletedAtUtc);
+        Assert.Empty(reopenedRecommendation.Evidence!);
+
+        var dismissSession = await CreateSessionAsync(client, "meeting-dismiss");
+        dismissSession = await AddTranscriptAsync(
+            client,
+            dismissSession.Id,
+            "Can we confirm the customer's priority before closing?");
+        var recommendationToDismiss = Assert.Single(dismissSession.RecommendedTasks);
+        using var dismissResponse = await client.PostAsJsonAsync(
+            $"/api/sessions/{dismissSession.Id:D}/recommendations/{recommendationToDismiss.Id:D}/status",
+            new { status = "dismissed" });
+        dismissResponse.EnsureSuccessStatusCode();
+        var dismissed = (await dismissResponse.Content.ReadFromJsonAsync<MeetingSessionState>(
+            JsonOptions))!;
+        var dismissedRecommendation = Assert.Single(dismissed.RecommendedTasks);
+        Assert.Equal(RecommendationStatus.Dismissed, dismissedRecommendation.Status);
+        Assert.Null(dismissedRecommendation.AcceptedAtUtc);
+    }
+
     private static CoachApiClient CreateCoachClient(
         HttpClient httpClient,
         string apiKey,
@@ -176,6 +242,19 @@ public sealed class CoachApiIntegrationTests
         Guid sessionId)
     {
         using var response = await client.GetAsync($"/api/sessions/{sessionId:D}");
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<MeetingSessionState>(JsonOptions))!;
+    }
+
+    private static async Task<MeetingSessionState> AddTranscriptAsync(
+        HttpClient client,
+        Guid sessionId,
+        string text)
+    {
+        using var response = await client.PostAsJsonAsync(
+            $"/api/sessions/{sessionId:D}/transcript",
+            new AddTranscriptSegmentRequest("CSA", text),
+            JsonOptions);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<MeetingSessionState>(JsonOptions))!;
     }

@@ -13,7 +13,16 @@ public sealed class FoundryConversationCoachAgentTests
     public async Task Analyze_SendsMinimalMeetingDataAndParsesDecision()
     {
         var latestSegment = CreateLatestSegment();
-        var context = CreateContext(latestSegment);
+        var acceptedRecommendation = new RecommendedTaskState(
+            Guid.NewGuid(),
+            "Discuss rollout risk",
+            "This helps the customer choose a safe rollout.",
+            0.9,
+            [Guid.NewGuid()],
+            RecommendationStatus.Accepted,
+            latestSegment.OccurredAtUtc.AddMinutes(-2),
+            latestSegment.OccurredAtUtc.AddMinutes(-1));
+        var context = CreateContext(latestSegment, [acceptedRecommendation]);
         var checklistItem = context.Checklist[0];
         var response = JsonSerializer.Serialize(
             new CoachAgentDecision(
@@ -31,6 +40,14 @@ public sealed class FoundryConversationCoachAgentTests
                         "The latest segment contains an explicit follow-up.",
                         0.9,
                         [latestSegment.Id])
+                ],
+                [
+                    new RecommendationEvaluation(
+                        acceptedRecommendation.Id,
+                        true,
+                        0.91,
+                        "The topic was explicitly covered.",
+                        "owner and deadline")
                 ]),
             JsonOptions);
         var client = new RecordingFoundryClient(response);
@@ -43,6 +60,7 @@ public sealed class FoundryConversationCoachAgentTests
 
         Assert.Single(decision.ChecklistEvaluations);
         Assert.Single(decision.RecommendedTasks);
+        Assert.Single(decision.RecommendationEvaluations!);
         using var payload = JsonDocument.Parse(client.InputJson!);
         var root = payload.RootElement;
         Assert.Equal(
@@ -57,6 +75,9 @@ public sealed class FoundryConversationCoachAgentTests
         Assert.False(pendingItem.TryGetProperty("evidence", out _));
         Assert.False(
             root.GetProperty("latestSegment").TryGetProperty("isFinal", out _));
+        Assert.Equal(
+            acceptedRecommendation.Id,
+            root.GetProperty("acceptedRecommendations")[0].GetProperty("id").GetGuid());
     }
 
     [Fact]
@@ -65,7 +86,7 @@ public sealed class FoundryConversationCoachAgentTests
         var latestSegment = CreateLatestSegment();
         var agent = new FoundryConversationCoachAgent(
             new RecordingFoundryClient(
-                """{"checklistEvaluations":[],"recommendedTasks":[],"extra":true}"""));
+                """{"checklistEvaluations":[],"recommendedTasks":[],"recommendationEvaluations":[],"extra":true}"""));
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             agent.AnalyzeAsync(
@@ -91,6 +112,7 @@ public sealed class FoundryConversationCoachAgentTests
                         "Invented evidence.",
                         "customer approved the plan")
                 ],
+                [],
                 []),
             JsonOptions);
         var agent = new FoundryConversationCoachAgent(
@@ -117,7 +139,8 @@ public sealed class FoundryConversationCoachAgentTests
                         "No matching source.",
                         0.8,
                         [Guid.NewGuid()])
-                ]),
+                ],
+                []),
             JsonOptions);
         var agent = new FoundryConversationCoachAgent(
             new RecordingFoundryClient(response));
@@ -146,7 +169,37 @@ public sealed class FoundryConversationCoachAgentTests
         Assert.Same(providerException, observed);
     }
 
-    private static CoachAgentContext CreateContext(TranscriptSegment latestSegment)
+    [Fact]
+    public async Task Analyze_UnknownRecommendationEvaluation_IsPreservedForCoordinatorWarning()
+    {
+        var latestSegment = CreateLatestSegment();
+        var response = JsonSerializer.Serialize(
+            new CoachAgentDecision(
+                [],
+                [],
+                [
+                    new RecommendationEvaluation(
+                        Guid.NewGuid(),
+                        true,
+                        0.9,
+                        "Unsupported.",
+                        "owner and deadline")
+                ]),
+            JsonOptions);
+        var agent = new FoundryConversationCoachAgent(
+            new RecordingFoundryClient(response));
+
+        var decision = await agent.AnalyzeAsync(
+            CreateContext(latestSegment),
+            latestSegment,
+            CancellationToken.None);
+
+        Assert.Single(decision.RecommendationEvaluations!);
+    }
+
+    private static CoachAgentContext CreateContext(
+        TranscriptSegment latestSegment,
+        IReadOnlyList<RecommendedTaskState>? recommendations = null)
     {
         var checklist = new MeetingChecklistPlanner().CreateChecklist(
             TestData.CreatePurpose(),
@@ -154,7 +207,8 @@ public sealed class FoundryConversationCoachAgentTests
         return new CoachAgentContext(
             TestData.CreatePurpose(),
             checklist,
-            [latestSegment]);
+            [latestSegment],
+            recommendations);
     }
 
     private static TranscriptSegment CreateLatestSegment() =>

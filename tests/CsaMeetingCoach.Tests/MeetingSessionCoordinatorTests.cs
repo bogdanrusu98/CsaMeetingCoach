@@ -244,6 +244,177 @@ public sealed class MeetingSessionCoordinatorTests
         Assert.Equal(
             RecommendationStatus.Accepted,
             Assert.Single(accepted.RecommendedTasks).Status);
+        Assert.NotNull(Assert.Single(accepted.RecommendedTasks).AcceptedAtUtc);
+        Assert.Null(Assert.Single(accepted.RecommendedTasks).CompletedAtUtc);
+    }
+
+    [Fact]
+    public async Task AcceptedRecommendation_LaterExactEvidence_AutoCompletesAndReopens()
+    {
+        var agent = new RecommendationLifecycleAgent();
+        var coordinator = CreateCoordinator(agent);
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        var proposed = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Customer",
+                "How can we reduce deployment risk?"),
+            CancellationToken.None);
+        var recommendation = Assert.Single(proposed.RecommendedTasks);
+        var accepted = await coordinator.SetRecommendationStatusAsync(
+            session.Id,
+            recommendation.Id,
+            RecommendationStatus.Accepted,
+            CancellationToken.None);
+        var acceptedTask = Assert.Single(accepted.RecommendedTasks);
+        var evidenceTime = acceptedTask.AcceptedAtUtc!.Value.AddSeconds(1);
+
+        var completed = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "CSA",
+                "We can reduce deployment risk with staged rollout rings.",
+                evidenceTime),
+            CancellationToken.None);
+
+        var completedTask = Assert.Single(completed.RecommendedTasks);
+        Assert.Equal(RecommendationStatus.Completed, completedTask.Status);
+        Assert.NotNull(completedTask.CompletedAtUtc);
+        Assert.Equal(
+            "reduce deployment risk with staged rollout rings",
+            Assert.Single(completedTask.Evidence!).Quote);
+        Assert.Equal("CSA", completedTask.Evidence![0].Speaker);
+        Assert.Equal(evidenceTime, completedTask.Evidence[0].OccurredAtUtc);
+        Assert.Equal(0.93, completedTask.Evidence[0].Confidence);
+        Assert.NotNull(completedTask.CompletionReason);
+
+        var reopened = await coordinator.ReopenRecommendationAsync(
+            session.Id,
+            recommendation.Id,
+            CancellationToken.None);
+        var reopenedTask = Assert.Single(reopened.RecommendedTasks);
+        Assert.Equal(RecommendationStatus.Accepted, reopenedTask.Status);
+        Assert.NotNull(reopenedTask.AcceptedAtUtc);
+        Assert.Null(reopenedTask.CompletedAtUtc);
+        Assert.Empty(reopenedTask.Evidence!);
+    }
+
+    [Fact]
+    public async Task AcceptedRecommendation_PreAcceptanceEvidence_DoesNotComplete()
+    {
+        var agent = new RecommendationLifecycleAgent();
+        var coordinator = CreateCoordinator(agent);
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        var proposed = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Customer",
+                "How can we reduce deployment risk?"),
+            CancellationToken.None);
+        var recommendation = Assert.Single(proposed.RecommendedTasks);
+        var accepted = await coordinator.SetRecommendationStatusAsync(
+            session.Id,
+            recommendation.Id,
+            RecommendationStatus.Accepted,
+            CancellationToken.None);
+
+        var unchanged = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "CSA",
+                "We can reduce deployment risk with staged rollout rings.",
+                Assert.Single(accepted.RecommendedTasks).AcceptedAtUtc),
+            CancellationToken.None);
+
+        Assert.Equal(
+            RecommendationStatus.Accepted,
+            Assert.Single(unchanged.RecommendedTasks).Status);
+        Assert.Contains(
+            unchanged.Warnings,
+            warning => warning.Contains("after acceptance", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task RecommendationCompletion_InventedOrUnknownEvidence_IsRejectedWithWarning()
+    {
+        var agent = new RecommendationLifecycleAgent
+        {
+            ReturnInventedEvidence = true,
+            IncludeUnknownEvaluation = true
+        };
+        var coordinator = CreateCoordinator(agent);
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        var proposed = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Customer",
+                "How can we reduce deployment risk?"),
+            CancellationToken.None);
+        var recommendation = Assert.Single(proposed.RecommendedTasks);
+        var accepted = await coordinator.SetRecommendationStatusAsync(
+            session.Id,
+            recommendation.Id,
+            RecommendationStatus.Accepted,
+            CancellationToken.None);
+
+        var unchanged = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "CSA",
+                "We can reduce deployment risk with staged rollout rings.",
+                Assert.Single(accepted.RecommendedTasks).AcceptedAtUtc!.Value.AddSeconds(1)),
+            CancellationToken.None);
+
+        Assert.Equal(
+            RecommendationStatus.Accepted,
+            Assert.Single(unchanged.RecommendedTasks).Status);
+        Assert.Contains(
+            unchanged.Warnings,
+            warning => warning.Contains("not present", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            unchanged.Warnings,
+            warning => warning.Contains("unknown recommendation", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task DismissedRecommendation_NeverCompletes()
+    {
+        var agent = new RecommendationLifecycleAgent();
+        var coordinator = CreateCoordinator(agent);
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        var proposed = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Customer",
+                "How can we reduce deployment risk?"),
+            CancellationToken.None);
+        var recommendation = Assert.Single(proposed.RecommendedTasks);
+        var dismissed = await coordinator.SetRecommendationStatusAsync(
+            session.Id,
+            recommendation.Id,
+            RecommendationStatus.Dismissed,
+            CancellationToken.None);
+
+        var unchanged = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "CSA",
+                "We can reduce deployment risk with staged rollout rings.",
+                DateTimeOffset.UtcNow.AddSeconds(1)),
+            CancellationToken.None);
+
+        Assert.Equal(
+            RecommendationStatus.Dismissed,
+            Assert.Single(unchanged.RecommendedTasks).Status);
+        Assert.Null(Assert.Single(dismissed.RecommendedTasks).AcceptedAtUtc);
     }
 
     [Fact]
@@ -330,6 +501,59 @@ public sealed class MeetingSessionCoordinatorTests
             }
 
             return Task.FromResult(new CoachAgentDecision([], []));
+        }
+    }
+
+    private sealed class RecommendationLifecycleAgent : IConversationCoachAgent
+    {
+        public bool ReturnInventedEvidence { get; init; }
+
+        public bool IncludeUnknownEvaluation { get; init; }
+
+        public Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken)
+        {
+            var recommendation = (context.RecommendedTasks ?? [])
+                .FirstOrDefault(item => item.Status is
+                    RecommendationStatus.Accepted or RecommendationStatus.Dismissed);
+            if (recommendation is null)
+            {
+                return Task.FromResult(new CoachAgentDecision(
+                    [],
+                    [
+                        new RecommendedTaskProposal(
+                            "Ask about deployment risk reduction",
+                            "This helps the customer choose a safer rollout approach.",
+                            0.9,
+                            [latestSegment.Id])
+                    ],
+                    []));
+            }
+
+            var evaluations = new List<RecommendationEvaluation>
+            {
+                new(
+                    recommendation.Id,
+                    true,
+                    0.93,
+                    "The rollout approach was explicitly discussed.",
+                    ReturnInventedEvidence
+                        ? "The customer approved an impossible quote."
+                        : "reduce deployment risk with staged rollout rings")
+            };
+            if (IncludeUnknownEvaluation)
+            {
+                evaluations.Add(new RecommendationEvaluation(
+                    Guid.NewGuid(),
+                    true,
+                    0.99,
+                    "Unknown.",
+                    latestSegment.Text));
+            }
+
+            return Task.FromResult(new CoachAgentDecision([], [], evaluations));
         }
     }
 }

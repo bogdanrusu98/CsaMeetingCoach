@@ -20,7 +20,7 @@ env:
   COACH_AGENT_PROVIDER: ${{ vars.COACH_AGENT_PROVIDER || 'Local' }}
   FOUNDRY_PROJECT_ENDPOINT: https://csa-meeting-coach-resource.services.ai.azure.com/api/projects/csa-meeting-coach
   FOUNDRY_MODEL_DEPLOYMENT: gpt-4.1-mini
-  FOUNDRY_AGENT_NAME: csa-meeting-coach-v2
+  FOUNDRY_AGENT_NAME: csa-meeting-coach-v3
   BROWSER_SPEECH_ENABLED: ${{ vars.BROWSER_SPEECH_ENABLED || 'false' }}
   BROWSER_SPEECH_ACCESS_KEY: ${{ secrets.BROWSER_SPEECH_ACCESS_KEY }}
   TRANSCRIPT_ADAPTER_AUTH_MODE: ${{ vars.TRANSCRIPT_ADAPTER_AUTH_MODE || 'Disabled' }}

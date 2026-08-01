@@ -125,7 +125,8 @@ public sealed class MeetingSessionCoordinator(
             var context = new CoachAgentContext(
                 transcriptUpdate.Purpose,
                 transcriptUpdate.Checklist,
-                finalTranscript.TakeLast(20).ToArray());
+                finalTranscript.TakeLast(20).ToArray(),
+                transcriptUpdate.RecommendedTasks);
             var decision = await coachAgent.AnalyzeAsync(context, segment, cancellationToken);
 
             var warnings = transcriptUpdate.Warnings.ToList();
@@ -134,10 +135,17 @@ public sealed class MeetingSessionCoordinator(
                 decision.ChecklistEvaluations,
                 segment,
                 warnings);
-            var recommendations = ApplyRecommendations(
+            var evaluatedRecommendations = ApplyRecommendationEvaluations(
                 transcriptUpdate.RecommendedTasks,
+                decision.RecommendationEvaluations ?? [],
+                segment,
+                warnings);
+            var recommendations = ApplyRecommendations(
+                evaluatedRecommendations,
                 decision.RecommendedTasks,
                 finalTranscript,
+                transcriptUpdate.Checklist,
+                transcriptUpdate.Purpose,
                 warnings);
             var analyzedAtUtc = DateTimeOffset.UtcNow;
             var analyzedTranscript = transcript
@@ -225,7 +233,59 @@ public sealed class MeetingSessionCoordinator(
                 }
 
                 found = true;
-                return task with { Status = status };
+                if (task.Status != RecommendationStatus.Proposed)
+                {
+                    throw new InvalidOperationException(
+                        $"Recommended task {recommendationId} is no longer proposed.");
+                }
+
+                return task with
+                {
+                    Status = status,
+                    AcceptedAtUtc = status == RecommendationStatus.Accepted
+                        ? DateTimeOffset.UtcNow
+                        : null
+                };
+            }).ToArray();
+
+            if (!found)
+            {
+                throw new KeyNotFoundException($"Recommended task {recommendationId} was not found.");
+            }
+
+            return Task.FromResult(session with { RecommendedTasks = recommendations });
+        }, cancellationToken);
+    }
+
+    public Task<MeetingSessionState> ReopenRecommendationAsync(
+        Guid sessionId,
+        Guid recommendationId,
+        CancellationToken cancellationToken)
+    {
+        return MutateAsync(sessionId, session =>
+        {
+            var found = false;
+            var recommendations = session.RecommendedTasks.Select(task =>
+            {
+                if (task.Id != recommendationId)
+                {
+                    return task;
+                }
+
+                found = true;
+                if (task.Status != RecommendationStatus.Completed)
+                {
+                    throw new InvalidOperationException(
+                        $"Recommended task {recommendationId} is not completed.");
+                }
+
+                return task with
+                {
+                    Status = RecommendationStatus.Accepted,
+                    CompletedAtUtc = null,
+                    CompletionReason = null,
+                    Evidence = []
+                };
             }).ToArray();
 
             if (!found)
@@ -328,12 +388,20 @@ public sealed class MeetingSessionCoordinator(
         IReadOnlyList<RecommendedTaskState> current,
         IReadOnlyList<RecommendedTaskProposal> proposals,
         IReadOnlyList<TranscriptSegment> transcript,
+        IReadOnlyList<ChecklistItemState> checklist,
+        MeetingPurpose purpose,
         ICollection<string> warnings)
     {
         var segmentIds = transcript.Select(segment => segment.Id).ToHashSet();
         var knownTitles = current
             .Select(task => HeuristicConversationCoachAgent.Normalize(task.Title))
             .ToHashSet(StringComparer.Ordinal);
+        var coveredContext = checklist
+            .SelectMany(item => new[] { item.Title, item.CompletionCriteria })
+            .Concat(purpose.SuccessCriteria)
+            .Select(HeuristicConversationCoachAgent.Normalize)
+            .Where(value => value.Length > 0)
+            .ToArray();
         var result = current.ToList();
 
         foreach (var proposal in proposals.Where(item => item.Confidence >= 0.70))
@@ -353,7 +421,8 @@ public sealed class MeetingSessionCoordinator(
             }
 
             var normalizedTitle = HeuristicConversationCoachAgent.Normalize(proposal.Title);
-            if (!knownTitles.Add(normalizedTitle))
+            if (!knownTitles.Add(normalizedTitle)
+                || coveredContext.Any(context => context == normalizedTitle))
             {
                 continue;
             }
@@ -365,10 +434,84 @@ public sealed class MeetingSessionCoordinator(
                 Math.Clamp(proposal.Confidence, 0, 1),
                 proposal.SourceTranscriptSegmentIds.Distinct().ToArray(),
                 RecommendationStatus.Proposed,
-                DateTimeOffset.UtcNow));
+                DateTimeOffset.UtcNow,
+                Evidence: []));
         }
 
         return result;
+    }
+
+    private static IReadOnlyList<RecommendedTaskState> ApplyRecommendationEvaluations(
+        IReadOnlyList<RecommendedTaskState> current,
+        IReadOnlyList<RecommendationEvaluation> evaluations,
+        TranscriptSegment latestSegment,
+        ICollection<string> warnings)
+    {
+        var knownIds = current.Select(item => item.Id).ToHashSet();
+        foreach (var unknown in evaluations.Where(item => !knownIds.Contains(item.RecommendationId)))
+        {
+            warnings.Add(
+                $"Rejected recommendation completion for unknown recommendation {unknown.RecommendationId}.");
+        }
+        foreach (var invalid in evaluations.Where(item => item.ShouldComplete
+            && (!double.IsFinite(item.Confidence)
+                || item.Confidence is < 0 or > 1)))
+        {
+            warnings.Add(
+                $"Rejected recommendation completion {invalid.RecommendationId}: confidence was invalid.");
+        }
+
+        var byItem = evaluations
+            .Where(evaluation => knownIds.Contains(evaluation.RecommendationId)
+                && evaluation.ShouldComplete
+                && double.IsFinite(evaluation.Confidence)
+                && evaluation.Confidence is >= AutoCompletionThreshold and <= 1)
+            .GroupBy(evaluation => evaluation.RecommendationId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderByDescending(item => item.Confidence).First());
+
+        return current.Select(item =>
+        {
+            if (item.Status != RecommendationStatus.Accepted
+                || !byItem.TryGetValue(item.Id, out var evaluation))
+            {
+                return item;
+            }
+
+            if (item.AcceptedAtUtc is null
+                || latestSegment.OccurredAtUtc <= item.AcceptedAtUtc
+                || item.SourceTranscriptSegmentIds.Contains(latestSegment.Id))
+            {
+                warnings.Add(
+                    $"Rejected completion for '{item.Title}': evidence did not occur after acceptance.");
+                return item;
+            }
+
+            if (string.IsNullOrWhiteSpace(evaluation.EvidenceQuote)
+                || !latestSegment.Text.Contains(
+                    evaluation.EvidenceQuote,
+                    StringComparison.Ordinal))
+            {
+                warnings.Add(
+                    $"Rejected completion for '{item.Title}': agent evidence was not present in the latest transcript segment.");
+                return item;
+            }
+
+            var evidence = new ChecklistEvidence(
+                latestSegment.Id,
+                latestSegment.Speaker,
+                evaluation.EvidenceQuote,
+                latestSegment.OccurredAtUtc,
+                Math.Clamp(evaluation.Confidence, 0, 1));
+            return item with
+            {
+                Status = RecommendationStatus.Completed,
+                CompletedAtUtc = DateTimeOffset.UtcNow,
+                CompletionReason = evaluation.Reason.Trim(),
+                Evidence = (item.Evidence ?? []).Append(evidence).TakeLast(5).ToArray()
+            };
+        }).ToArray();
     }
 
     private static void ValidatePurpose(MeetingPurpose purpose)

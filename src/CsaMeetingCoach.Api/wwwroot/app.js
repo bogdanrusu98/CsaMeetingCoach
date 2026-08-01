@@ -28,6 +28,7 @@ const elements = {
   microphonePreview: document.querySelector("#microphone-preview"),
   checklist: document.querySelector("#checklist"),
   recommendations: document.querySelector("#recommendations"),
+  acceptedRecommendations: document.querySelector("#accepted-recommendations"),
   transcript: document.querySelector("#transcript"),
   warningsPanel: document.querySelector("#warnings-panel"),
   warnings: document.querySelector("#warnings"),
@@ -135,8 +136,10 @@ document.querySelector("#complete-meeting").addEventListener("click", async even
 });
 
 elements.checklist.addEventListener("click", async event => {
-  const button = event.target.closest("[data-reopen]");
-  if (!button) {
+  const button = event.target instanceof Element
+    ? event.target.closest("button[data-reopen]")
+    : null;
+  if (!button || !elements.checklist.contains(button)) {
     return;
   }
 
@@ -148,21 +151,31 @@ elements.checklist.addEventListener("click", async event => {
   });
 });
 
-elements.recommendations.addEventListener("click", async event => {
-  const button = event.target.closest("[data-recommendation]");
-  if (!button) {
+elements.sessionView.addEventListener("click", async event => {
+  const target = event.target instanceof Element ? event.target : null;
+  const statusButton = target?.closest("button[data-recommendation][data-status]");
+  if (statusButton && elements.recommendations.contains(statusButton)) {
+    await runWithButton(statusButton, async () => {
+      state.session = await api(
+        `/api/sessions/${state.session.id}/recommendations/${statusButton.dataset.recommendation}/status`,
+        {
+          method: "POST",
+          body: JSON.stringify({ status: statusButton.dataset.status })
+        });
+      render();
+    });
     return;
   }
 
-  await runWithButton(button, async () => {
-    state.session = await api(
-      `/api/sessions/${state.session.id}/recommendations/${button.dataset.recommendation}/status`,
-      {
-        method: "POST",
-        body: JSON.stringify({ status: button.dataset.status })
-      });
-    render();
-  });
+  const reopenButton = target?.closest("button[data-recommendation-reopen]");
+  if (reopenButton && elements.acceptedRecommendations.contains(reopenButton)) {
+    await runWithButton(reopenButton, async () => {
+      state.session = await api(
+        `/api/sessions/${state.session.id}/recommendations/${reopenButton.dataset.recommendationReopen}/reopen`,
+        { method: "POST" });
+      render();
+    });
+  }
 });
 
 function connectEvents(sessionId) {
@@ -203,26 +216,57 @@ function render() {
   }
 
   document.querySelector("#meeting-type-label").textContent =
-    `${session.purpose.meetingType} · revision ${session.revision}`;
+    session.purpose.meetingType;
   document.querySelector("#purpose-title").textContent = session.purpose.title;
   document.querySelector("#purpose-objective").textContent = session.purpose.objective;
   document.querySelector("#complete-meeting").disabled = session.status === "completed";
   document.querySelector("#transcript-form button").disabled = session.status === "completed";
   renderMicrophoneControls();
 
-  const completed = session.checklist.filter(item => item.status === "completed").length;
+  const liveRecommendations = session.recommendedTasks.filter(
+    task => task.status === "accepted" || task.status === "completed");
+  const completed = session.checklist.filter(item => item.status === "completed").length
+    + liveRecommendations.filter(task => task.status === "completed").length;
+  const total = session.checklist.length + liveRecommendations.length;
   document.querySelector("#progress-label").textContent =
-    `${completed}/${session.checklist.length} complete`;
+    `${completed}/${total} discussed`;
+
+  elements.acceptedRecommendations.innerHTML = liveRecommendations.map(task => {
+    const isComplete = task.status === "completed";
+    const evidence = task.evidence?.at(-1);
+    return `
+      <div class="plan-item recommendation ${isComplete ? "completed" : ""}">
+        <div class="item-row">
+          <span class="item-title">${escapeHtml(task.title)}</span>
+          <span class="badge ${isComplete ? "success" : "ready"}">
+            ${isComplete ? "Discussed" : "Ready to cover"}
+          </span>
+        </div>
+        <p class="muted">${escapeHtml(task.rationale)}</p>
+        ${isComplete && evidence ? `
+          <blockquote class="evidence">
+            “${escapeHtml(evidence.quote)}”
+            <br><strong>${escapeHtml(evidence.speaker)}</strong>
+          </blockquote>
+        ` : ""}
+        ${isComplete ? `
+          <div class="actions">
+            <button class="secondary" type="button"
+                    data-recommendation-reopen="${task.id}">Undo</button>
+          </div>
+        ` : ""}
+      </div>`;
+  }).join("");
 
   elements.checklist.innerHTML = session.checklist.map(item => {
     const isComplete = item.status === "completed";
     const evidence = item.evidence.at(-1);
     return `
-      <div class="checklist-item ${isComplete ? "completed" : ""}">
+      <div class="checklist-item meeting-goal ${isComplete ? "completed" : ""}">
         <div class="item-row">
           <span class="item-title">${escapeHtml(item.title)}</span>
           <span class="badge ${isComplete ? "success" : "pending"}">
-            ${isComplete ? "Auto-checked" : "Pending"}
+            ${isComplete ? "Discussed" : "To discuss"}
           </span>
         </div>
         <p class="muted">${escapeHtml(item.completionCriteria)}</p>
@@ -239,28 +283,35 @@ function render() {
       </div>`;
   }).join("");
 
-  if (session.recommendedTasks.length === 0) {
+  const proposedRecommendations = session.recommendedTasks.filter(
+    task => task.status === "proposed");
+  if (proposedRecommendations.length === 0) {
     elements.recommendations.className = "stack empty-state";
-    elements.recommendations.textContent = "No recommendations yet.";
+    elements.recommendations.textContent =
+      "Listening for explicit discussion to suggest what to cover next.";
   } else {
     elements.recommendations.className = "stack";
-    elements.recommendations.innerHTML = session.recommendedTasks
-      .map(task => `
+    elements.recommendations.innerHTML = proposedRecommendations
+      .map(task => {
+        const basedOn = resolveSourceTranscript(task, session.transcript);
+        return `
         <div class="recommendation">
-          <div class="item-row">
-            <span class="item-title">${escapeHtml(task.title)}</span>
-            <span class="badge ${task.status === "accepted" ? "success" : "pending"}">
-              ${escapeHtml(task.status)}
-            </span>
+          <h3>${escapeHtml(task.title)}</h3>
+          <p><strong>Why this helps</strong><br>${escapeHtml(task.rationale)}</p>
+          <div class="based-on">
+            <strong>Based on</strong>
+            ${basedOn.map(segment => `
+              <blockquote>“${escapeHtml(segment.text)}”</blockquote>
+            `).join("")}
           </div>
-          <p class="muted">${escapeHtml(task.rationale)}</p>
-          ${task.status === "proposed" ? `
-            <div class="actions">
-              <button class="primary" data-recommendation="${task.id}" data-status="accepted">Accept</button>
-              <button class="secondary" data-recommendation="${task.id}" data-status="dismissed">Dismiss</button>
-            </div>
-          ` : ""}
-        </div>`).join("");
+          <div class="actions">
+            <button class="primary" type="button"
+                    data-recommendation="${task.id}" data-status="accepted">Accept</button>
+            <button class="secondary" type="button"
+                    data-recommendation="${task.id}" data-status="dismissed">Dismiss</button>
+          </div>
+        </div>`;
+      }).join("");
   }
 
   if (session.transcript.length === 0) {
@@ -604,6 +655,11 @@ function renderMicrophoneControls() {
   elements.microphoneStatus.className =
     `status ${listening ? "listening" : "neutral"}`;
   elements.microphoneToggle.setAttribute("aria-pressed", listening ? "true" : "false");
+  elements.microphoneToggle.setAttribute(
+    "aria-label",
+    listening
+      ? "Stop listening to the local microphone"
+      : "Start listening to the local microphone");
 }
 
 function queueMicrophoneOperation(operation) {
@@ -673,6 +729,13 @@ function escapeHtml(value) {
   const element = document.createElement("span");
   element.textContent = value ?? "";
   return element.innerHTML;
+}
+
+function resolveSourceTranscript(task, transcript) {
+  const sourceIds = new Set(
+    (task.sourceTranscriptSegmentIds ?? []).map(id => String(id).toLowerCase()));
+  return transcript.filter(segment =>
+    sourceIds.has(String(segment.id).toLowerCase()));
 }
 
 window.addEventListener("pagehide", () => {

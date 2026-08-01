@@ -14,9 +14,10 @@ public enum ChecklistItemStatus
 
 public enum RecommendationStatus
 {
-    Proposed,
-    Accepted,
-    Dismissed
+    Proposed = 0,
+    Accepted = 1,
+    Dismissed = 2,
+    Completed = 3
 }
 
 public sealed record MeetingPurpose(
@@ -77,7 +78,11 @@ public sealed record RecommendedTaskState(
     double Confidence,
     IReadOnlyList<Guid> SourceTranscriptSegmentIds,
     RecommendationStatus Status,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? AcceptedAtUtc = null,
+    DateTimeOffset? CompletedAtUtc = null,
+    string? CompletionReason = null,
+    IReadOnlyList<ChecklistEvidence>? Evidence = null);
 
 public sealed record MeetingSessionState(
     Guid Id,
@@ -109,11 +114,20 @@ public sealed record RecommendedTaskProposal(
     double Confidence,
     IReadOnlyList<Guid> SourceTranscriptSegmentIds);
 
+public sealed record RecommendationEvaluation(
+    Guid RecommendationId,
+    bool ShouldComplete,
+    double Confidence,
+    string Reason,
+    string EvidenceQuote);
+
 public sealed record CoachAgentContext(
     MeetingPurpose Purpose,
     IReadOnlyList<ChecklistItemState> Checklist,
-    IReadOnlyList<TranscriptSegment> RecentTranscript);
+    IReadOnlyList<TranscriptSegment> RecentTranscript,
+    IReadOnlyList<RecommendedTaskState>? RecommendedTasks = null);
 
 public sealed record CoachAgentDecision(
     IReadOnlyList<ChecklistEvaluation> ChecklistEvaluations,
-    IReadOnlyList<RecommendedTaskProposal> RecommendedTasks);
+    IReadOnlyList<RecommendedTaskProposal> RecommendedTasks,
+    IReadOnlyList<RecommendationEvaluation>? RecommendationEvaluations = null);

@@ -384,6 +384,23 @@ app.MapPost(
     });
 
 app.MapPost(
+    "/api/sessions/{sessionId:guid}/recommendations/{recommendationId:guid}/reopen",
+    async (
+        Guid sessionId,
+        Guid recommendationId,
+        HttpContext context,
+        SessionAccessTokenService accessTokens,
+        MeetingSessionCoordinator coordinator,
+        CancellationToken cancellationToken) =>
+    {
+        RequireSessionAccess(context, sessionId, accessTokens);
+        return Results.Ok(await coordinator.ReopenRecommendationAsync(
+            sessionId,
+            recommendationId,
+            cancellationToken));
+    });
+
+app.MapPost(
     "/api/sessions/{sessionId:guid}/complete",
     async (
         Guid sessionId,

@@ -47,10 +47,25 @@ public sealed class JsonMeetingSessionStore(string dataDirectory) : IMeetingSess
             }
 
             await using var stream = File.OpenRead(path);
-            return await JsonSerializer.DeserializeAsync<MeetingSessionState>(
+            var session = await JsonSerializer.DeserializeAsync<MeetingSessionState>(
                 stream,
                 JsonOptions,
                 cancellationToken);
+            return session is null
+                ? null
+                : session with
+                {
+                    RecommendedTasks = session.RecommendedTasks
+                        .Select(item => item with
+                        {
+                            AcceptedAtUtc = item.Status == RecommendationStatus.Accepted
+                                && item.AcceptedAtUtc is null
+                                    ? session.UpdatedAtUtc
+                                    : item.AcceptedAtUtc,
+                            Evidence = item.Evidence ?? []
+                        })
+                        .ToArray()
+                };
         }
         finally
         {

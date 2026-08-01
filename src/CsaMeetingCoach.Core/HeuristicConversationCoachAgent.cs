@@ -28,6 +28,25 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
         "programa"
     ];
 
+    private static readonly string[] CustomerNeedCues =
+    [
+        "need",
+        "require",
+        "problem",
+        "challenge",
+        "how ",
+        "what ",
+        "can we",
+        "could you",
+        "trebuie",
+        "nevoie",
+        "problema",
+        "provocare",
+        "cum ",
+        "ce ",
+        "putem"
+    ];
+
     public Task<CoachAgentDecision> AnalyzeAsync(
         CoachAgentContext context,
         TranscriptSegment latestSegment,
@@ -37,7 +56,7 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
 
         if (!latestSegment.IsFinal || string.IsNullOrWhiteSpace(latestSegment.Text))
         {
-            return Task.FromResult(new CoachAgentDecision([], []));
+            return Task.FromResult(new CoachAgentDecision([], [], []));
         }
 
         var normalizedText = Normalize(latestSegment.Text);
@@ -49,7 +68,16 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
             .ToArray();
 
         var recommendations = CreateRecommendations(latestSegment, normalizedText);
-        return Task.FromResult(new CoachAgentDecision(evaluations, recommendations));
+        var recommendationEvaluations = (context.RecommendedTasks ?? [])
+            .Where(item => item.Status == RecommendationStatus.Accepted)
+            .Select(item => EvaluateRecommendation(item, latestSegment, normalizedText))
+            .Where(evaluation => evaluation is not null)
+            .Cast<RecommendationEvaluation>()
+            .ToArray();
+        return Task.FromResult(new CoachAgentDecision(
+            evaluations,
+            recommendations,
+            recommendationEvaluations));
     }
 
     private static ChecklistEvaluation? Evaluate(
@@ -91,25 +119,54 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
         TranscriptSegment segment,
         string normalizedText)
     {
-        if (!CommitmentCues.Any(normalizedText.Contains))
+        if (!CommitmentCues.Any(normalizedText.Contains)
+            && !CustomerNeedCues.Any(normalizedText.Contains)
+            && !segment.Text.Contains('?'))
         {
             return [];
         }
 
-        var title = WhitespaceRegex().Replace(segment.Text.Trim(), " ");
-        if (title.Length > 140)
+        var topic = WhitespaceRegex().Replace(segment.Text.Trim(), " ");
+        if (topic.Length > 125)
         {
-            title = string.Concat(title.AsSpan(0, 137), "...");
+            topic = string.Concat(topic.AsSpan(0, 122), "...");
         }
 
         return
         [
             new(
-                title,
-                "The discussion contains an explicit commitment or follow-up cue.",
+                $"Discuss next: {topic}",
+                "Addressing this explicit need, question, or next step helps the customer get a clear, useful outcome during the meeting.",
                 0.86,
                 [segment.Id])
         ];
+    }
+
+    private static RecommendationEvaluation? EvaluateRecommendation(
+        RecommendedTaskState recommendation,
+        TranscriptSegment segment,
+        string normalizedText)
+    {
+        var titleTerms = Normalize(recommendation.Title)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(term => term.Length >= 5 && term is not "discuss")
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var matches = titleTerms.Count(term =>
+            normalizedText.Contains(term, StringComparison.Ordinal));
+        var requiredMatches = Math.Min(2, titleTerms.Length);
+        if (matches < requiredMatches || requiredMatches == 0)
+        {
+            return null;
+        }
+
+        var confidence = Math.Min(0.95, 0.82 + ((matches - 1) * 0.03));
+        return new RecommendationEvaluation(
+            recommendation.Id,
+            ShouldComplete: true,
+            confidence,
+            "The latest final segment explicitly discusses the accepted talking point.",
+            segment.Text.Trim());
     }
 
     internal static string Normalize(string value)

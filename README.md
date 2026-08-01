@@ -2,7 +2,7 @@
 
 CSA Meeting Coach is a privacy-conscious Microsoft Teams meeting assistant for
 CSA/VBD scenarios. It combines the meeting purpose with a real-time transcript
-stream to maintain an evidence-backed checklist and recommend follow-up tasks.
+stream to maintain an evidence-backed checklist and recommend live private talking points.
 
 ## Current MVP
 
@@ -16,8 +16,9 @@ stream to maintain an evidence-backed checklist and recommend follow-up tasks.
 - Stores the speaker, timestamp, quote, rationale, and confidence for every
   automatic completion.
 - Allows users to undo any automatic completion.
-- Recommends tasks from explicit commitments and lets the user accept or dismiss
-  each recommendation.
+- Recommends what the CSA should discuss, show, or ask next from explicit customer
+  needs and meeting context. Accepted talking points auto-complete only from exact
+  evidence in a later final transcript segment and can be reopened.
 - Pushes session updates to the side panel with Server-Sent Events.
 - Protects each session with a scoped HttpOnly access cookie so another local
   caller cannot read or alter a transcript by guessing its session ID.
@@ -270,7 +271,7 @@ control:
 $env:CoachAgent__Provider = "Foundry"
 $env:CoachAgent__Foundry__ProjectEndpoint = "https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT"
 $env:CoachAgent__Foundry__ModelDeployment = "gpt-4.1-mini"
-$env:CoachAgent__Foundry__AgentName = "csa-meeting-coach-v2"
+$env:CoachAgent__Foundry__AgentName = "csa-meeting-coach-v3"
 ```
 
 The application checks for the named agent before its first analysis and creates
@@ -340,7 +341,8 @@ authenticate the transcript adapter separately with managed identity.
 - No hidden recording or transcription.
 - No raw audio persistence in this MVP.
 - Automatic completion is reversible and always includes transcript evidence.
-- Recommended tasks require user acceptance before external publication.
+- Live talking points require user acceptance before they become trackable; only
+  exact evidence in a later final transcript segment can complete them.
 - Do not use real customer data until Privacy, Legal, Security, and tenant
   administrators approve the pilot, lawful basis, notice, retention, access, and
   DPIA.

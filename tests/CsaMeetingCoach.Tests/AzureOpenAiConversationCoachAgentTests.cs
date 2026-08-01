@@ -1,0 +1,101 @@
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using CsaMeetingCoach.Contracts;
+using CsaMeetingCoach.Core;
+
+namespace CsaMeetingCoach.Tests;
+
+public sealed class AzureOpenAiConversationCoachAgentTests
+{
+    [Fact]
+    public async Task Analyze_ParsesRecommendationEvaluationsInSingleRequest()
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "CSA",
+            "We covered staged rollout rings.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var recommendation = new RecommendedTaskState(
+            Guid.NewGuid(),
+            "Discuss staged rollout rings",
+            "This helps the customer reduce deployment risk.",
+            0.9,
+            [Guid.NewGuid()],
+            RecommendationStatus.Accepted,
+            latest.OccurredAtUtc.AddMinutes(-2),
+            latest.OccurredAtUtc.AddMinutes(-1));
+        var decisionJson = JsonSerializer.Serialize(
+            new CoachAgentDecision(
+                [],
+                [],
+                [
+                    new RecommendationEvaluation(
+                        recommendation.Id,
+                        true,
+                        0.9,
+                        "The accepted topic was explicitly covered.",
+                        "staged rollout rings")
+                ]),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var responseJson = JsonSerializer.Serialize(new
+        {
+            choices = new[]
+            {
+                new { message = new { content = decisionJson } }
+            }
+        });
+        var handler = new RecordingHandler(responseJson);
+        var agent = new AzureOpenAiConversationCoachAgent(
+            new HttpClient(handler),
+            new AzureOpenAiOptions(
+                new Uri("https://example.openai.azure.com/"),
+                "deployment",
+                "2024-10-21",
+                "key"));
+        var context = new CoachAgentContext(
+            TestData.CreatePurpose(),
+            [],
+            [latest],
+            [recommendation]);
+
+        var decision = await agent.AnalyzeAsync(
+            context,
+            latest,
+            CancellationToken.None);
+
+        Assert.Single(decision.RecommendationEvaluations!);
+        Assert.Equal(1, handler.CallCount);
+        Assert.Contains(
+            "acceptedRecommendations",
+            handler.RequestBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "recommendationEvaluations",
+            handler.RequestBody,
+            StringComparison.Ordinal);
+    }
+
+    private sealed class RecordingHandler(string responseJson) : HttpMessageHandler
+    {
+        public int CallCount { get; private set; }
+
+        public string RequestBody { get; private set; } = string.Empty;
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            RequestBody = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    responseJson,
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        }
+    }
+}

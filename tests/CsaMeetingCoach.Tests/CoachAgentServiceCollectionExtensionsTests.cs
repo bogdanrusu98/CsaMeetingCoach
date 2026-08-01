@@ -25,7 +25,7 @@ public sealed class CoachAgentServiceCollectionExtensionsTests
             provider.GetRequiredService<IConversationCoachAgent>());
         var options = provider.GetRequiredService<FoundryOptions>();
         Assert.Equal("gpt-4.1-mini", options.ModelDeployment);
-        Assert.Equal("csa-meeting-coach-v2", options.AgentName);
+        Assert.Equal("csa-meeting-coach-v3", options.AgentName);
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class CoachAgentServiceCollectionExtensionsTests
                 ["CoachAgent:Provider"] = "Foundry",
                 ["CoachAgent:Foundry:ProjectEndpoint"] = projectEndpoint,
                 ["CoachAgent:Foundry:ModelDeployment"] = "gpt-4.1-mini",
-                ["CoachAgent:Foundry:AgentName"] = "csa-meeting-coach-v2"
+                ["CoachAgent:Foundry:AgentName"] = "csa-meeting-coach-v3"
             })
             .Build();
 
