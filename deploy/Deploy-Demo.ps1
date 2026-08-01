@@ -472,6 +472,7 @@ if (-not (Test-Path $stagedExecutable -PathType Leaf)) {
 $caddyFileContents = @"
 {
     admin 127.0.0.1:2019
+    grace_period 10s
 }
 
 $Hostname {
@@ -577,7 +578,7 @@ try {
         -Name $caddyServiceName `
         -DisplayName "CSA Meeting Coach HTTPS Proxy" `
         -BinaryPath $caddyBinaryPath
-    Start-ServiceBounded -Name $caddyServiceName -TimeoutSeconds 90
+    Start-ServiceBounded -Name $caddyServiceName -TimeoutSeconds 180
     Wait-HttpsHealth -PublicHostname $Hostname
 }
 catch {
@@ -619,7 +620,7 @@ catch {
         Remove-Item $caddyConfig -Force -ErrorAction SilentlyContinue
     }
     if ($caddyServiceExisted) {
-        Start-ServiceBounded -Name $caddyServiceName -TimeoutSeconds 90
+        Start-ServiceBounded -Name $caddyServiceName -TimeoutSeconds 180
     }
     else {
         Remove-ServiceDefinition -Name $caddyServiceName
