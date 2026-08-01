@@ -128,25 +128,6 @@ public sealed class AzureOpenAiConversationCoachAgent(
                 "Azure OpenAI returned a coaching decision with missing collections.");
         }
 
-        if (decision.ChecklistEvaluations.Any(item =>
-                item is null
-                || string.IsNullOrWhiteSpace(item.Reason)
-                || string.IsNullOrWhiteSpace(item.EvidenceQuote))
-            || decision.RecommendedTasks.Any(item =>
-                item is null
-                || string.IsNullOrWhiteSpace(item.Title)
-                || string.IsNullOrWhiteSpace(item.Rationale)
-                || item.SourceTranscriptSegmentIds is null)
-            || decision.RecommendationEvaluations.Any(item =>
-                item is null
-                || string.IsNullOrWhiteSpace(item.Reason)
-                || (item.ShouldComplete
-                    && string.IsNullOrWhiteSpace(item.EvidenceQuote))))
-        {
-            throw new InvalidOperationException(
-                "Azure OpenAI returned an incomplete coaching decision.");
-        }
-
         return decision;
     }
 }

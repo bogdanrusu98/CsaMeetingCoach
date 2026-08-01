@@ -98,7 +98,7 @@ public sealed class FoundryConversationCoachAgentTests
     }
 
     [Fact]
-    public async Task Analyze_CompletionInventsEvidence_FailsClosed()
+    public async Task Analyze_CompletionInventsEvidence_IsPreservedForCoordinatorWarning()
     {
         var latestSegment = CreateLatestSegment();
         var context = CreateContext(latestSegment);
@@ -118,15 +118,16 @@ public sealed class FoundryConversationCoachAgentTests
         var agent = new FoundryConversationCoachAgent(
             new RecordingFoundryClient(response));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            agent.AnalyzeAsync(
-                context,
-                latestSegment,
-                CancellationToken.None));
+        var decision = await agent.AnalyzeAsync(
+            context,
+            latestSegment,
+            CancellationToken.None);
+
+        Assert.Single(decision.ChecklistEvaluations);
     }
 
     [Fact]
-    public async Task Analyze_TaskDoesNotReferenceLatestSegment_FailsClosed()
+    public async Task Analyze_TaskDoesNotReferenceLatestSegment_IsPreservedForCoordinatorWarning()
     {
         var latestSegment = CreateLatestSegment();
         var context = CreateContext(latestSegment);
@@ -145,11 +146,12 @@ public sealed class FoundryConversationCoachAgentTests
         var agent = new FoundryConversationCoachAgent(
             new RecordingFoundryClient(response));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            agent.AnalyzeAsync(
-                context,
-                latestSegment,
-                CancellationToken.None));
+        var decision = await agent.AnalyzeAsync(
+            context,
+            latestSegment,
+            CancellationToken.None);
+
+        Assert.Single(decision.RecommendedTasks);
     }
 
     [Fact]

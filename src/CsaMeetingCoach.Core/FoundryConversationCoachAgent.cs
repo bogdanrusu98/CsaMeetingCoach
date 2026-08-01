@@ -207,14 +207,11 @@ public sealed class FoundryConversationCoachAgent(
                 exception);
         }
 
-        ValidateDecision(decision, context, latestSegment);
+        ValidateDecision(decision);
         return decision;
     }
 
-    private static void ValidateDecision(
-        CoachAgentDecision decision,
-        CoachAgentContext context,
-        TranscriptSegment latestSegment)
+    private static void ValidateDecision(CoachAgentDecision decision)
     {
         if (decision.ChecklistEvaluations is null
             || decision.RecommendedTasks is null
@@ -223,68 +220,5 @@ public sealed class FoundryConversationCoachAgent(
             throw new InvalidOperationException(
                 "Foundry returned a coaching decision with missing collections.");
         }
-
-        var pendingChecklistIds = context.Checklist
-            .Where(item => item.Status == ChecklistItemStatus.Pending)
-            .Select(item => item.Id)
-            .ToHashSet();
-        var evaluatedChecklistIds = new HashSet<Guid>();
-        foreach (var evaluation in decision.ChecklistEvaluations)
-        {
-            if (evaluation is null
-                || !pendingChecklistIds.Contains(evaluation.ChecklistItemId)
-                || !evaluatedChecklistIds.Add(evaluation.ChecklistItemId)
-                || !IsValidConfidence(evaluation.Confidence)
-                || string.IsNullOrWhiteSpace(evaluation.Reason)
-                || (evaluation.ShouldComplete
-                    && (string.IsNullOrWhiteSpace(evaluation.EvidenceQuote)
-                        || !latestSegment.Text.Contains(
-                            evaluation.EvidenceQuote,
-                            StringComparison.Ordinal))))
-            {
-                throw new InvalidOperationException(
-                    "Foundry returned an invalid or unsupported checklist evaluation.");
-            }
-        }
-
-        var transcriptIds = context.RecentTranscript
-            .Select(item => item.Id)
-            .ToHashSet();
-        foreach (var task in decision.RecommendedTasks)
-        {
-            if (task is null
-                || string.IsNullOrWhiteSpace(task.Title)
-                || string.IsNullOrWhiteSpace(task.Rationale)
-                || !IsValidConfidence(task.Confidence)
-                || task.SourceTranscriptSegmentIds is null
-                || task.SourceTranscriptSegmentIds.Count == 0
-                || !task.SourceTranscriptSegmentIds.Contains(latestSegment.Id)
-                || task.SourceTranscriptSegmentIds.Distinct().Count()
-                    != task.SourceTranscriptSegmentIds.Count
-                || task.SourceTranscriptSegmentIds.Any(id => !transcriptIds.Contains(id)))
-            {
-                throw new InvalidOperationException(
-                    "Foundry returned an invalid or unsupported task recommendation.");
-            }
-
-        }
-
-        var evaluatedRecommendationIds = new HashSet<Guid>();
-        foreach (var evaluation in decision.RecommendationEvaluations)
-        {
-            if (evaluation is null
-                || !evaluatedRecommendationIds.Add(evaluation.RecommendationId)
-                || !IsValidConfidence(evaluation.Confidence)
-                || string.IsNullOrWhiteSpace(evaluation.Reason)
-                || (evaluation.ShouldComplete
-                    && string.IsNullOrWhiteSpace(evaluation.EvidenceQuote)))
-            {
-                throw new InvalidOperationException(
-                    "Foundry returned an invalid or unsupported recommendation evaluation.");
-            }
-        }
     }
-
-    private static bool IsValidConfidence(double confidence) =>
-        double.IsFinite(confidence) && confidence is >= 0 and <= 1;
 }

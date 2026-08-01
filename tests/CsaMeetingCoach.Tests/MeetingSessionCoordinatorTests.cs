@@ -196,6 +196,48 @@ public sealed class MeetingSessionCoordinatorTests
     }
 
     [Fact]
+    public async Task AddTranscript_InvalidChecklistConfidence_RejectsCompletionWithWarning()
+    {
+        var coordinator = CreateCoordinator(new InvalidChecklistConfidenceAgent());
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("Customer", "We discussed the architecture."),
+            CancellationToken.None);
+
+        Assert.All(
+            updated.Checklist,
+            item => Assert.Equal(ChecklistItemStatus.Pending, item.Status));
+        Assert.Contains(
+            updated.Warnings,
+            warning => warning.Contains("evaluation data was invalid", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AddTranscript_HigherConfidenceInventedChecklistEvidence_UsesValidEvaluation()
+    {
+        var coordinator = CreateCoordinator(new DuplicateChecklistEvaluationAgent());
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("Customer", "We discussed the architecture."),
+            CancellationToken.None);
+
+        var completed = Assert.Single(updated.Checklist.Where(
+            item => item.Status == ChecklistItemStatus.Completed));
+        Assert.Equal("We discussed the architecture.", Assert.Single(completed.Evidence).Quote);
+        Assert.Contains(
+            updated.Warnings,
+            warning => warning.Contains("evidence was not present", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task ReopenChecklistItem_UndoesAutomaticCompletion()
     {
         var coordinator = CreateCoordinator(new HeuristicConversationCoachAgent());
@@ -299,6 +341,92 @@ public sealed class MeetingSessionCoordinatorTests
         Assert.NotNull(reopenedTask.AcceptedAtUtc);
         Assert.Null(reopenedTask.CompletedAtUtc);
         Assert.Empty(reopenedTask.Evidence!);
+    }
+
+    [Fact]
+    public async Task AcceptedRecommendation_InvalidNewProposal_DoesNotBlockCompletion()
+    {
+        var agent = new RecommendationLifecycleAgent
+        {
+            IncludeInvalidProposal = true,
+            IncludeNullEvaluation = true
+        };
+        var coordinator = CreateCoordinator(agent);
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        var proposed = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Customer",
+                "How can we reduce deployment risk?"),
+            CancellationToken.None);
+        var recommendation = Assert.Single(proposed.RecommendedTasks);
+        var accepted = await coordinator.SetRecommendationStatusAsync(
+            session.Id,
+            recommendation.Id,
+            RecommendationStatus.Accepted,
+            CancellationToken.None);
+
+        var completed = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "CSA",
+                "We can reduce deployment risk with staged rollout rings.",
+                Assert.Single(accepted.RecommendedTasks).AcceptedAtUtc!.Value.AddSeconds(1)),
+            CancellationToken.None);
+
+        Assert.Equal(
+            RecommendationStatus.Completed,
+            Assert.Single(completed.RecommendedTasks).Status);
+        Assert.Contains(
+            completed.Warnings,
+            warning => warning.Contains("transcript evidence was missing", StringComparison.Ordinal));
+        Assert.Contains(
+            completed.Warnings,
+            warning => warning.Contains("empty recommendation evaluation", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AcceptedRecommendation_HigherConfidenceInventedEvidence_UsesValidEvaluation()
+    {
+        var agent = new RecommendationLifecycleAgent
+        {
+            IncludeHigherConfidenceInvalidDuplicate = true
+        };
+        var coordinator = CreateCoordinator(agent);
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        var proposed = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Customer",
+                "How can we reduce deployment risk?"),
+            CancellationToken.None);
+        var recommendation = Assert.Single(proposed.RecommendedTasks);
+        var accepted = await coordinator.SetRecommendationStatusAsync(
+            session.Id,
+            recommendation.Id,
+            RecommendationStatus.Accepted,
+            CancellationToken.None);
+
+        var completed = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "CSA",
+                "We can reduce deployment risk with staged rollout rings.",
+                Assert.Single(accepted.RecommendedTasks).AcceptedAtUtc!.Value.AddSeconds(1)),
+            CancellationToken.None);
+
+        var completedTask = Assert.Single(completed.RecommendedTasks);
+        Assert.Equal(RecommendationStatus.Completed, completedTask.Status);
+        Assert.Equal(
+            "reduce deployment risk with staged rollout rings",
+            Assert.Single(completedTask.Evidence!).Quote);
+        Assert.Contains(
+            completed.Warnings,
+            warning => warning.Contains("evidence was not present", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -468,6 +596,53 @@ public sealed class MeetingSessionCoordinatorTests
         }
     }
 
+    private sealed class InvalidChecklistConfidenceAgent : IConversationCoachAgent
+    {
+        public Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new CoachAgentDecision(
+                [
+                    new ChecklistEvaluation(
+                        context.Checklist[0].Id,
+                        ShouldComplete: true,
+                        Confidence: 1.1,
+                        "The latest segment contains direct evidence.",
+                        latestSegment.Text)
+                ],
+                []));
+        }
+    }
+
+    private sealed class DuplicateChecklistEvaluationAgent : IConversationCoachAgent
+    {
+        public Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken)
+        {
+            var itemId = context.Checklist[0].Id;
+            return Task.FromResult(new CoachAgentDecision(
+                [
+                    new ChecklistEvaluation(
+                        itemId,
+                        ShouldComplete: true,
+                        Confidence: 0.99,
+                        "Invented evidence.",
+                        "This quote does not exist."),
+                    new ChecklistEvaluation(
+                        itemId,
+                        ShouldComplete: true,
+                        Confidence: 0.93,
+                        "The latest segment contains direct evidence.",
+                        latestSegment.Text)
+                ],
+                []));
+        }
+    }
+
     private sealed class CountingAgent : IConversationCoachAgent
     {
         public int CallCount { get; private set; }
@@ -509,6 +684,12 @@ public sealed class MeetingSessionCoordinatorTests
         public bool ReturnInventedEvidence { get; init; }
 
         public bool IncludeUnknownEvaluation { get; init; }
+
+        public bool IncludeInvalidProposal { get; init; }
+
+        public bool IncludeNullEvaluation { get; init; }
+
+        public bool IncludeHigherConfidenceInvalidDuplicate { get; init; }
 
         public Task<CoachAgentDecision> AnalyzeAsync(
             CoachAgentContext context,
@@ -552,8 +733,30 @@ public sealed class MeetingSessionCoordinatorTests
                     "Unknown.",
                     latestSegment.Text));
             }
+            if (IncludeNullEvaluation)
+            {
+                evaluations.Add(null!);
+            }
+            if (IncludeHigherConfidenceInvalidDuplicate)
+            {
+                evaluations.Add(new RecommendationEvaluation(
+                    recommendation.Id,
+                    true,
+                    0.99,
+                    "Invented.",
+                    "This quote does not exist."));
+            }
 
-            return Task.FromResult(new CoachAgentDecision([], [], evaluations));
+            IReadOnlyList<RecommendedTaskProposal> proposals = IncludeInvalidProposal
+                ? [
+                    new RecommendedTaskProposal(
+                        "Invalid unsupported proposal",
+                        "This proposal references evidence outside the transcript.",
+                        0.9,
+                        [Guid.NewGuid()])
+                ]
+                : [];
+            return Task.FromResult(new CoachAgentDecision([], proposals, evaluations));
         }
     }
 }

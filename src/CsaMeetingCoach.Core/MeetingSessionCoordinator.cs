@@ -144,6 +144,7 @@ public sealed class MeetingSessionCoordinator(
                 evaluatedRecommendations,
                 decision.RecommendedTasks,
                 finalTranscript,
+                segment,
                 transcriptUpdate.Checklist,
                 transcriptUpdate.Purpose,
                 warnings);
@@ -341,9 +342,52 @@ public sealed class MeetingSessionCoordinator(
         TranscriptSegment latestSegment,
         ICollection<string> warnings)
     {
+        var knownIds = current.Select(item => item.Id).ToHashSet();
+        foreach (var evaluation in evaluations)
+        {
+            if (evaluation is null)
+            {
+                warnings.Add("Rejected an empty checklist evaluation.");
+                continue;
+            }
+
+            if (!knownIds.Contains(evaluation.ChecklistItemId))
+            {
+                warnings.Add(
+                    $"Rejected checklist completion for unknown item {evaluation.ChecklistItemId}.");
+                continue;
+            }
+
+            if (evaluation.ShouldComplete
+                && (!double.IsFinite(evaluation.Confidence)
+                    || evaluation.Confidence is < 0 or > 1
+                    || string.IsNullOrWhiteSpace(evaluation.Reason)
+                    || string.IsNullOrWhiteSpace(evaluation.EvidenceQuote)))
+            {
+                warnings.Add(
+                    $"Rejected completion for checklist item {evaluation.ChecklistItemId}: evaluation data was invalid.");
+            }
+            else if (evaluation.ShouldComplete
+                && !latestSegment.Text.Contains(
+                    evaluation.EvidenceQuote,
+                    StringComparison.Ordinal))
+            {
+                warnings.Add(
+                    $"Rejected checklist completion for item {evaluation.ChecklistItemId}: agent evidence was not present in the latest transcript segment.");
+            }
+        }
+
         var byItem = evaluations
-            .Where(evaluation => evaluation.ShouldComplete
-                && evaluation.Confidence >= AutoCompletionThreshold)
+            .Where(evaluation => evaluation is not null
+                && knownIds.Contains(evaluation.ChecklistItemId)
+                && evaluation.ShouldComplete
+                && double.IsFinite(evaluation.Confidence)
+                && evaluation.Confidence is >= AutoCompletionThreshold and <= 1
+                && !string.IsNullOrWhiteSpace(evaluation.Reason)
+                && !string.IsNullOrWhiteSpace(evaluation.EvidenceQuote)
+                && latestSegment.Text.Contains(
+                    evaluation.EvidenceQuote,
+                    StringComparison.Ordinal))
             .GroupBy(evaluation => evaluation.ChecklistItemId)
             .ToDictionary(group => group.Key, group => group.OrderByDescending(item => item.Confidence).First());
 
@@ -352,16 +396,6 @@ public sealed class MeetingSessionCoordinator(
             if (item.Status == ChecklistItemStatus.Completed
                 || !byItem.TryGetValue(item.Id, out var evaluation))
             {
-                return item;
-            }
-
-            if (string.IsNullOrWhiteSpace(evaluation.EvidenceQuote)
-                || !latestSegment.Text.Contains(
-                    evaluation.EvidenceQuote,
-                    StringComparison.Ordinal))
-            {
-                warnings.Add(
-                    $"Rejected completion for '{item.Title}': agent evidence was not present in the latest transcript segment.");
                 return item;
             }
 
@@ -388,6 +422,7 @@ public sealed class MeetingSessionCoordinator(
         IReadOnlyList<RecommendedTaskState> current,
         IReadOnlyList<RecommendedTaskProposal> proposals,
         IReadOnlyList<TranscriptSegment> transcript,
+        TranscriptSegment latestSegment,
         IReadOnlyList<ChecklistItemState> checklist,
         MeetingPurpose purpose,
         ICollection<string> warnings)
@@ -404,15 +439,22 @@ public sealed class MeetingSessionCoordinator(
             .ToArray();
         var result = current.ToList();
 
-        foreach (var proposal in proposals.Where(item => item.Confidence >= 0.70))
+        foreach (var proposal in proposals)
         {
-            if (string.IsNullOrWhiteSpace(proposal.Title))
+            if (proposal is null
+                || string.IsNullOrWhiteSpace(proposal.Title)
+                || string.IsNullOrWhiteSpace(proposal.Rationale)
+                || !double.IsFinite(proposal.Confidence)
+                || proposal.Confidence is < 0.70 or > 1)
             {
-                warnings.Add("Rejected a recommended task because the agent returned an empty title.");
+                warnings.Add(
+                    "Rejected a recommended task because its title, rationale, or confidence was invalid.");
                 continue;
             }
 
-            if (proposal.SourceTranscriptSegmentIds.Count == 0
+            if (proposal.SourceTranscriptSegmentIds is null
+                || proposal.SourceTranscriptSegmentIds.Count == 0
+                || !proposal.SourceTranscriptSegmentIds.Contains(latestSegment.Id)
                 || proposal.SourceTranscriptSegmentIds.Any(id => !segmentIds.Contains(id)))
             {
                 warnings.Add(
@@ -448,24 +490,51 @@ public sealed class MeetingSessionCoordinator(
         ICollection<string> warnings)
     {
         var knownIds = current.Select(item => item.Id).ToHashSet();
-        foreach (var unknown in evaluations.Where(item => !knownIds.Contains(item.RecommendationId)))
+        foreach (var evaluation in evaluations)
         {
-            warnings.Add(
-                $"Rejected recommendation completion for unknown recommendation {unknown.RecommendationId}.");
-        }
-        foreach (var invalid in evaluations.Where(item => item.ShouldComplete
-            && (!double.IsFinite(item.Confidence)
-                || item.Confidence is < 0 or > 1)))
-        {
-            warnings.Add(
-                $"Rejected recommendation completion {invalid.RecommendationId}: confidence was invalid.");
+            if (evaluation is null)
+            {
+                warnings.Add("Rejected an empty recommendation evaluation.");
+                continue;
+            }
+
+            if (!knownIds.Contains(evaluation.RecommendationId))
+            {
+                warnings.Add(
+                    $"Rejected recommendation completion for unknown recommendation {evaluation.RecommendationId}.");
+                continue;
+            }
+
+            if (evaluation.ShouldComplete
+                && (!double.IsFinite(evaluation.Confidence)
+                    || evaluation.Confidence is < 0 or > 1
+                    || string.IsNullOrWhiteSpace(evaluation.Reason)
+                    || string.IsNullOrWhiteSpace(evaluation.EvidenceQuote)))
+            {
+                warnings.Add(
+                    $"Rejected recommendation completion {evaluation.RecommendationId}: evaluation data was invalid.");
+            }
+            else if (evaluation.ShouldComplete
+                && !latestSegment.Text.Contains(
+                    evaluation.EvidenceQuote,
+                    StringComparison.Ordinal))
+            {
+                warnings.Add(
+                    $"Rejected recommendation completion {evaluation.RecommendationId}: agent evidence was not present in the latest transcript segment.");
+            }
         }
 
         var byItem = evaluations
-            .Where(evaluation => knownIds.Contains(evaluation.RecommendationId)
+            .Where(evaluation => evaluation is not null
+                && knownIds.Contains(evaluation.RecommendationId)
                 && evaluation.ShouldComplete
                 && double.IsFinite(evaluation.Confidence)
-                && evaluation.Confidence is >= AutoCompletionThreshold and <= 1)
+                && evaluation.Confidence is >= AutoCompletionThreshold and <= 1
+                && !string.IsNullOrWhiteSpace(evaluation.Reason)
+                && !string.IsNullOrWhiteSpace(evaluation.EvidenceQuote)
+                && latestSegment.Text.Contains(
+                    evaluation.EvidenceQuote,
+                    StringComparison.Ordinal))
             .GroupBy(evaluation => evaluation.RecommendationId)
             .ToDictionary(
                 group => group.Key,
@@ -485,16 +554,6 @@ public sealed class MeetingSessionCoordinator(
             {
                 warnings.Add(
                     $"Rejected completion for '{item.Title}': evidence did not occur after acceptance.");
-                return item;
-            }
-
-            if (string.IsNullOrWhiteSpace(evaluation.EvidenceQuote)
-                || !latestSegment.Text.Contains(
-                    evaluation.EvidenceQuote,
-                    StringComparison.Ordinal))
-            {
-                warnings.Add(
-                    $"Rejected completion for '{item.Title}': agent evidence was not present in the latest transcript segment.");
                 return item;
             }
 
