@@ -43,6 +43,15 @@ const elements = {
   toast: document.querySelector("#toast")
 };
 
+function applyTeamsTheme(theme) {
+  const normalizedTheme = theme === "dark"
+    ? "dark"
+    : theme === "contrast"
+      ? "contrast"
+      : "light";
+  document.documentElement.setAttribute("data-theme", normalizedTheme);
+}
+
 async function initializeTeamsContext() {
   const teamsHosted = new URLSearchParams(window.location.search).get("host") === "teams";
   if (!teamsHosted) {
@@ -56,6 +65,10 @@ async function initializeTeamsContext() {
   await window.microsoftTeams.app.initialize();
   const context = await window.microsoftTeams.app.getContext();
   state.teamsMeetingId = context.meeting?.id ?? null;
+  if (context.app?.theme) {
+    applyTeamsTheme(context.app.theme);
+  }
+  window.microsoftTeams.app.registerOnThemeChangeHandler?.(applyTeamsTheme);
 }
 
 const teamsContextReady = initializeTeamsContext();

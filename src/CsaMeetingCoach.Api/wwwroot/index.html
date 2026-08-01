@@ -5,12 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CSA Meeting Coach</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="styles.css?v=20260801c">
+  <script>
+    (() => {
+      const param = new URLSearchParams(window.location.search).get("scoutTheme");
+      const theme =
+        param || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css?v=20260801d">
 </head>
 <body>
   <main class="app-shell">
     <section id="setup-view" class="setup-view" aria-labelledby="setup-title">
-      <div class="brand-mark" aria-hidden="true">C</div>
+      <div class="brand-mark" aria-hidden="true">AI</div>
       <div class="setup-heading">
         <p class="eyebrow">Private meeting assistant</p>
         <h1 id="setup-title">Start live coaching</h1>
@@ -67,7 +75,11 @@ Define owners and next steps</textarea>
         </div>
         <div class="bar-actions">
           <button id="open-diagnostics" type="button" class="icon-button"
-                  aria-label="Open diagnostics" title="Diagnostics">•••</button>
+                  aria-label="Open diagnostics" title="Diagnostics">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm-8 4.75v-2.5l2.15-.72c.17-.55.4-1.08.68-1.57L5.8 6.43l1.77-1.77 2.03 1.03c.5-.28 1.02-.5 1.57-.66L11.9 2.9h2.5l.72 2.13c.56.16 1.1.38 1.6.66l2.01-1.03 1.77 1.77-1.03 2.02c.28.5.5 1.03.67 1.58l2.16.72v2.5l-2.16.72c-.17.55-.4 1.08-.68 1.58l1.04 2.02-1.77 1.77-2.03-1.03c-.5.28-1.02.5-1.58.66l-.72 2.14h-2.5l-.73-2.14a8.2 8.2 0 0 1-1.58-.66l-2.02 1.03-1.77-1.77 1.03-2.02a8.3 8.3 0 0 1-.68-1.58L4 13.25Z"/>
+            </svg>
+          </button>
           <button id="complete-meeting" type="button" class="button subtle">End</button>
         </div>
         <p id="purpose-objective" class="visually-hidden"></p>
@@ -187,6 +199,6 @@ Define owners and next steps</textarea>
   <div id="toast" role="status" aria-live="polite" class="toast hidden"></div>
   <script src="https://res.cdn.office.net/teams-js/2.31.0/js/MicrosoftTeams.min.js"></script>
   <script src="vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0"></script>
-  <script src="app.js?v=20260801c"></script>
+  <script src="app.js?v=20260801d"></script>
 </body>
 </html>
