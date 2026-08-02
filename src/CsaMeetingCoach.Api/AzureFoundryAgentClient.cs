@@ -30,6 +30,9 @@ public sealed class AzureFoundryAgentClient : IFoundryAgentClient
         projectClient = new AIProjectClient(options.ProjectEndpoint, credential);
     }
 
+    public Task WarmUpAsync(CancellationToken cancellationToken)
+        => EnsureAgentAsync(cancellationToken);
+
     public async Task<string> GetDecisionJsonAsync(
         string inputJson,
         CancellationToken cancellationToken)

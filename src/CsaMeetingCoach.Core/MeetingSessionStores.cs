@@ -55,6 +55,7 @@ public sealed class JsonMeetingSessionStore(string dataDirectory) : IMeetingSess
                 ? null
                 : session with
                 {
+                    IsAnalyzing = false,
                     RecommendedTasks = session.RecommendedTasks
                         .Select(item => item with
                         {

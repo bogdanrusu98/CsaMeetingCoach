@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -104,7 +105,14 @@ builder.Services.AddSingleton<IMeetingSessionStore>(
 var coachAgentProvider = builder.Configuration["CoachAgent:Provider"] ?? "Local";
 builder.Services.AddCoachAgent(builder.Configuration);
 
-builder.Services.AddSingleton<MeetingSessionCoordinator>();
+builder.Services.AddSingleton<MeetingSessionCoordinator>(sp => new MeetingSessionCoordinator(
+    sp.GetRequiredService<IMeetingSessionStore>(),
+    sp.GetRequiredService<IMeetingChecklistPlanner>(),
+    sp.GetRequiredService<HeuristicConversationCoachAgent>(),
+    sp.GetService<EvidenceBackedConversationCoachAgent>(),
+    sp.GetRequiredService<ISessionUpdatePublisher>(),
+    sp.GetRequiredService<ILogger<MeetingSessionCoordinator>>(),
+    sp.GetService<AnalysisOptions>()));
 
 var adapterAuthModeValue =
     builder.Configuration["TranscriptAdapter:AuthenticationMode"] ?? "Disabled";

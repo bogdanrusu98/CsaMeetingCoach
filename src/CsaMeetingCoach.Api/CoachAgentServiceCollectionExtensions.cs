@@ -50,10 +50,12 @@ public static partial class CoachAgentServiceCollectionExtensions
                 new AzureOpenAiConversationCoachAgent(
                     serviceProvider.GetRequiredService<HttpClient>(),
                     options));
-            services.AddSingleton<IConversationCoachAgent>(serviceProvider =>
+            services.AddSingleton<EvidenceBackedConversationCoachAgent>(sp =>
                 new EvidenceBackedConversationCoachAgent(
-                    serviceProvider.GetRequiredService<AzureOpenAiConversationCoachAgent>(),
-                    serviceProvider.GetRequiredService<HeuristicConversationCoachAgent>()));
+                    sp.GetRequiredService<AzureOpenAiConversationCoachAgent>(),
+                    sp.GetRequiredService<HeuristicConversationCoachAgent>()));
+            services.AddSingleton<IConversationCoachAgent>(sp =>
+                sp.GetRequiredService<EvidenceBackedConversationCoachAgent>());
             return services;
         }
 
@@ -90,12 +92,17 @@ public static partial class CoachAgentServiceCollectionExtensions
             services.AddSingleton(options);
             services.AddSingleton<TokenCredential>(
                 foundryCredential ?? new DefaultAzureCredential());
-            services.AddSingleton<IFoundryAgentClient, AzureFoundryAgentClient>();
+            services.AddSingleton<AzureFoundryAgentClient>();
+            services.AddSingleton<IFoundryAgentClient>(sp =>
+                sp.GetRequiredService<AzureFoundryAgentClient>());
             services.AddSingleton<FoundryConversationCoachAgent>();
-            services.AddSingleton<IConversationCoachAgent>(serviceProvider =>
+            services.AddSingleton<EvidenceBackedConversationCoachAgent>(sp =>
                 new EvidenceBackedConversationCoachAgent(
-                    serviceProvider.GetRequiredService<FoundryConversationCoachAgent>(),
-                    serviceProvider.GetRequiredService<HeuristicConversationCoachAgent>()));
+                    sp.GetRequiredService<FoundryConversationCoachAgent>(),
+                    sp.GetRequiredService<HeuristicConversationCoachAgent>()));
+            services.AddSingleton<IConversationCoachAgent>(sp =>
+                sp.GetRequiredService<EvidenceBackedConversationCoachAgent>());
+            services.AddHostedService<FoundryWarmUpService>();
             return services;
         }
 

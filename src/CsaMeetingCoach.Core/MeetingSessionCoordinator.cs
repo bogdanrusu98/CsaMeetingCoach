@@ -1,17 +1,44 @@
 using System.Collections.Concurrent;
+using System.Threading.Channels;
 using CsaMeetingCoach.Contracts;
+using Microsoft.Extensions.Logging;
 
 namespace CsaMeetingCoach.Core;
 
-public sealed class MeetingSessionCoordinator(
-    IMeetingSessionStore store,
-    IMeetingChecklistPlanner checklistPlanner,
-    IConversationCoachAgent coachAgent,
-    ISessionUpdatePublisher updatePublisher)
+public sealed class MeetingSessionCoordinator : IDisposable
 {
     public const double AutoCompletionThreshold = 0.82;
 
+    private readonly IMeetingSessionStore _store;
+    private readonly IMeetingChecklistPlanner _checklistPlanner;
+    private readonly IConversationCoachAgent _deterministicAgent;
+    private readonly IConversationCoachAgent? _aiAgent;
+    private readonly ISessionUpdatePublisher _updatePublisher;
+    private readonly ILogger<MeetingSessionCoordinator>? _logger;
+    private readonly AnalysisOptions _analysisOptions;
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _sessionLocks = new();
+    private readonly ConcurrentDictionary<Guid, SessionAnalysisState> _analysisStates = new();
+    private readonly CancellationTokenSource _disposalCts = new();
+
+    public MeetingSessionCoordinator(
+        IMeetingSessionStore store,
+        IMeetingChecklistPlanner checklistPlanner,
+        IConversationCoachAgent deterministicAgent,
+        IConversationCoachAgent? aiAgent,
+        ISessionUpdatePublisher updatePublisher,
+        ILogger<MeetingSessionCoordinator>? logger = null,
+        AnalysisOptions? analysisOptions = null)
+    {
+        _store = store;
+        _checklistPlanner = checklistPlanner;
+        _deterministicAgent = deterministicAgent;
+        _aiAgent = aiAgent;
+        _updatePublisher = updatePublisher;
+        _logger = logger;
+        _analysisOptions = analysisOptions ?? AnalysisOptions.Default;
+        _analysisOptions.Validate();
+    }
+
 
     public async Task<MeetingSessionState> CreateAsync(
         CreateMeetingSessionRequest request,
@@ -26,14 +53,14 @@ public sealed class MeetingSessionCoordinator(
             now,
             now,
             Revision: 1,
-            checklistPlanner.CreateChecklist(request.Purpose, request.Checklist),
+            _checklistPlanner.CreateChecklist(request.Purpose, request.Checklist),
             Transcript: [],
             RecommendedTasks: [],
             Warnings: [],
             TeamsOnlineMeetingId: NormalizeMeetingId(request.TeamsOnlineMeetingId));
 
-        await store.SaveAsync(session, cancellationToken);
-        await updatePublisher.PublishAsync(session, cancellationToken);
+        await _store.SaveAsync(session, cancellationToken);
+        await _updatePublisher.PublishAsync(session, cancellationToken);
         return session;
     }
 
@@ -41,7 +68,8 @@ public sealed class MeetingSessionCoordinator(
         Guid sessionId,
         CancellationToken cancellationToken)
     {
-        return await store.GetAsync(sessionId, cancellationToken);
+        var session = await _store.GetAsync(sessionId, cancellationToken);
+        return session is null ? null : ApplyRuntimeAnalysisState(session);
     }
 
     public async Task<MeetingSessionState> AddTranscriptAsync(
@@ -63,7 +91,7 @@ public sealed class MeetingSessionCoordinator(
         await gate.WaitAsync(cancellationToken);
         try
         {
-            var session = await store.GetAsync(sessionId, cancellationToken)
+            var session = await _store.GetAsync(sessionId, cancellationToken)
                 ?? throw new KeyNotFoundException($"Meeting session {sessionId} was not found.");
             EnsureActive(session);
 
@@ -89,6 +117,8 @@ public sealed class MeetingSessionCoordinator(
                     return session;
                 }
 
+                // Final segment in transcript but fast lane did not yet complete (prior failure).
+                // Re-run the fast lane below.
                 segment = existingSegment;
                 transcript = session.Transcript;
                 transcriptUpdate = session;
@@ -110,8 +140,8 @@ public sealed class MeetingSessionCoordinator(
                     Revision = session.Revision + 1,
                     UpdatedAtUtc = DateTimeOffset.UtcNow
                 };
-                await store.SaveAsync(transcriptUpdate, cancellationToken);
-                await updatePublisher.PublishAsync(transcriptUpdate, cancellationToken);
+                await _store.SaveAsync(transcriptUpdate, cancellationToken);
+                await _updatePublisher.PublishAsync(transcriptUpdate, cancellationToken);
             }
 
             if (!segment.IsFinal)
@@ -119,6 +149,7 @@ public sealed class MeetingSessionCoordinator(
                 return transcriptUpdate;
             }
 
+            // Fast synchronous lane: deterministic checklist + CrossCuttingPolicy.
             var finalTranscript = transcript
                 .Where(transcriptSegment => transcriptSegment.IsFinal)
                 .ToArray();
@@ -127,7 +158,12 @@ public sealed class MeetingSessionCoordinator(
                 transcriptUpdate.Checklist,
                 finalTranscript.TakeLast(20).ToArray(),
                 transcriptUpdate.RecommendedTasks);
-            var decision = await coachAgent.AnalyzeAsync(context, segment, cancellationToken);
+            var deterministicDecision = await _deterministicAgent.AnalyzeAsync(
+                context, segment, cancellationToken);
+            var fastLaneDecision = _aiAgent is null
+                ? deterministicDecision
+                : deterministicDecision with { RecommendedTasks = [] };
+            var decision = CrossCuttingRecommendationPolicy.Apply(fastLaneDecision, segment);
 
             var warnings = transcriptUpdate.Warnings.ToList();
             var checklist = ApplyChecklistEvaluations(
@@ -155,23 +191,344 @@ public sealed class MeetingSessionCoordinator(
                     : item)
                 .ToArray();
 
-            var coachingUpdate = transcriptUpdate with
+            var fastLaneUpdate = transcriptUpdate with
             {
                 Transcript = analyzedTranscript,
                 Checklist = checklist,
                 RecommendedTasks = recommendations,
                 Warnings = warnings.TakeLast(20).ToArray(),
+                IsAnalyzing = _aiAgent is not null,
                 Revision = transcriptUpdate.Revision + 1,
                 UpdatedAtUtc = analyzedAtUtc
             };
 
-            await store.SaveAsync(coachingUpdate, cancellationToken);
-            await updatePublisher.PublishAsync(coachingUpdate, cancellationToken);
-            return coachingUpdate;
+            await _store.SaveAsync(fastLaneUpdate, cancellationToken);
+            await _updatePublisher.PublishAsync(fastLaneUpdate, cancellationToken);
+
+            if (_aiAgent is not null)
+            {
+                SignalAsyncAnalysisLane(sessionId);
+            }
+
+            return fastLaneUpdate;
         }
         finally
         {
             gate.Release();
+        }
+    }
+
+    private void SignalAsyncAnalysisLane(Guid sessionId)
+    {
+        var state = _analysisStates.GetOrAdd(sessionId, static _ => new SessionAnalysisState());
+        if (state.BackgroundTask is null || state.BackgroundTask.IsCompleted)
+        {
+            state.BackgroundTask = Task.Run(
+                () => RunAnalysisLoopAsync(sessionId, state, _disposalCts.Token));
+        }
+
+        state.Signal();
+    }
+
+    private async Task RunAnalysisLoopAsync(
+        Guid sessionId,
+        SessionAnalysisState state,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await foreach (var trigger in state.TriggerReader.ReadAllAsync(cancellationToken))
+            {
+                var analysisGeneration = trigger;
+                // Debounce: hold off until the window expires, resetting on each new trigger.
+                var deadline = DateTimeOffset.UtcNow + _analysisOptions.DebounceWindow;
+                while (true)
+                {
+                    var remaining = deadline - DateTimeOffset.UtcNow;
+                    if (remaining <= TimeSpan.Zero)
+                    {
+                        break;
+                    }
+
+                    using var delayCts = CancellationTokenSource
+                        .CreateLinkedTokenSource(cancellationToken);
+                    delayCts.CancelAfter(remaining);
+                    try
+                    {
+                        var hasMore = await state.TriggerReader.WaitToReadAsync(delayCts.Token);
+                        if (hasMore)
+                        {
+                            while (state.TriggerReader.TryRead(out var nextGeneration))
+                            {
+                                analysisGeneration = Math.Max(
+                                    analysisGeneration,
+                                    nextGeneration);
+                            }
+                            deadline = DateTimeOffset.UtcNow + _analysisOptions.DebounceWindow;
+                        }
+                    }
+                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                    {
+                        break; // debounce deadline expired
+                    }
+                }
+
+                try
+                {
+                    await RunAiAnalysisAsync(
+                        sessionId,
+                        state,
+                        analysisGeneration,
+                        cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    state.MarkCompleted(analysisGeneration);
+                    _logger?.LogError(
+                        ex,
+                        "Async AI coaching analysis failed for session {SessionId}.",
+                        sessionId);
+                    await TryAddAnalysisWarningAsync(
+                        sessionId,
+                        "AI coaching analysis encountered an error and was skipped. Transcript was preserved.",
+                        state.IsAnalyzing);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Normal shutdown.
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(
+                ex,
+                "Analysis loop unexpectedly terminated for session {SessionId}.",
+                sessionId);
+        }
+    }
+
+    private async Task RunAiAnalysisAsync(
+        Guid sessionId,
+        SessionAnalysisState state,
+        long analysisGeneration,
+        CancellationToken cancellationToken)
+    {
+        // Load current session to build context for AI.
+        MeetingSessionState session;
+        TranscriptSegment latestSegment;
+        CoachAgentContext context;
+        {
+            var loadGate = _sessionLocks.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
+            await loadGate.WaitAsync(cancellationToken);
+            try
+            {
+                var loaded = await _store.GetAsync(sessionId, cancellationToken);
+                if (loaded is null)
+                {
+                    state.MarkCompleted(analysisGeneration);
+                    return;
+                }
+
+                if (loaded.Status != MeetingSessionStatus.Active)
+                {
+                    state.MarkCompleted(analysisGeneration);
+                    await ClearAnalyzingFlagAsync(loaded, cancellationToken);
+                    return;
+                }
+
+                var finalTranscript = loaded.Transcript
+                    .Where(s => s.IsFinal)
+                    .ToArray();
+                if (finalTranscript.Length == 0)
+                {
+                    state.MarkCompleted(analysisGeneration);
+                    await ClearAnalyzingFlagAsync(loaded, cancellationToken);
+                    return;
+                }
+
+                session = loaded;
+                latestSegment = finalTranscript[finalTranscript.Length - 1];
+                context = new CoachAgentContext(
+                    session.Purpose,
+                    session.Checklist,
+                    finalTranscript,
+                    session.RecommendedTasks);
+            }
+            finally
+            {
+                loadGate.Release();
+            }
+        }
+
+        // Call AI with a bounded timeout.
+        CoachAgentDecision aiDecision;
+        using var aiCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        aiCts.CancelAfter(_analysisOptions.AiTimeout);
+        try
+        {
+            aiDecision = await _aiAgent!.AnalyzeAsync(context, latestSegment, aiCts.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            state.MarkCompleted(analysisGeneration);
+            _logger?.LogWarning(
+                "AI coaching analysis timed out for session {SessionId}.",
+                sessionId);
+            await TryAddAnalysisWarningAsync(
+                sessionId,
+                "AI coaching analysis timed out. Transcript was preserved.",
+                state.IsAnalyzing);
+            return;
+        }
+
+        // Merge AI decision into the current session state under the gate.
+        var mergeGate = _sessionLocks.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
+        await mergeGate.WaitAsync(cancellationToken);
+        try
+        {
+            var current = await _store.GetAsync(sessionId, cancellationToken);
+            if (current is null)
+            {
+                state.MarkCompleted(analysisGeneration);
+                return;
+            }
+
+            if (current.Status != MeetingSessionStatus.Active)
+            {
+                state.MarkCompleted(analysisGeneration);
+                await ClearAnalyzingFlagAsync(current, cancellationToken);
+                return;
+            }
+
+            var finalTranscript = current.Transcript
+                .Where(s => s.IsFinal)
+                .ToArray();
+            var currentLatestSegment = finalTranscript.LastOrDefault();
+            if (state.LatestRequestedGeneration > analysisGeneration
+                || currentLatestSegment?.Id != latestSegment.Id)
+            {
+                state.MarkCompleted(analysisGeneration);
+                return;
+            }
+
+            var mergeWarnings = current.Warnings.ToList();
+
+            // Use the originally analyzed segment for evidence checking (not the current latest).
+            // This preserves evidence-quote integrity for AI completions.
+            var checklist = ApplyChecklistEvaluations(
+                current.Checklist,
+                aiDecision.ChecklistEvaluations,
+                latestSegment,
+                mergeWarnings);
+            var evaluatedRecommendations = ApplyRecommendationEvaluations(
+                current.RecommendedTasks,
+                aiDecision.RecommendationEvaluations ?? [],
+                latestSegment,
+                mergeWarnings);
+            var recommendations = ApplyRecommendations(
+                evaluatedRecommendations,
+                aiDecision.RecommendedTasks,
+                finalTranscript,
+                latestSegment,
+                current.Checklist,
+                current.Purpose,
+                mergeWarnings);
+
+            state.MarkCompleted(analysisGeneration);
+            var mergedSession = current with
+            {
+                Checklist = checklist,
+                RecommendedTasks = recommendations,
+                Warnings = mergeWarnings.TakeLast(20).ToArray(),
+                IsAnalyzing = state.IsAnalyzing,
+                Revision = current.Revision + 1,
+                UpdatedAtUtc = DateTimeOffset.UtcNow
+            };
+
+            await _store.SaveAsync(mergedSession, cancellationToken);
+            await _updatePublisher.PublishAsync(mergedSession, cancellationToken);
+        }
+        finally
+        {
+            mergeGate.Release();
+        }
+    }
+
+    private async Task ClearAnalyzingFlagAsync(
+        MeetingSessionState session,
+        CancellationToken cancellationToken)
+    {
+        var cleared = session with
+        {
+            IsAnalyzing = false,
+            Revision = session.Revision + 1,
+            UpdatedAtUtc = DateTimeOffset.UtcNow
+        };
+        await _store.SaveAsync(cleared, cancellationToken);
+        await _updatePublisher.PublishAsync(cleared, cancellationToken);
+    }
+
+    private async Task TryAddAnalysisWarningAsync(
+        Guid sessionId,
+        string warning,
+        bool isAnalyzing)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            var warningGate = _sessionLocks.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
+            await warningGate.WaitAsync(cts.Token);
+            try
+            {
+                var session = await _store.GetAsync(sessionId, cts.Token);
+                if (session is null)
+                {
+                    return;
+                }
+
+                var updated = session with
+                {
+                    Warnings = session.Warnings.Append(warning).TakeLast(20).ToArray(),
+                    IsAnalyzing = isAnalyzing,
+                    Revision = session.Revision + 1,
+                    UpdatedAtUtc = DateTimeOffset.UtcNow
+                };
+                await _store.SaveAsync(updated, cts.Token);
+                await _updatePublisher.PublishAsync(updated, cts.Token);
+            }
+            finally
+            {
+                warningGate.Release();
+            }
+        }
+        catch (OperationCanceledException ex) when (cts.IsCancellationRequested)
+        {
+            _logger?.LogWarning(
+                ex,
+                "Timed out while persisting an AI analysis warning for session {SessionId}.",
+                sessionId);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger?.LogError(
+                ex,
+                "Failed to persist analysis warning for session {SessionId}.",
+                sessionId);
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposalCts.Cancel();
+        _disposalCts.Dispose();
+        foreach (var state in _analysisStates.Values)
+        {
+            state.Dispose();
         }
     }
 
@@ -317,17 +674,19 @@ public sealed class MeetingSessionCoordinator(
         await gate.WaitAsync(cancellationToken);
         try
         {
-            var session = await store.GetAsync(sessionId, cancellationToken)
+            var session = await _store.GetAsync(sessionId, cancellationToken)
                 ?? throw new KeyNotFoundException($"Meeting session {sessionId} was not found.");
             var updated = await mutation(session);
             updated = updated with
             {
+                IsAnalyzing = updated.Status == MeetingSessionStatus.Active
+                    && IsAnalysisPending(sessionId),
                 Revision = session.Revision + 1,
                 UpdatedAtUtc = DateTimeOffset.UtcNow
             };
 
-            await store.SaveAsync(updated, cancellationToken);
-            await updatePublisher.PublishAsync(updated, cancellationToken);
+            await _store.SaveAsync(updated, cancellationToken);
+            await _updatePublisher.PublishAsync(updated, cancellationToken);
             return updated;
         }
         finally
@@ -609,5 +968,68 @@ public sealed class MeetingSessionCoordinator(
         }
 
         return normalized;
+    }
+
+    private MeetingSessionState ApplyRuntimeAnalysisState(MeetingSessionState session)
+    {
+        return session with
+        {
+            IsAnalyzing = session.Status == MeetingSessionStatus.Active
+                && IsAnalysisPending(session.Id)
+        };
+    }
+
+    private bool IsAnalysisPending(Guid sessionId)
+    {
+        return _analysisStates.TryGetValue(sessionId, out var state)
+            && state.IsAnalyzing;
+    }
+
+    private sealed class SessionAnalysisState : IDisposable
+    {
+        private readonly Channel<long> _trigger = Channel.CreateBounded<long>(
+            new BoundedChannelOptions(1)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleWriter = false,
+                SingleReader = true
+            });
+        private long _latestRequestedGeneration;
+        private long _completedGeneration;
+
+        public Task? BackgroundTask;
+
+        public ChannelReader<long> TriggerReader => _trigger.Reader;
+
+        public bool IsAnalyzing =>
+            Volatile.Read(ref _latestRequestedGeneration)
+            > Volatile.Read(ref _completedGeneration);
+
+        public long LatestRequestedGeneration =>
+            Volatile.Read(ref _latestRequestedGeneration);
+
+        public void Signal()
+        {
+            var generation = Interlocked.Increment(ref _latestRequestedGeneration);
+            _trigger.Writer.TryWrite(generation);
+        }
+
+        public void MarkCompleted(long generation)
+        {
+            while (true)
+            {
+                var current = Volatile.Read(ref _completedGeneration);
+                if (generation <= current
+                    || Interlocked.CompareExchange(
+                        ref _completedGeneration,
+                        generation,
+                        current) == current)
+                {
+                    return;
+                }
+            }
+        }
+
+        public void Dispose() => _trigger.Writer.TryComplete();
     }
 }

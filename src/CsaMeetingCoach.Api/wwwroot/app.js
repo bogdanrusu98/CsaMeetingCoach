@@ -241,9 +241,18 @@ function connectEvents(sessionId) {
   elements.connectionStatus.className = "status neutral";
 
   state.eventSource = new EventSource(`/api/sessions/${sessionId}/events`);
-  state.eventSource.addEventListener("open", () => {
+  state.eventSource.addEventListener("open", async () => {
     elements.connectionStatus.textContent = "Live";
     elements.connectionStatus.className = "status connected";
+    try {
+      const current = await api(`/api/sessions/${sessionId}`);
+      if (!state.session || current.revision >= state.session.revision) {
+        state.session = current;
+        render();
+      }
+    } catch (error) {
+      showToast(`The meeting state could not be refreshed: ${error.message}`);
+    }
   });
   state.eventSource.addEventListener("session", event => {
     const incoming = JSON.parse(event.data);
@@ -334,9 +343,12 @@ function render() {
   const proposedRecommendations = session.recommendedTasks.filter(
     task => task.status === "proposed");
   if (proposedRecommendations.length === 0) {
-    elements.recommendations.className = "stack empty-state";
-    elements.recommendations.textContent =
-      "Listening for explicit discussion to suggest what to cover next.";
+    elements.recommendations.className = session.isAnalyzing
+      ? "stack"
+      : "stack empty-state";
+    elements.recommendations.textContent = session.isAnalyzing
+      ? "Analyzing meeting context\u2026"
+      : "Listening for explicit discussion to suggest what to cover next.";
   } else {
     elements.recommendations.className = "stack";
     elements.recommendations.innerHTML = proposedRecommendations

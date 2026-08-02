@@ -9,6 +9,9 @@ public interface IFoundryAgentClient
     Task<string> GetDecisionJsonAsync(
         string inputJson,
         CancellationToken cancellationToken);
+
+    Task WarmUpAsync(CancellationToken cancellationToken)
+        => Task.CompletedTask;
 }
 
 public static class FoundryAgentContract

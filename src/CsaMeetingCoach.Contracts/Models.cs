@@ -95,7 +95,8 @@ public sealed record MeetingSessionState(
     IReadOnlyList<TranscriptSegment> Transcript,
     IReadOnlyList<RecommendedTaskState> RecommendedTasks,
     IReadOnlyList<string> Warnings,
-    string? TeamsOnlineMeetingId = null);
+    string? TeamsOnlineMeetingId = null,
+    bool IsAnalyzing = false);
 
 public sealed record AdapterTranscriptSegmentRequest(
     string TeamsOnlineMeetingId,

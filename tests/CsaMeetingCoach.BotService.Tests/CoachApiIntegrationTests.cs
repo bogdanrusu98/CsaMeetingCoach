@@ -149,7 +149,7 @@ public sealed class CoachApiIntegrationTests
         session = await AddTranscriptAsync(
             client,
             session.Id,
-            "Can we agree an owner for the migration assessment?");
+            "Can we agree an owner for the architecture assessment?");
         var recommendation = Assert.Single(session.RecommendedTasks);
         Assert.Equal(RecommendationStatus.Proposed, recommendation.Status);
 
@@ -166,7 +166,7 @@ public sealed class CoachApiIntegrationTests
         var completed = await AddTranscriptAsync(
             client,
             session.Id,
-            "We agreed the owner for the migration assessment and will send it Friday.");
+            "We agreed the owner for the architecture assessment and will send it Friday.");
         var completedRecommendation = Assert.Single(
             completed.RecommendedTasks.Where(task => task.Id == recommendation.Id));
         Assert.Equal(RecommendationStatus.Completed, completedRecommendation.Status);

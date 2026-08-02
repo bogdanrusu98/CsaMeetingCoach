@@ -36,3 +36,27 @@ public sealed class NullSessionUpdatePublisher : ISessionUpdatePublisher
         return Task.CompletedTask;
     }
 }
+
+public sealed record AnalysisOptions(TimeSpan DebounceWindow, TimeSpan AiTimeout)
+{
+    public static readonly AnalysisOptions Default = new(
+        TimeSpan.FromSeconds(8),
+        TimeSpan.FromSeconds(30));
+
+    public void Validate()
+    {
+        if (DebounceWindow < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(DebounceWindow),
+                "The analysis debounce window cannot be negative.");
+        }
+
+        if (AiTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(AiTimeout),
+                "The AI analysis timeout must be positive.");
+        }
+    }
+}

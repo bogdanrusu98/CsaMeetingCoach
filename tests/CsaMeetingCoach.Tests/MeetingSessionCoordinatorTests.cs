@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using CsaMeetingCoach.Contracts;
 using CsaMeetingCoach.Core;
 
@@ -142,6 +143,7 @@ public sealed class MeetingSessionCoordinatorTests
             store,
             new MeetingChecklistPlanner(),
             agent,
+            null,
             new NullSessionUpdatePublisher());
         var session = await coordinator.CreateAsync(
             new CreateMeetingSessionRequest(TestData.CreatePurpose()),
@@ -566,13 +568,560 @@ public sealed class MeetingSessionCoordinatorTests
                 CancellationToken.None));
     }
 
-    private static MeetingSessionCoordinator CreateCoordinator(IConversationCoachAgent agent)
+    private static MeetingSessionCoordinator CreateCoordinator(
+        IConversationCoachAgent deterministicAgent,
+        IConversationCoachAgent? aiAgent = null,
+        AnalysisOptions? analysisOptions = null)
     {
         return new MeetingSessionCoordinator(
             new InMemoryMeetingSessionStore(),
             new MeetingChecklistPlanner(),
-            agent,
-            new NullSessionUpdatePublisher());
+            deterministicAgent,
+            aiAgent,
+            new NullSessionUpdatePublisher(),
+            analysisOptions: analysisOptions);
+    }
+
+    [Fact]
+    public async Task AddTranscript_ReturnsImmediatelyWhileAiIsBlocked()
+    {
+        var blocking = new BlockingAgent();
+        using var coordinator = CreateCoordinator(
+            new HeuristicConversationCoachAgent(),
+            aiAgent: blocking,
+            analysisOptions: new AnalysisOptions(TimeSpan.Zero, TimeSpan.FromMinutes(5)));
+
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("CSA", "We need to finalize the next steps by Friday."),
+            CancellationToken.None);
+
+        // Fast lane returned immediately; AI is still running in the background.
+        Assert.True(updated.IsAnalyzing);
+        blocking.Release();
+    }
+
+    [Fact]
+    public async Task AddTranscript_DeterministicFastLane_CompletesChecklistWithoutAi()
+    {
+        using var coordinator = CreateCoordinator(
+            new HeuristicConversationCoachAgent(),
+            aiAgent: null);
+
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "CSA",
+                "Vom agrea următorul pas, responsabilul și deadline-ul până la vineri."),
+            CancellationToken.None);
+
+        var completed = Assert.Single(updated.Checklist.Where(
+            item => item.Status == ChecklistItemStatus.Completed));
+        Assert.True(completed.AutoCompleted);
+        Assert.False(updated.IsAnalyzing);
+    }
+
+    [Fact]
+    public async Task AddTranscript_AsyncAiLane_MergesDecisionAndClearsAnalyzing()
+    {
+        var store = new InMemoryMeetingSessionStore();
+        var publisher = new CapturingSessionUpdatePublisher();
+        var aiAgent = new ControlledAgent();
+        using var coordinator = new MeetingSessionCoordinator(
+            store,
+            new MeetingChecklistPlanner(),
+            new HeuristicConversationCoachAgent(),
+            aiAgent,
+            publisher,
+            analysisOptions: new AnalysisOptions(TimeSpan.Zero, TimeSpan.FromMinutes(5)));
+
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("CSA", "We need to finalize the next steps."),
+            CancellationToken.None);
+
+        // Release the blocked AI call and wait for the async lane to finish.
+        aiAgent.Release();
+        var final = await publisher.WaitForAsync(
+            s => !s.IsAnalyzing,
+            TimeSpan.FromSeconds(10));
+
+        Assert.False(final.IsAnalyzing);
+        Assert.Equal(1, aiAgent.CallCount);
+    }
+
+    [Fact]
+    public async Task AddTranscript_CoalescingBehavior_ProcessesOneSubsequentSnapshot()
+    {
+        var store = new InMemoryMeetingSessionStore();
+        var publisher = new CapturingSessionUpdatePublisher();
+        var aiAgent = new ControlledAgent();
+        using var coordinator = new MeetingSessionCoordinator(
+            store,
+            new MeetingChecklistPlanner(),
+            new HeuristicConversationCoachAgent(),
+            aiAgent,
+            publisher,
+            analysisOptions: new AnalysisOptions(TimeSpan.Zero, TimeSpan.FromMinutes(5)));
+
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        // First segment starts first AI call.
+        await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("CSA", "First statement."),
+            CancellationToken.None);
+
+        // Wait for AI call 1 to be in progress before adding rapid segments.
+        await aiAgent.WaitForCallAsync();
+
+        // Rapid segments while AI is blocked; channel capacity 1 coalesces them.
+        for (var i = 0; i < 5; i++)
+        {
+            await coordinator.AddTranscriptAsync(
+                session.Id,
+                new AddTranscriptSegmentRequest("CSA", $"Rapid segment {i}."),
+                CancellationToken.None);
+        }
+
+        // Release first AI call; coalesced trigger starts second AI call.
+        aiAgent.Release();
+        await aiAgent.WaitForCallAsync(); // wait for AI call 2 to be blocked
+
+        // Release second AI call and wait for all processing to finish.
+        aiAgent.Release();
+        await publisher.WaitForAsync(
+            _ => aiAgent.CallCount >= 2,
+            TimeSpan.FromSeconds(10));
+
+        // All 5 rapid segments coalesced into one trigger → exactly 2 AI calls total.
+        Assert.Equal(2, aiAgent.CallCount);
+    }
+
+    [Fact]
+    public async Task AddTranscript_NewerSpeechDiscardsStaleAiResultAndKeepsAnalyzing()
+    {
+        var store = new InMemoryMeetingSessionStore();
+        var publisher = new CapturingSessionUpdatePublisher();
+        var aiAgent = new ControlledRecommendationAgent();
+        using var coordinator = new MeetingSessionCoordinator(
+            store,
+            new MeetingChecklistPlanner(),
+            new HeuristicConversationCoachAgent(),
+            aiAgent,
+            publisher,
+            analysisOptions: new AnalysisOptions(TimeSpan.Zero, TimeSpan.FromMinutes(5)));
+
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("Customer", "The first topic is deployment architecture."),
+            CancellationToken.None);
+        await aiAgent.WaitForCallAsync();
+
+        await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("Customer", "The latest topic is regional topology."),
+            CancellationToken.None);
+        aiAgent.Release();
+        await aiAgent.WaitForCallAsync();
+
+        var whileLatestAnalysisRuns = await coordinator.GetAsync(
+            session.Id,
+            CancellationToken.None);
+        Assert.NotNull(whileLatestAnalysisRuns);
+        Assert.True(whileLatestAnalysisRuns.IsAnalyzing);
+        Assert.Empty(whileLatestAnalysisRuns.RecommendedTasks);
+
+        aiAgent.Release();
+        var final = await publisher.WaitForAsync(
+            state => !state.IsAnalyzing && state.RecommendedTasks.Count == 1,
+            TimeSpan.FromSeconds(10));
+
+        var recommendation = Assert.Single(final.RecommendedTasks);
+        Assert.Contains("regional topology", recommendation.Title, StringComparison.Ordinal);
+        Assert.DoesNotContain("deployment architecture", recommendation.Title, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AddTranscript_AsyncAiLaneReceivesCompletePersistedMeetingContext()
+    {
+        var publisher = new CapturingSessionUpdatePublisher();
+        var aiAgent = new ControlledRecommendationAgent();
+        using var coordinator = new MeetingSessionCoordinator(
+            new InMemoryMeetingSessionStore(),
+            new MeetingChecklistPlanner(),
+            new HeuristicConversationCoachAgent(),
+            aiAgent,
+            publisher,
+            analysisOptions: new AnalysisOptions(TimeSpan.Zero, TimeSpan.FromMinutes(5)));
+
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("Customer", "Context segment 0."),
+            CancellationToken.None);
+        await aiAgent.WaitForCallAsync();
+
+        for (var index = 1; index < 25; index++)
+        {
+            await coordinator.AddTranscriptAsync(
+                session.Id,
+                new AddTranscriptSegmentRequest("Customer", $"Context segment {index}."),
+                CancellationToken.None);
+        }
+
+        aiAgent.Release();
+        await aiAgent.WaitForCallAsync();
+
+        Assert.Equal(25, aiAgent.Contexts.Last().RecentTranscript.Count);
+
+        aiAgent.Release();
+        await publisher.WaitForAsync(
+            state => !state.IsAnalyzing,
+            TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task AddTranscript_WithAiConfigured_DoesNotPublishGenericHeuristicTask()
+    {
+        var blocking = new BlockingAgent();
+        using var coordinator = CreateCoordinator(
+            new HeuristicConversationCoachAgent(),
+            aiAgent: blocking,
+            analysisOptions: new AnalysisOptions(TimeSpan.Zero, TimeSpan.FromMinutes(5)));
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("CSA", "We will send the assessment tomorrow."),
+            CancellationToken.None);
+
+        Assert.True(updated.IsAnalyzing);
+        Assert.Empty(updated.RecommendedTasks);
+        blocking.Release();
+    }
+
+    [Fact]
+    public async Task AddTranscript_CrossCuttingPolicyRemainsSingleAfterAiMerge()
+    {
+        var publisher = new CapturingSessionUpdatePublisher();
+        using var coordinator = new MeetingSessionCoordinator(
+            new InMemoryMeetingSessionStore(),
+            new MeetingChecklistPlanner(),
+            new HeuristicConversationCoachAgent(),
+            new CrossCuttingPolicyAgent(),
+            publisher,
+            analysisOptions: new AnalysisOptions(TimeSpan.Zero, TimeSpan.FromMinutes(5)));
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        var fastLane = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Customer",
+                "We want to migrate our workloads to Azure next quarter."),
+            CancellationToken.None);
+        Assert.Single(fastLane.RecommendedTasks);
+
+        var final = await publisher.WaitForAsync(
+            state => !state.IsAnalyzing && state.RecommendedTasks.Count > 0,
+            TimeSpan.FromSeconds(10));
+
+        Assert.Single(final.RecommendedTasks);
+    }
+
+    [Fact]
+    public async Task GetSession_OverlaysRuntimeAnalysisStateWhenStoreResetsPersistedFlag()
+    {
+        var blocking = new BlockingAgent();
+        using var coordinator = new MeetingSessionCoordinator(
+            new ResettingAnalysisStore(),
+            new MeetingChecklistPlanner(),
+            new HeuristicConversationCoachAgent(),
+            blocking,
+            new NullSessionUpdatePublisher(),
+            analysisOptions: new AnalysisOptions(TimeSpan.Zero, TimeSpan.FromMinutes(5)));
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("Customer", "Review the current architecture."),
+            CancellationToken.None);
+
+        var current = await coordinator.GetAsync(session.Id, CancellationToken.None);
+        Assert.NotNull(current);
+        Assert.True(current.IsAnalyzing);
+        blocking.Release();
+    }
+
+    [Fact]
+    public async Task AddTranscript_AiTimeout_AddsWarningAndPreservesTranscript()
+    {
+        var store = new InMemoryMeetingSessionStore();
+        var publisher = new CapturingSessionUpdatePublisher();
+        var neverCompletes = new BlockingAgent();
+        using var coordinator = new MeetingSessionCoordinator(
+            store,
+            new MeetingChecklistPlanner(),
+            new HeuristicConversationCoachAgent(),
+            neverCompletes,
+            publisher,
+            analysisOptions: new AnalysisOptions(TimeSpan.Zero, TimeSpan.FromMilliseconds(200)));
+
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("CSA", "Something important."),
+            CancellationToken.None);
+
+        // Async lane should time out and add a warning, then clear IsAnalyzing.
+        var final = await publisher.WaitForAsync(
+            s => !s.IsAnalyzing,
+            TimeSpan.FromSeconds(10));
+
+        Assert.Single(final.Transcript);
+        Assert.Contains(
+            final.Warnings,
+            w => w.Contains("timed out", StringComparison.OrdinalIgnoreCase));
+
+        neverCompletes.Release();
+    }
+
+    [Fact]
+    public async Task AddTranscript_AiFailure_AddsWarningDoesNotThrow()
+    {
+        var store = new InMemoryMeetingSessionStore();
+        var publisher = new CapturingSessionUpdatePublisher();
+        using var coordinator = new MeetingSessionCoordinator(
+            store,
+            new MeetingChecklistPlanner(),
+            new HeuristicConversationCoachAgent(),
+            new ThrowingAiAgent(),
+            publisher,
+            analysisOptions: new AnalysisOptions(TimeSpan.Zero, TimeSpan.FromMinutes(5)));
+
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        // AddTranscriptAsync must not throw; the AI failure is handled in the background lane.
+        await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("CSA", "Something important."),
+            CancellationToken.None);
+
+        var final = await publisher.WaitForAsync(
+            s => !s.IsAnalyzing,
+            TimeSpan.FromSeconds(10));
+
+        Assert.Single(final.Transcript);
+        Assert.Contains(
+            final.Warnings,
+            w => w.Contains("error", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task AddTranscript_CrossCuttingPolicy_AppliedInFastLane()
+    {
+        using var coordinator = CreateCoordinator(
+            new HeuristicConversationCoachAgent(),
+            aiAgent: null);
+
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        // "migrate" triggers CrossCuttingRecommendationPolicy even without an AI agent.
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Customer",
+                "We want to migrate our workloads to Azure next quarter."),
+            CancellationToken.None);
+
+        Assert.NotEmpty(updated.RecommendedTasks);
+        Assert.All(
+            updated.RecommendedTasks,
+            task => Assert.Equal(RecommendationStatus.Proposed, task.Status));
+    }
+
+    private sealed class BlockingAgent : IConversationCoachAgent
+    {
+        private readonly TaskCompletionSource _tcs = new();
+
+        public void Release() => _tcs.TrySetResult();
+
+        public async Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken)
+        {
+            await _tcs.Task.WaitAsync(cancellationToken);
+            return new CoachAgentDecision([], []);
+        }
+    }
+
+    private sealed class ControlledAgent : IConversationCoachAgent
+    {
+        private readonly SemaphoreSlim _permit = new(0);
+        private readonly SemaphoreSlim _waiting = new(0);
+        private int _callCount;
+
+        public int CallCount => Volatile.Read(ref _callCount);
+
+        public void Release(int count = 1) => _permit.Release(count);
+
+        /// <summary>Awaits until the next <see cref="AnalyzeAsync"/> call has started and is blocked.</summary>
+        public Task WaitForCallAsync() => _waiting.WaitAsync();
+
+        public async Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _callCount);
+            _waiting.Release();
+            await _permit.WaitAsync(cancellationToken);
+            return new CoachAgentDecision([], []);
+        }
+    }
+
+    private sealed class ControlledRecommendationAgent : IConversationCoachAgent
+    {
+        private readonly SemaphoreSlim _permit = new(0);
+        private readonly SemaphoreSlim _waiting = new(0);
+        private readonly ConcurrentQueue<CoachAgentContext> _contexts = new();
+
+        public IReadOnlyList<CoachAgentContext> Contexts => _contexts.ToArray();
+
+        public void Release() => _permit.Release();
+
+        public Task WaitForCallAsync() => _waiting.WaitAsync();
+
+        public async Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken)
+        {
+            _contexts.Enqueue(context);
+            _waiting.Release();
+            await _permit.WaitAsync(cancellationToken);
+            return new CoachAgentDecision(
+                [],
+                [
+                    new RecommendedTaskProposal(
+                        $"Discuss {latestSegment.Text}",
+                        "The latest customer statement requires a grounded follow-up.",
+                        0.9,
+                        [latestSegment.Id])
+                ]);
+        }
+    }
+
+    private sealed class CrossCuttingPolicyAgent : IConversationCoachAgent
+    {
+        public Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(CrossCuttingRecommendationPolicy.Apply(
+                new CoachAgentDecision([], []),
+                latestSegment));
+        }
+    }
+
+    private sealed class ResettingAnalysisStore : IMeetingSessionStore
+    {
+        private readonly InMemoryMeetingSessionStore _inner = new();
+
+        public async Task<MeetingSessionState?> GetAsync(
+            Guid sessionId,
+            CancellationToken cancellationToken)
+        {
+            var session = await _inner.GetAsync(sessionId, cancellationToken);
+            return session is null ? null : session with { IsAnalyzing = false };
+        }
+
+        public Task SaveAsync(
+            MeetingSessionState session,
+            CancellationToken cancellationToken)
+        {
+            return _inner.SaveAsync(session, cancellationToken);
+        }
+    }
+
+    private sealed class ThrowingAiAgent : IConversationCoachAgent
+    {
+        public Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("AI service unavailable.");
+    }
+
+    private sealed class CapturingSessionUpdatePublisher : ISessionUpdatePublisher
+    {
+        private readonly SemaphoreSlim _signal = new(0);
+        private volatile MeetingSessionState? _latest;
+
+        public Task PublishAsync(MeetingSessionState session, CancellationToken cancellationToken)
+        {
+            _latest = session;
+            _signal.Release();
+            return Task.CompletedTask;
+        }
+
+        public async Task<MeetingSessionState> WaitForAsync(
+            Func<MeetingSessionState, bool> predicate,
+            TimeSpan timeout)
+        {
+            using var cts = new CancellationTokenSource(timeout);
+            try
+            {
+                while (true)
+                {
+                    if (_latest is { } current && predicate(current))
+                    {
+                        return current;
+                    }
+
+                    await _signal.WaitAsync(cts.Token);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw new TimeoutException(
+                    $"Timed out after {timeout.TotalSeconds:F1}s waiting for session condition.");
+            }
+        }
     }
 
     private sealed class InventedEvidenceAgent : IConversationCoachAgent
