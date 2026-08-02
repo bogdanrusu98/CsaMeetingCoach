@@ -1,5 +1,9 @@
+using System.Globalization;
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace CsaMeetingCoach.Api;
 
@@ -47,11 +51,30 @@ public sealed class BrowserSpeechOptions
     }
 }
 
-public sealed class BrowserSpeechAuthorizer(BrowserSpeechOptions options)
+public sealed class BrowserSpeechAuthorizer
 {
     public const string ApiKeyHeaderName = "X-Browser-Speech-Key";
+    private const string AccessCookieName = "CsaMeetingCoach.BrowserSpeechAccess";
+    private static readonly TimeSpan AccessLifetime = TimeSpan.FromDays(7);
+    private readonly BrowserSpeechOptions options;
+    private readonly IDataProtector protector;
+    private readonly TimeProvider timeProvider;
+    private readonly byte[] accessKeyFingerprint;
 
-    public void Authorize(HttpContext context)
+    public BrowserSpeechAuthorizer(
+        BrowserSpeechOptions options,
+        IDataProtectionProvider dataProtectionProvider,
+        TimeProvider timeProvider)
+    {
+        this.options = options;
+        this.timeProvider = timeProvider;
+        protector = dataProtectionProvider.CreateProtector(
+            "CsaMeetingCoach.BrowserSpeechAccess.v1");
+        accessKeyFingerprint = SHA256.HashData(
+            Encoding.UTF8.GetBytes(options.AccessKey));
+    }
+
+    public bool Authorize(HttpContext context)
     {
         if (!options.Enabled)
         {
@@ -59,14 +82,88 @@ public sealed class BrowserSpeechAuthorizer(BrowserSpeechOptions options)
                 "Browser microphone transcription is not configured.");
         }
 
-        if (!ApiKeyCredentialValidator.IsValid(
-                context.Request.Headers,
-                ApiKeyHeaderName,
-                options.AccessKey))
+        if (HasPersistentAccess(context))
         {
-            throw new UnauthorizedAccessException(
-                "A valid browser speech access code is required.");
+            return false;
         }
+
+        if (ApiKeyCredentialValidator.IsValid(
+            context.Request.Headers,
+            ApiKeyHeaderName,
+            options.AccessKey))
+        {
+            return true;
+        }
+
+        throw new UnauthorizedAccessException(
+            "A valid browser speech access code is required.");
+    }
+
+    public bool HasPersistentAccess(HttpContext context)
+    {
+        if (!options.Enabled
+            || !context.Request.Cookies.TryGetValue(
+                AccessCookieName,
+                out var protectedToken)
+            || string.IsNullOrWhiteSpace(protectedToken))
+        {
+            return false;
+        }
+
+        try
+        {
+            var payload = protector.Unprotect(protectedToken);
+            var separatorIndex = payload.IndexOf('.', StringComparison.Ordinal);
+            if (separatorIndex <= 0
+                || !long.TryParse(
+                    payload.AsSpan(0, separatorIndex),
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var expiresAtUnixSeconds)
+                || expiresAtUnixSeconds <= timeProvider.GetUtcNow().ToUnixTimeSeconds())
+            {
+                return false;
+            }
+
+            var providedFingerprint = Convert.FromBase64String(
+                payload[(separatorIndex + 1)..]);
+            return providedFingerprint.Length == accessKeyFingerprint.Length
+                && CryptographicOperations.FixedTimeEquals(
+                    providedFingerprint,
+                    accessKeyFingerprint);
+        }
+        catch (CryptographicException)
+        {
+            return false;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    public void GrantPersistentAccess(HttpContext context)
+    {
+        var expiresAt = timeProvider.GetUtcNow().Add(AccessLifetime);
+        var payload = string.Concat(
+            expiresAt.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture),
+            ".",
+            Convert.ToBase64String(accessKeyFingerprint));
+        context.Response.Cookies.Append(
+            AccessCookieName,
+            protector.Protect(payload),
+            new CookieOptions
+            {
+                HttpOnly = true,
+                IsEssential = true,
+                Path = "/api",
+                SameSite = context.Request.IsHttps
+                    ? SameSiteMode.None
+                    : SameSiteMode.Strict,
+                Secure = context.Request.IsHttps,
+                Expires = expiresAt,
+                MaxAge = AccessLifetime
+            });
     }
 }
 

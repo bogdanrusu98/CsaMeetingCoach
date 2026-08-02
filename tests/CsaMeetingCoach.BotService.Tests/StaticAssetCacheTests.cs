@@ -19,7 +19,7 @@ public sealed class StaticAssetCacheTests
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
         Assert.Contains("styles.css?v=20260801d", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260802a", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260802b", html, StringComparison.Ordinal);
         Assert.Contains("data-theme", html, StringComparison.Ordinal);
         Assert.Contains("id=\"microphone-toggle\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"recommendations\"", html, StringComparison.Ordinal);
@@ -32,13 +32,16 @@ public sealed class StaticAssetCacheTests
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260802a");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260802b");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
         var script = await scriptResponse.Content.ReadAsStringAsync();
-        Assert.Contains("sessionStorage.getItem", script, StringComparison.Ordinal);
-        Assert.Contains("sessionStorage.setItem", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("sessionStorage", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "/api/browser-speech/access",
+            script,
+            StringComparison.Ordinal);
 
         using var styleResponse = await client.GetAsync("/styles.css?v=20260801d");
         styleResponse.EnsureSuccessStatusCode();

@@ -240,6 +240,14 @@ app.MapGet("/api/health", () => Results.Ok(new
     browserMicrophoneTranscription = browserSpeechOptions.Enabled ? "ready" : "disabled"
 }));
 
+app.MapGet(
+    "/api/browser-speech/access",
+    (HttpContext context, BrowserSpeechAuthorizer speechAuthorizer) =>
+        Results.Ok(new
+        {
+            authorized = speechAuthorizer.HasPersistentAccess(context)
+        }));
+
 app.MapPost(
     "/api/sessions",
     async (
@@ -274,9 +282,15 @@ app.MapPost(
                 "Microphone transcription requires an active meeting session.");
         }
 
-        speechAuthorizer.Authorize(context);
+        var shouldGrantPersistentAccess = speechAuthorizer.Authorize(context);
+        var token = await speechTokens.IssueTokenAsync(cancellationToken);
+        if (shouldGrantPersistentAccess)
+        {
+            speechAuthorizer.GrantPersistentAccess(context);
+        }
+
         context.Response.Headers.CacheControl = "no-store";
-        return Results.Ok(await speechTokens.IssueTokenAsync(cancellationToken));
+        return Results.Ok(token);
     });
 
 app.MapPost(

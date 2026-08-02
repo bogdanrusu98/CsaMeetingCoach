@@ -3,6 +3,7 @@ const state = {
   eventSource: null,
   teamsMeetingId: null,
   browserSpeechAvailable: false,
+  browserSpeechAuthorized: false,
   microphoneRecognizer: null,
   microphoneAudioConfig: null,
   microphoneRefreshTimer: null,
@@ -43,9 +44,6 @@ const elements = {
   toast: document.querySelector("#toast")
 };
 
-const microphoneAccessStorageKey = "csa-meeting-coach.microphone-access-code";
-restoreMicrophoneAccessKey();
-
 function applyTeamsTheme(theme) {
   const normalizedTheme = theme === "dark"
     ? "dark"
@@ -82,7 +80,8 @@ elements.microphoneAccessKey.addEventListener("input", renderMicrophoneControls)
 elements.microphoneToggle.addEventListener("click", async () => {
   if (!state.microphoneRecognizer
       && (!elements.microphoneConsent.checked
-        || !elements.microphoneAccessKey.value)) {
+        || (!state.browserSpeechAuthorized
+          && !elements.microphoneAccessKey.value))) {
     elements.microphoneUnlock.classList.remove("hidden");
     elements.microphoneUnlock.querySelector(
       elements.microphoneConsent.checked
@@ -395,7 +394,8 @@ async function startMicrophone() {
   if (!state.browserSpeechAvailable) {
     throw new Error("Browser microphone transcription is not configured.");
   }
-  if (!elements.microphoneAccessKey.value) {
+  if (!state.browserSpeechAuthorized
+      && !elements.microphoneAccessKey.value) {
     throw new Error("Enter the demo access code before starting.");
   }
   if (!window.SpeechSDK) {
@@ -529,34 +529,24 @@ async function stopMicrophone() {
 }
 
 async function requestSpeechToken(sessionId = state.session?.id, signal) {
-  const token = await api(`/api/sessions/${sessionId}/speech-token`, {
-    method: "POST",
-    signal,
-    headers: {
-      "X-Browser-Speech-Key": elements.microphoneAccessKey.value
-    }
-  });
-  rememberMicrophoneAccessKey(elements.microphoneAccessKey.value);
-  return token;
-}
-
-function restoreMicrophoneAccessKey() {
+  const accessKey = elements.microphoneAccessKey.value.trim();
   try {
-    const storedAccessKey = window.sessionStorage.getItem(
-      microphoneAccessStorageKey);
-    if (storedAccessKey) {
-      elements.microphoneAccessKey.value = storedAccessKey;
+    const token = await api(`/api/sessions/${sessionId}/speech-token`, {
+      method: "POST",
+      signal,
+      headers: accessKey
+        ? { "X-Browser-Speech-Key": accessKey }
+        : {}
+    });
+    state.browserSpeechAuthorized = true;
+    elements.microphoneAccessKey.value = "";
+    return token;
+  } catch (error) {
+    if (/valid browser speech access code/i.test(error?.message || "")) {
+      state.browserSpeechAuthorized = false;
+      elements.microphoneUnlock.classList.remove("hidden");
     }
-  } catch (error) {
-    console.warn("Microphone access-code restoration is unavailable.", error);
-  }
-}
-
-function rememberMicrophoneAccessKey(accessKey) {
-  try {
-    window.sessionStorage.setItem(microphoneAccessStorageKey, accessKey);
-  } catch (error) {
-    console.warn("Microphone access-code persistence is unavailable.", error);
+    throw error;
   }
 }
 
@@ -721,7 +711,8 @@ function renderMicrophoneControls() {
   elements.confirmMicrophone.disabled = state.microphoneBusy
     || sessionCompleted
     || !elements.microphoneConsent.checked
-    || !elements.microphoneAccessKey.value;
+    || (!state.browserSpeechAuthorized
+      && !elements.microphoneAccessKey.value);
   elements.microphoneConsent.disabled =
     state.microphoneBusy || listening || sessionCompleted;
   elements.microphoneAccessKey.disabled =
@@ -738,7 +729,9 @@ function renderMicrophoneControls() {
     "aria-label",
     listening
       ? "Stop listening to the local microphone"
-      : elements.microphoneConsent.checked && elements.microphoneAccessKey.value
+      : elements.microphoneConsent.checked
+          && (state.browserSpeechAuthorized
+            || elements.microphoneAccessKey.value)
         ? "Start listening to the local microphone"
         : "Set up the local microphone");
 }
@@ -751,11 +744,16 @@ function queueMicrophoneOperation(operation) {
 
 async function initializeBrowserSpeechAvailability() {
   try {
-    const health = await api("/api/health");
+    const [health, access] = await Promise.all([
+      api("/api/health"),
+      api("/api/browser-speech/access")
+    ]);
     state.browserSpeechAvailable =
       health.browserMicrophoneTranscription === "ready";
+    state.browserSpeechAuthorized = access.authorized === true;
   } catch {
     state.browserSpeechAvailable = false;
+    state.browserSpeechAuthorized = false;
   }
   renderMicrophoneControls();
 }
