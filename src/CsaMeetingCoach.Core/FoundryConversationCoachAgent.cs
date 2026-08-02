@@ -161,6 +161,7 @@ public static class FoundryAgentContract
 public sealed class FoundryConversationCoachAgent(
     IFoundryAgentClient foundryClient) : IConversationCoachAgent
 {
+    private const int MaximumDecisionAttempts = 2;
     private const int MaximumDecisionLength = 100_000;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -219,9 +220,29 @@ public sealed class FoundryConversationCoachAgent(
             }
         }, JsonOptions);
 
-        var decisionJson = await foundryClient.GetDecisionJsonAsync(
-            inputJson,
-            cancellationToken);
+        InvalidOperationException? lastInvalidDecision = null;
+        for (var attempt = 0; attempt < MaximumDecisionAttempts; attempt++)
+        {
+            var decisionJson = await foundryClient.GetDecisionJsonAsync(
+                inputJson,
+                cancellationToken);
+            try
+            {
+                return ParseDecision(decisionJson);
+            }
+            catch (InvalidOperationException exception)
+            {
+                lastInvalidDecision = exception;
+            }
+        }
+
+        throw lastInvalidDecision
+            ?? new InvalidOperationException(
+                "Foundry did not return a coaching decision.");
+    }
+
+    private static CoachAgentDecision ParseDecision(string decisionJson)
+    {
         if (string.IsNullOrWhiteSpace(decisionJson)
             || decisionJson.Length > MaximumDecisionLength)
         {

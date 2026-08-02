@@ -98,6 +98,27 @@ public sealed class FoundryConversationCoachAgentTests
     }
 
     [Fact]
+    public async Task Analyze_InitialInvalidDecision_RetriesOnce()
+    {
+        var latestSegment = CreateLatestSegment();
+        var validResponse = JsonSerializer.Serialize(
+            new CoachAgentDecision([], [], []),
+            JsonOptions);
+        var client = new SequenceFoundryClient(
+            """{"checklistEvaluations":[],"recommendedTasks":[],"recommendationEvaluations":[],"extra":true}""",
+            validResponse);
+        var agent = new FoundryConversationCoachAgent(client);
+
+        var decision = await agent.AnalyzeAsync(
+            CreateContext(latestSegment),
+            latestSegment,
+            CancellationToken.None);
+
+        Assert.Empty(decision.RecommendedTasks);
+        Assert.Equal(2, client.CallCount);
+    }
+
+    [Fact]
     public async Task Analyze_CompletionInventsEvidence_IsPreservedForCoordinatorWarning()
     {
         var latestSegment = CreateLatestSegment();
@@ -263,6 +284,21 @@ public sealed class FoundryConversationCoachAgentTests
             CancellationToken cancellationToken)
         {
             InputJson = inputJson;
+            return Task.FromResult(response);
+        }
+    }
+
+    private sealed class SequenceFoundryClient(params string[] responses)
+        : IFoundryAgentClient
+    {
+        public int CallCount { get; private set; }
+
+        public Task<string> GetDecisionJsonAsync(
+            string inputJson,
+            CancellationToken cancellationToken)
+        {
+            var response = responses[Math.Min(CallCount, responses.Length - 1)];
+            CallCount++;
             return Task.FromResult(response);
         }
     }
