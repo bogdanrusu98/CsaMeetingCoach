@@ -43,6 +43,9 @@ const elements = {
   toast: document.querySelector("#toast")
 };
 
+const microphoneAccessStorageKey = "csa-meeting-coach.microphone-access-code";
+restoreMicrophoneAccessKey();
+
 function applyTeamsTheme(theme) {
   const normalizedTheme = theme === "dark"
     ? "dark"
@@ -525,14 +528,36 @@ async function stopMicrophone() {
   }
 }
 
-function requestSpeechToken(sessionId = state.session?.id, signal) {
-  return api(`/api/sessions/${sessionId}/speech-token`, {
+async function requestSpeechToken(sessionId = state.session?.id, signal) {
+  const token = await api(`/api/sessions/${sessionId}/speech-token`, {
     method: "POST",
     signal,
     headers: {
       "X-Browser-Speech-Key": elements.microphoneAccessKey.value
     }
   });
+  rememberMicrophoneAccessKey(elements.microphoneAccessKey.value);
+  return token;
+}
+
+function restoreMicrophoneAccessKey() {
+  try {
+    const storedAccessKey = window.sessionStorage.getItem(
+      microphoneAccessStorageKey);
+    if (storedAccessKey) {
+      elements.microphoneAccessKey.value = storedAccessKey;
+    }
+  } catch (error) {
+    console.warn("Microphone access-code restoration is unavailable.", error);
+  }
+}
+
+function rememberMicrophoneAccessKey(accessKey) {
+  try {
+    window.sessionStorage.setItem(microphoneAccessStorageKey, accessKey);
+  } catch (error) {
+    console.warn("Microphone access-code persistence is unavailable.", error);
+  }
 }
 
 function ensureMicrophoneSessionActive(sessionId) {
