@@ -272,7 +272,7 @@ public sealed class FoundryConversationCoachAgent(
                 ? "$"
                 : exception.Path;
             throw new InvalidOperationException(
-                $"Foundry returned a coaching decision that does not match the contract at JSON path '{jsonPath}'.",
+                $"Foundry returned a coaching decision that does not match the contract at JSON path '{jsonPath}' ({DescribeDecisionShape(decisionJson)}).",
                 exception);
         }
 
@@ -293,6 +293,46 @@ public sealed class FoundryConversationCoachAgent(
         {
             throw new InvalidOperationException(
                 "Foundry returned more than one recommended task.");
+        }
+    }
+
+    private static string DescribeDecisionShape(string decisionJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(decisionJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return $"root kind {document.RootElement.ValueKind}";
+            }
+
+            var properties = document.RootElement
+                .EnumerateObject()
+                .Select(property => property.Name)
+                .ToHashSet(StringComparer.Ordinal);
+            if (properties.Count == 0)
+            {
+                return "empty root object";
+            }
+
+            var expected = new[]
+            {
+                "checklistEvaluations",
+                "recommendedTasks",
+                "recommendationEvaluations"
+            };
+            var missing = expected
+                .Where(property => !properties.Contains(property))
+                .ToArray();
+            var unexpectedCount = properties.Count
+                - expected.Count(properties.Contains);
+            return missing.Length == 0 && unexpectedCount == 0
+                ? "root object contains only expected properties"
+                : $"root object has {unexpectedCount} unexpected properties and is missing {string.Join(", ", missing)}";
+        }
+        catch (JsonException)
+        {
+            return "invalid JSON syntax";
         }
     }
 }
