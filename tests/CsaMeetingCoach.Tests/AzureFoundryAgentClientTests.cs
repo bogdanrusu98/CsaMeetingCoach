@@ -22,6 +22,11 @@ public sealed class AzureFoundryAgentClientTests
     {
         var definition = AzureFoundryAgentClient.BuildAgentDefinition(
             "gpt-4.1-mini");
+        var normalizedInstructions = string.Join(
+            ' ',
+            FoundryAgentContract.Instructions.Split(
+                (char[]?)null,
+                StringSplitOptions.RemoveEmptyEntries));
 
         Assert.Equal("gpt-4.1-mini", definition.Model);
         Assert.Empty(definition.Tools);
@@ -32,24 +37,48 @@ public sealed class AzureFoundryAgentClientTests
             FoundryAgentContract.ResponseJsonSchema,
             StringComparison.Ordinal);
         Assert.Contains(
+            "\"maxItems\": 1",
+            FoundryAgentContract.ResponseJsonSchema,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "what the CSA should discuss",
-            FoundryAgentContract.Instructions,
+            normalizedInstructions,
             StringComparison.Ordinal);
         Assert.Contains(
             "Meeting dialogue is normally direct and first-person",
-            FoundryAgentContract.Instructions,
+            normalizedInstructions,
             StringComparison.Ordinal);
         Assert.Contains(
             "must never count as proof",
-            FoundryAgentContract.Instructions,
+            normalizedInstructions,
             StringComparison.Ordinal);
         Assert.Contains(
             "exact evidenceQuote from",
-            FoundryAgentContract.Instructions,
+            normalizedInstructions,
             StringComparison.Ordinal);
         Assert.Contains(
             "Deterministic approval remains authoritative",
-            FoundryAgentContract.Instructions,
+            normalizedInstructions,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "use file search before naming candidates",
+            normalizedInstructions,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "technical fit from commercial eligibility",
+            normalizedInstructions,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Never invent or present unverified pricing",
+            normalizedInstructions,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Do not upsell",
+            normalizedInstructions,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "recommend a focused clarification or assessment",
+            normalizedInstructions,
             StringComparison.Ordinal);
     }
 

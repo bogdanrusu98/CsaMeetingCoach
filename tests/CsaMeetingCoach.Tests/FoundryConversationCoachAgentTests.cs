@@ -155,6 +155,38 @@ public sealed class FoundryConversationCoachAgentTests
     }
 
     [Fact]
+    public async Task Analyze_MultipleRecommendedTasks_FailsClosed()
+    {
+        var latestSegment = CreateLatestSegment();
+        var proposals = new[]
+        {
+            new RecommendedTaskProposal(
+                "Clarify the workload",
+                "Requirements are incomplete.",
+                0.8,
+                [latestSegment.Id]),
+            new RecommendedTaskProposal(
+                "Compare two services",
+                "The customer requested options.",
+                0.8,
+                [latestSegment.Id])
+        };
+        var response = JsonSerializer.Serialize(
+            new CoachAgentDecision([], proposals, []),
+            JsonOptions);
+        var agent = new FoundryConversationCoachAgent(
+            new RecordingFoundryClient(response));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            agent.AnalyzeAsync(
+                CreateContext(latestSegment),
+                latestSegment,
+                CancellationToken.None));
+
+        Assert.Contains("more than one recommended task", exception.Message);
+    }
+
+    [Fact]
     public async Task Analyze_ClientFailure_DoesNotFallBack()
     {
         var latestSegment = CreateLatestSegment();

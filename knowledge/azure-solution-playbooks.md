@@ -1,0 +1,200 @@
+# Azure solution discovery playbooks
+
+Reviewed: 2026-08-02
+
+These are question paths, not reference architectures or automatic bundles.
+Recommend only the next useful discovery or validation task supported by the
+conversation. Name no more than three candidate services at once. Validate the
+result against the Azure Well-Architected Framework and current product
+documentation.
+
+## Legacy web application modernization
+
+Signals:
+
+- an IIS, Java, or other web application is hosted on-premises;
+- the customer wants faster releases or less infrastructure management;
+- application dependencies and migration strategy are not yet confirmed.
+
+Ask next:
+
+1. What runtime, OS integration, local state, background processing, and
+   database dependencies exist?
+2. Is the goal rehost, replatform, or refactor, and what downtime is allowed?
+3. What scale, network isolation, availability, security, and operations are
+   required?
+
+Candidate task:
+
+"Assess the application with Azure Migrate, then compare App Service, Container
+Apps, and Azure VMs against its OS dependencies and operating model."
+
+Do not jump directly to AKS without a Kubernetes requirement and operating
+capability.
+
+## Cloud-native API and microservices
+
+Signals:
+
+- containerized services, APIs, asynchronous workflows, or independent scaling;
+- the team understands platform engineering or wants a managed container
+  runtime.
+
+Ask next:
+
+1. Is direct Kubernetes API and node control required?
+2. Which calls must be synchronous, queued, or event-driven?
+3. What are the identity, secret, network, observability, and data requirements?
+
+Candidate task:
+
+"Compare Container Apps and AKS for the required platform control, and map one
+workflow to API Management plus Service Bus or Event Grid."
+
+Do not recommend every messaging product; choose only after the message
+semantics and throughput are known.
+
+## Data platform and analytics
+
+Signals:
+
+- fragmented data, slow reporting, lakehouse, warehousing, real-time analytics,
+  or Power BI scale;
+- the customer is comparing Fabric, Synapse, or Databricks.
+
+Ask next:
+
+1. What decisions and users define success?
+2. Where is the data, how sensitive is it, and how fresh must it be?
+3. What platform investments, skills, governance, and capacity already exist?
+
+Candidate task:
+
+"Define one measurable analytics use case and compare Fabric with the existing
+Synapse or Databricks platform for data integration, governance, and operations."
+
+Do not select capacity or migration scope from user count alone.
+
+## Generative AI and enterprise knowledge
+
+Signals:
+
+- assistants, document search, summarization, content generation, or agents;
+- approved enterprise content should ground model responses.
+
+Ask next:
+
+1. What user decision or workflow improves, and how is quality measured?
+2. Which data is approved, who may retrieve it, and how is access trimmed?
+3. What human review, safety, privacy, content filtering, evaluation, and
+   monitoring are required?
+
+Candidate task:
+
+"Create a bounded proof of value using Microsoft Foundry and Azure AI Search,
+with an approved evaluation set, access controls, safety tests, and Application
+Insights telemetry."
+
+Do not recommend a model, region, throughput purchase, or production rollout
+before current availability, data governance, and evaluation are confirmed.
+
+## Hybrid migration and disaster recovery
+
+Signals:
+
+- VMware, Hyper-V, physical servers, or databases remain on-premises;
+- the customer needs migration assessment, hybrid governance, backup, or DR.
+
+Ask next:
+
+1. Is the estate inventoried with dependency and utilization data?
+2. Which workloads move, remain, retire, or require a staged migration?
+3. What RTO, RPO, residency, bandwidth, landing-zone, and test requirements
+   apply?
+
+Candidate task:
+
+"Use Azure Migrate to assess a representative wave, then validate Azure Site
+Recovery or Azure Backup only against documented RTO, RPO, and restore tests."
+
+Consider Azure Arc for resources that remain outside Azure and require supported
+Azure governance or operations. Do not claim Arc migrates or hosts them.
+
+## Security and regulated workloads
+
+Signals:
+
+- identity risk, private connectivity, regulatory requirements, inconsistent
+  policy, security posture, or SIEM modernization.
+
+Ask next:
+
+1. Which data, regulations, contracts, and threat scenarios are in scope?
+2. What is the current Entra, network, policy, Defender, logging, and incident
+   response posture?
+3. Who owns remediation and exceptions?
+
+Candidate task:
+
+"Run a scoped landing-zone and security-posture assessment covering Entra ID,
+Azure Policy, Private Link requirements, and Defender for Cloud ownership."
+
+Do not say a service makes the workload compliant. Record required technical
+and organizational controls and obtain Privacy, Legal, Security, and Compliance
+review where applicable.
+
+## Unexpected Azure spend
+
+Signals:
+
+- unexplained growth, no budgets, idle resources, poor allocation, or pressure
+  to buy a discount mechanism immediately.
+
+Ask next:
+
+1. Who owns spend, and how is it allocated to workloads?
+2. What do Cost Management and Advisor show over a representative period?
+3. Which workloads are stable, variable, scheduled, non-production, or changing?
+4. What agreement, license benefits, and purchasing permissions apply?
+
+Candidate task:
+
+"Establish Cost Management visibility and review Advisor with workload owners
+before comparing right-sizing, reservations, savings plans, or Hybrid Benefit."
+
+Do not infer a commitment amount, discount, eligibility, or term from a verbal
+monthly-spend figure.
+
+## Production readiness
+
+Signals:
+
+- a workload is moving from proof of concept to production;
+- support, reliability, security, monitoring, and ownership are incomplete.
+
+Ask next:
+
+1. What SLO, RTO, RPO, security, privacy, and compliance gates apply?
+2. Who owns deployment, observability, on-call, backup, restore, and incident
+   response?
+3. Is the support plan and escalation route appropriate for the workload?
+
+Candidate task:
+
+"Complete a Well-Architected production-readiness review and close named gaps
+in reliability, security, cost, operations, and performance before go-live."
+
+## Official sources
+
+- Azure Well-Architected Framework:
+  https://learn.microsoft.com/en-us/azure/well-architected/
+- Cloud Adoption Framework:
+  https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/
+- Azure Architecture Center:
+  https://learn.microsoft.com/en-us/azure/architecture/browse/
+- Azure Migrate:
+  https://learn.microsoft.com/en-us/azure/migrate/migrate-services-overview
+- Microsoft Foundry:
+  https://learn.microsoft.com/en-us/azure/foundry/what-is-foundry
+- Cost Management:
+  https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/cost-mgt-best-practices

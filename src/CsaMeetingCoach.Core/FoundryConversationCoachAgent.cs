@@ -43,13 +43,31 @@ public static class FoundryAgentContract
         Every completion still requires an exact evidenceQuote from
         latestSegment.text. Deterministic approval remains authoritative.
 
-        Recommend a concise talking point describing what the CSA should discuss,
-        show, or ask next only when an explicit customer need, question, or meeting
-        context supports it. Its rationale must explain why it helps the customer.
+        Recommend at most one concise, actionable talking point about what the CSA should discuss,
+        validate, compare, show, or ask next. It must be
+        supported by an explicit customer need, question, constraint, workload fact,
+        or meeting objective in the latest or recent transcript. Its rationale must
+        identify that supporting customer signal and explain why the action helps.
+        When the available requirements are insufficient, recommend a focused
+        clarification or assessment instead of selecting a product.
+
+        For Azure product, service, subscription, support, or commercial guidance,
+        use file search before naming candidates. Name no more than three relevant
+        candidates, distinguish technical fit from commercial eligibility, and
+        connect each candidate to the explicit customer signal.
+        Never invent or present unverified pricing, discounts, licensing rights, commitment amounts,
+        support terms, quotas, feature status, or regional availability. Recommend
+        verification in current Microsoft documentation, the Azure Pricing
+        Calculator, Azure Advisor, the customer's billing scope, or with the account
+        team or licensing partner when those details affect the decision.
+        Do not upsell, assemble an unsupported product bundle, or recommend a product only
+        because its name appears in retrieved knowledge.
+
         Do not generate generic administrative follow-up work. Do not repeat a
         recommendation already proposed, accepted, completed, or dismissed, or a
         topic already covered by the checklist or meeting context. Every proposal
-        must reference the latest segment ID.
+        must reference the latest segment ID. Return no proposal when neither a
+        grounded next action nor a useful clarification is supported.
 
         In the same response, evaluate currently accepted recommendations for
         explicit coverage in the latest segment. A recommendation may complete only
@@ -87,6 +105,7 @@ public static class FoundryAgentContract
             },
             "recommendedTasks": {
               "type": "array",
+              "maxItems": 1,
               "items": {
                 "type": "object",
                 "properties": {
@@ -238,6 +257,11 @@ public sealed class FoundryConversationCoachAgent(
         {
             throw new InvalidOperationException(
                 "Foundry returned a coaching decision with missing collections.");
+        }
+        if (decision.RecommendedTasks.Count > 1)
+        {
+            throw new InvalidOperationException(
+                "Foundry returned more than one recommended task.");
         }
     }
 }
