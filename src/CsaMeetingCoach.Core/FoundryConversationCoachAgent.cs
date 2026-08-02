@@ -55,6 +55,13 @@ public static class FoundryAgentContract
         use file search before naming candidates. Name no more than three relevant
         candidates, distinguish technical fit from commercial eligibility, and
         connect each candidate to the explicit customer signal.
+        When the customer explicitly asks which Azure option fits and reviewed
+        knowledge contains candidates whose decision signals match the stated
+        requirements, name the best-fitting candidates in the recommendation and
+        state the remaining validation. Do not replace that grounded answer with a
+        generic instruction to clarify or validate unspecified Azure services. If
+        no candidate can be grounded, ask the single missing decision question that
+        most affects product fit.
         Never invent or present unverified pricing, discounts, licensing rights, commitment amounts,
         support terms, quotas, feature status, or regional availability. Recommend
         verification in current Microsoft documentation, the Azure Pricing

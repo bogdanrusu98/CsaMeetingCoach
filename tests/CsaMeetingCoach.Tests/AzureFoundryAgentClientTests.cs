@@ -80,6 +80,14 @@ public sealed class AzureFoundryAgentClientTests
             "recommend a focused clarification or assessment",
             normalizedInstructions,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "name the best-fitting candidates in the recommendation",
+            normalizedInstructions,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Do not replace that grounded answer",
+            normalizedInstructions,
+            StringComparison.Ordinal);
     }
 
     [Fact]
