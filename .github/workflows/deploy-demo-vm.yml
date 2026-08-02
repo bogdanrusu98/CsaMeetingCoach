@@ -118,6 +118,7 @@ jobs:
           }
 
           "vector_store_id=$vectorStoreId" >> $env:GITHUB_OUTPUT
+          Write-Output "VECTOR_STORE_ID=$vectorStoreId"
           "Created reviewed vector store: ``$vectorStoreId``" >> $env:GITHUB_STEP_SUMMARY
 
   validate-and-deploy:

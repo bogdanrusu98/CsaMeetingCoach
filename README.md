@@ -320,9 +320,12 @@ dotnet run --project .\tools\CsaMeetingCoach.KnowledgeIndexer -- `
 ```
 
 On success, stdout contains only the new `vs_...` ID; diagnostics use stderr.
-Set that ID through `CoachAgent__Foundry__VectorStoreIds` or the repository
-variable `FOUNDRY_VECTOR_STORE_IDS`. Indexing is intentionally separate from
-deployment so reviewed stores are not recreated or leaked on each release.
+Set that ID through
+`CoachAgent__Foundry__VectorStoreIds` or the repository variable
+`FOUNDRY_VECTOR_STORE_IDS`. The `index-knowledge` GitHub workflow prints the
+validated ID as `VECTOR_STORE_ID=vs_...` after every reviewed file finishes
+ingestion. Indexing remains separate from activation and deployment so stores
+are not recreated on each release; activate the ID and then run the deployment.
 
 The legacy Azure OpenAI adapter remains available for compatibility:
 
