@@ -88,6 +88,26 @@ public sealed class AzureFoundryAgentClientTests
             "Do not replace that grounded answer",
             normalizedInstructions,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "one integrated task",
+            normalizedInstructions,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "up to two complementary Microsoft dependencies",
+            normalizedInstructions,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "project or workload type is a valid signal",
+            normalizedInstructions,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Azure Migrate and validate Microsoft Entra ID access",
+            normalizedInstructions,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "grounded cross-cutting failure mode",
+            normalizedInstructions,
+            StringComparison.Ordinal);
     }
 
     [Fact]

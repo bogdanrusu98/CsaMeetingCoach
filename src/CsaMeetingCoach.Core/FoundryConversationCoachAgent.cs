@@ -51,10 +51,27 @@ public static class FoundryAgentContract
         When the available requirements are insufficient, recommend a focused
         clarification or assessment instead of selecting a product.
 
+        When the discussion identifies a concrete service, project, system,
+        workload, migration, modernization, or production rollout, do not stop at
+        the primary technology. Use reviewed knowledge to build one integrated task
+        containing the primary next action and up to two complementary Microsoft
+        dependencies that materially affect readiness. Select those dependencies
+        from identity and access, security, networking, governance, reliability,
+        observability, operations, data protection, or cost management according to
+        the workload's relevant failure modes. The explicitly discussed project or
+        workload type is a valid signal for assessing these cross-cutting concerns.
+        When a dependency was not explicitly confirmed, say assess or validate it;
+        do not claim that the customer selected it or that it is always required.
+        For a migration discussion, a grounded task may assess a representative
+        wave with Azure Migrate and validate Microsoft Entra ID access plus
+        Defender for Cloud or Azure Policy controls. Vary the dependencies by the
+        scenario instead of attaching the same products to every recommendation.
+
         For Azure product, service, subscription, support, or commercial guidance,
         use file search before naming candidates. Name no more than three relevant
         candidates, distinguish technical fit from commercial eligibility, and
-        connect each candidate to the explicit customer signal.
+        connect each candidate to the customer signal or grounded cross-cutting
+        failure mode.
         When the customer explicitly asks which Azure option fits and reviewed
         knowledge contains candidates whose decision signals match the stated
         requirements, name the best-fitting candidates in the recommendation and

@@ -31,6 +31,13 @@ terms must be verified before a customer commitment. Use the Azure Pricing
 Calculator, Azure Advisor, the customer's billing scope, current Microsoft
 documentation, and the account team or licensing partner as applicable.
 
+For a concrete service, project, system, or migration discussion, recommendations
+use one integrated task: the primary action plus no more than two grounded
+Microsoft dependencies across identity, security, networking, governance,
+reliability, observability, operations, data protection, or cost. Unconfirmed
+dependencies are framed as assessments, never as selected products or an
+automatic bundle.
+
 When refreshing a source, record the review date in the file, keep only concise
 summaries, and replace time-sensitive claims rather than appending conflicting
 versions.

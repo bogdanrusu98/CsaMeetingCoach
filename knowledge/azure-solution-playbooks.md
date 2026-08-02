@@ -8,6 +8,41 @@ conversation. Name no more than three candidate services at once. Validate the
 result against the Azure Well-Architected Framework and current product
 documentation.
 
+## Build one cross-cutting task
+
+When a customer discusses a concrete service, project, system, migration, or
+production rollout, create one integrated task rather than focusing only on the
+primary platform:
+
+1. Name the primary assessment, decision, or service supported by the discussion.
+2. Add no more than two Microsoft dependencies whose failure could materially
+   affect the project.
+3. Select dependencies from identity and access, security, networking,
+   governance, reliability, observability, operations, data protection, or cost
+   management.
+4. If the transcript has not confirmed a dependency, use `assess`, `validate`,
+   or `define`; do not state that the customer selected or requires the product.
+
+The discussed project type is enough to surface a grounded readiness check. It
+is not enough to claim final product fit. Keep the recommendation to one task and
+no more than three named Microsoft candidates.
+
+Use the relevant project pattern, not the same default bundle:
+
+| Discussion | Primary candidate | Possible cross-cutting candidates |
+| --- | --- | --- |
+| Estate or application migration | Azure Migrate | Microsoft Entra ID, Defender for Cloud, or Azure Policy |
+| Managed application modernization | App Service or Container Apps | managed identities, Key Vault, or Azure Monitor |
+| Kubernetes platform | AKS | Microsoft Entra Workload ID, Defender for Containers, or Azure Monitor |
+| Database migration | Azure Database Migration Service or Azure Migrate | managed identities, Private Link, or Azure Backup |
+| Enterprise AI or RAG | Microsoft Foundry or Azure AI Search | Microsoft Entra ID, Content Safety, or Application Insights |
+| Hybrid operations | Azure Arc | Azure Policy, Defender for Cloud, or Azure Monitor |
+| Disaster recovery | Azure Site Recovery or Azure Backup | Microsoft Entra ID access controls, Azure Monitor, or Service Health |
+
+Choose one primary candidate and up to two cross-cutting candidates from the
+columns that match material failure modes, and include them in the same task.
+Do not turn the table into a product bundle or a claim of compliance.
+
 ## Legacy web application modernization
 
 Signals:
@@ -26,11 +61,14 @@ Ask next:
 
 Candidate task:
 
-"Assess the application with Azure Migrate, then compare App Service, Container
-Apps, and Azure VMs against its OS dependencies and operating model."
+"Assess a representative application wave with Azure Migrate, then validate
+Microsoft Entra ID access and Defender for Cloud security readiness before
+selecting its target platform."
 
-Do not jump directly to AKS without a Kubernetes requirement and operating
-capability.
+If runtime and operating requirements are already explicit, compare no more than
+two fitting target platforms and use the third candidate for the most material
+identity, security, or operations dependency. Do not jump directly to AKS
+without a Kubernetes requirement and operating capability.
 
 ## Cloud-native API and microservices
 
@@ -48,11 +86,12 @@ Ask next:
 
 Candidate task:
 
-"Compare Container Apps and AKS for the required platform control, and map one
-workflow to API Management plus Service Bus or Event Grid."
+"Compare Container Apps and AKS for the required platform control, then validate
+Microsoft Entra workload identity for service-to-service access."
 
-Do not recommend every messaging product; choose only after the message
-semantics and throughput are known.
+If integration is the main need, replace the identity candidate with API
+Management or the one messaging service justified by message semantics. Do not
+recommend every messaging product.
 
 ## Data platform and analytics
 
@@ -92,8 +131,8 @@ Ask next:
 Candidate task:
 
 "Create a bounded proof of value using Microsoft Foundry and Azure AI Search,
-with an approved evaluation set, access controls, safety tests, and Application
-Insights telemetry."
+then validate Microsoft Entra ID permission boundaries with an approved
+evaluation set and safety tests."
 
 Do not recommend a model, region, throughput purchase, or production rollout
 before current availability, data governance, and evaluation are confirmed.
@@ -114,11 +153,15 @@ Ask next:
 
 Candidate task:
 
-"Use Azure Migrate to assess a representative wave, then validate Azure Site
-Recovery or Azure Backup only against documented RTO, RPO, and restore tests."
+"Use Azure Migrate to assess a representative wave, then validate Microsoft
+Entra ID access and Defender for Cloud security readiness for its target landing
+zone."
 
 Consider Azure Arc for resources that remain outside Azure and require supported
-Azure governance or operations. Do not claim Arc migrates or hosts them.
+Azure governance or operations. Add Azure Site Recovery or Azure Backup instead
+of a cross-cutting candidate only when documented RTO, RPO, or restore
+requirements make recovery the priority. Do not claim Arc migrates or hosts
+resources.
 
 ## Security and regulated workloads
 
@@ -136,8 +179,8 @@ Ask next:
 
 Candidate task:
 
-"Run a scoped landing-zone and security-posture assessment covering Entra ID,
-Azure Policy, Private Link requirements, and Defender for Cloud ownership."
+"Run a scoped landing-zone and security-posture assessment covering Microsoft
+Entra ID, Azure Policy, and Defender for Cloud ownership."
 
 Do not say a service makes the workload compliant. Record required technical
 and organizational controls and obtain Privacy, Legal, Security, and Compliance
