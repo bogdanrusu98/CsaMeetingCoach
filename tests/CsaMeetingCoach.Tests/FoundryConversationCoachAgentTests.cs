@@ -252,6 +252,205 @@ public sealed class FoundryConversationCoachAgentTests
         Assert.Single(decision.RecommendationEvaluations!);
     }
 
+    [Fact]
+    public async Task Analyze_MigrationWithGenericTask_EnforcesCrossCuttingProducts()
+    {
+        var latestSegment = CreateLatestSegment(
+            "We plan to migrate a representative wave of on-premises applications and servers to Azure.");
+        var genericProposal = new RecommendedTaskProposal(
+            "Define a practical migration assessment approach",
+            "The estate has not yet been assessed.",
+            0.9,
+            [latestSegment.Id]);
+        var response = JsonSerializer.Serialize(
+            new CoachAgentDecision([], [genericProposal], []),
+            JsonOptions);
+        var agent = new FoundryConversationCoachAgent(
+            new RecordingFoundryClient(response));
+
+        var decision = await agent.AnalyzeAsync(
+            CreateContext(latestSegment),
+            latestSegment,
+            CancellationToken.None);
+
+        var recommendation = Assert.Single(decision.RecommendedTasks);
+        Assert.Contains("Azure Migrate", recommendation.Title, StringComparison.Ordinal);
+        Assert.Contains("Microsoft Entra ID", recommendation.Title, StringComparison.Ordinal);
+        Assert.Contains("Defender for Cloud", recommendation.Title, StringComparison.Ordinal);
+        Assert.Equal(
+            new[] { latestSegment.Id },
+            recommendation.SourceTranscriptSegmentIds);
+    }
+
+    [Fact]
+    public async Task Analyze_MigrationWithCustomTask_UsesControlledPolicyTask()
+    {
+        var latestSegment = CreateLatestSegment(
+            "We are migrating our on-premises server estate to Azure.");
+        var groundedProposal = new RecommendedTaskProposal(
+            "Assess with Azure Migrate and validate Microsoft Entra ID plus Azure Policy",
+            "The migration requires workload discovery and landing-zone readiness checks.",
+            0.92,
+            [latestSegment.Id]);
+        var response = JsonSerializer.Serialize(
+            new CoachAgentDecision([], [groundedProposal], []),
+            JsonOptions);
+        var agent = new FoundryConversationCoachAgent(
+            new RecordingFoundryClient(response));
+
+        var decision = await agent.AnalyzeAsync(
+            CreateContext(latestSegment),
+            latestSegment,
+            CancellationToken.None);
+
+        var recommendation = Assert.Single(decision.RecommendedTasks);
+        Assert.NotEqual(groundedProposal.Title, recommendation.Title);
+        Assert.Contains("Azure Migrate", recommendation.Title, StringComparison.Ordinal);
+        Assert.Contains("Microsoft Entra ID", recommendation.Title, StringComparison.Ordinal);
+        Assert.Contains("Defender for Cloud", recommendation.Title, StringComparison.Ordinal);
+        Assert.Equal(
+            new[] { latestSegment.Id },
+            recommendation.SourceTranscriptSegmentIds);
+    }
+
+    [Fact]
+    public async Task Analyze_NegatedMigration_DoesNotInjectProducts()
+    {
+        var latestSegment = CreateLatestSegment(
+            "Migration is out of scope and we will not migrate this application.");
+        var genericProposal = new RecommendedTaskProposal(
+            "Confirm the current support model",
+            "The customer excluded migration.",
+            0.85,
+            [latestSegment.Id]);
+        var response = JsonSerializer.Serialize(
+            new CoachAgentDecision([], [genericProposal], []),
+            JsonOptions);
+        var agent = new FoundryConversationCoachAgent(
+            new RecordingFoundryClient(response));
+
+        var decision = await agent.AnalyzeAsync(
+            CreateContext(latestSegment),
+            latestSegment,
+            CancellationToken.None);
+
+        var recommendation = Assert.Single(decision.RecommendedTasks);
+        Assert.Equal(genericProposal.Title, recommendation.Title);
+        Assert.Equal(genericProposal.Rationale, recommendation.Rationale);
+        Assert.Equal(
+            genericProposal.SourceTranscriptSegmentIds,
+            recommendation.SourceTranscriptSegmentIds);
+    }
+
+    [Theory]
+    [InlineData(
+        "We need an enterprise RAG assistant over approved internal documents.",
+        "Microsoft Foundry",
+        "Azure AI Search",
+        "Microsoft Entra ID")]
+    [InlineData(
+        "Our teams need one hybrid operating model for servers that remain on premises.",
+        "Azure Arc",
+        "Azure Policy",
+        "Defender for Cloud")]
+    [InlineData(
+        "The application has an RTO of one hour and an RPO of fifteen minutes for disaster recovery.",
+        "Azure Site Recovery",
+        "Azure Backup",
+        "Azure Monitor")]
+    [InlineData(
+        "We are modernizing this web application to reduce infrastructure management.",
+        "Azure App Service",
+        "Azure Container Apps",
+        "Microsoft Entra ID")]
+    public async Task Analyze_KnownProjectScenario_EnforcesRelevantDependencies(
+        string transcript,
+        string firstProduct,
+        string secondProduct,
+        string thirdProduct)
+    {
+        var latestSegment = CreateLatestSegment(transcript);
+        var response = JsonSerializer.Serialize(
+            new CoachAgentDecision([], [], []),
+            JsonOptions);
+        var agent = new FoundryConversationCoachAgent(
+            new RecordingFoundryClient(response));
+
+        var decision = await agent.AnalyzeAsync(
+            CreateContext(latestSegment),
+            latestSegment,
+            CancellationToken.None);
+
+        var recommendation = Assert.Single(decision.RecommendedTasks);
+        Assert.Contains(firstProduct, recommendation.Title, StringComparison.Ordinal);
+        Assert.Contains(secondProduct, recommendation.Title, StringComparison.Ordinal);
+        Assert.Contains(thirdProduct, recommendation.Title, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("RAG is out of scope; use deterministic search instead.")]
+    [InlineData("Containers are not required for this application.")]
+    [InlineData("Disaster recovery is out of scope for this sandbox.")]
+    [InlineData("We are not modernizing this web application.")]
+    [InlineData("Azure SQL is not in scope for this workload.")]
+    [InlineData("We will not remain on premises, so this is not a hybrid design.")]
+    [InlineData("We won't migrate this application to Azure.")]
+    [InlineData("RTO is out of scope for this non-production sandbox.")]
+    [InlineData("Multi-cloud is out of scope for this architecture.")]
+    public async Task Analyze_ExplicitlyExcludedScenario_DoesNotInjectProducts(
+        string transcript)
+    {
+        var latestSegment = CreateLatestSegment(transcript);
+        var genericProposal = new RecommendedTaskProposal(
+            "Clarify the remaining requirement",
+            "The customer excluded one option.",
+            0.85,
+            [latestSegment.Id]);
+        var response = JsonSerializer.Serialize(
+            new CoachAgentDecision([], [genericProposal], []),
+            JsonOptions);
+        var agent = new FoundryConversationCoachAgent(
+            new RecordingFoundryClient(response));
+
+        var decision = await agent.AnalyzeAsync(
+            CreateContext(latestSegment),
+            latestSegment,
+            CancellationToken.None);
+
+        var recommendation = Assert.Single(decision.RecommendedTasks);
+        Assert.Equal(genericProposal.Title, recommendation.Title);
+        Assert.Equal(genericProposal.Rationale, recommendation.Rationale);
+    }
+
+    [Fact]
+    public async Task Analyze_ProjectRagStatus_DoesNotTreatAcronymAsEnterpriseAi()
+    {
+        var latestSegment = CreateLatestSegment(
+            "The project RAG status is red because the delivery milestone is late.");
+        var genericProposal = new RecommendedTaskProposal(
+            "Clarify the delivery blocker",
+            "The project status is red.",
+            0.85,
+            [latestSegment.Id]);
+        var response = JsonSerializer.Serialize(
+            new CoachAgentDecision([], [genericProposal], []),
+            JsonOptions);
+        var agent = new FoundryConversationCoachAgent(
+            new RecordingFoundryClient(response));
+
+        var decision = await agent.AnalyzeAsync(
+            CreateContext(latestSegment),
+            latestSegment,
+            CancellationToken.None);
+
+        var recommendation = Assert.Single(decision.RecommendedTasks);
+        Assert.Equal(genericProposal.Title, recommendation.Title);
+        Assert.DoesNotContain(
+            "Microsoft Foundry",
+            recommendation.Title,
+            StringComparison.Ordinal);
+    }
+
     private static CoachAgentContext CreateContext(
         TranscriptSegment latestSegment,
         IReadOnlyList<RecommendedTaskState>? recommendations = null)
@@ -266,11 +465,12 @@ public sealed class FoundryConversationCoachAgentTests
             recommendations);
     }
 
-    private static TranscriptSegment CreateLatestSegment() =>
+    private static TranscriptSegment CreateLatestSegment(
+        string text = "We agreed the owner and deadline for Friday.") =>
         new(
             Guid.NewGuid(),
             "Customer",
-            "We agreed the owner and deadline for Friday.",
+            text,
             DateTimeOffset.UtcNow,
             IsFinal: true);
 

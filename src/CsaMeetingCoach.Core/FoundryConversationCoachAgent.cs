@@ -252,7 +252,10 @@ public sealed class FoundryConversationCoachAgent(
                 cancellationToken);
             try
             {
-                return ParseDecision(decisionJson);
+                var decision = ParseDecision(decisionJson);
+                return CrossCuttingRecommendationPolicy.Apply(
+                    decision,
+                    latestSegment);
             }
             catch (InvalidOperationException exception)
             {
