@@ -165,6 +165,17 @@ public sealed class BrowserSpeechTokenServiceTests
         Assert.Throws<InvalidOperationException>(options.Validate);
     }
 
+    [Theory]
+    [InlineData("browser-speech-access-key-with-unicode-ș")]
+    [InlineData("browser speech access key with spaces 0001")]
+    public void EnabledOptionsRejectAccessCodesThatCannotBeSentSafelyInAHeader(
+        string accessKey)
+    {
+        var options = EnabledOptions(accessKey);
+
+        Assert.Throws<InvalidOperationException>(options.Validate);
+    }
+
     private static AzureBrowserSpeechTokenService CreateService(
         HttpMessageHandler handler,
         BrowserSpeechOptions options,

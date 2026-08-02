@@ -19,7 +19,7 @@ public sealed class StaticAssetCacheTests
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
         Assert.Contains("styles.css?v=20260801d", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260802c", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260802d", html, StringComparison.Ordinal);
         Assert.Contains("data-theme", html, StringComparison.Ordinal);
         Assert.Contains("id=\"microphone-toggle\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"recommendations\"", html, StringComparison.Ordinal);
@@ -32,7 +32,7 @@ public sealed class StaticAssetCacheTests
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260802c");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260802d");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
@@ -48,6 +48,10 @@ public sealed class StaticAssetCacheTests
             StringComparison.Ordinal);
         Assert.Contains(
             "Speech_SegmentationMaximumTimeMs",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "32 to 256 printable ASCII characters",
             script,
             StringComparison.Ordinal);
 

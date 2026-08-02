@@ -28,10 +28,11 @@ public sealed class BrowserSpeechOptions
                 "BrowserSpeech:SubscriptionKey is required when browser speech is enabled.");
         }
 
-        if (AccessKey.Length < 32)
+        if (AccessKey.Length is < 32 or > 256
+            || AccessKey.Any(character => character is < '!' or > '~'))
         {
             throw new InvalidOperationException(
-                "BrowserSpeech:AccessKey must contain at least 32 characters.");
+                "BrowserSpeech:AccessKey must contain 32 to 256 printable ASCII characters.");
         }
 
         if (!Regex.IsMatch(Region, "^[a-z0-9-]+$", RegexOptions.CultureInvariant))

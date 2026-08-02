@@ -543,7 +543,13 @@ async function stopMicrophone() {
 }
 
 async function requestSpeechToken(sessionId = state.session?.id, signal) {
-  const accessKey = elements.microphoneAccessKey.value.trim();
+  const accessKey = state.browserSpeechAuthorized
+    ? ""
+    : elements.microphoneAccessKey.value.trim();
+  if (accessKey && !/^[\x21-\x7e]{32,256}$/.test(accessKey)) {
+    throw new Error(
+      "The demo access code must contain 32 to 256 printable ASCII characters.");
+  }
   try {
     const token = await api(`/api/sessions/${sessionId}/speech-token`, {
       method: "POST",
@@ -765,6 +771,9 @@ async function initializeBrowserSpeechAvailability() {
     state.browserSpeechAvailable =
       health.browserMicrophoneTranscription === "ready";
     state.browserSpeechAuthorized = access.authorized === true;
+    if (state.browserSpeechAuthorized) {
+      elements.microphoneAccessKey.value = "";
+    }
   } catch {
     state.browserSpeechAvailable = false;
     state.browserSpeechAuthorized = false;
