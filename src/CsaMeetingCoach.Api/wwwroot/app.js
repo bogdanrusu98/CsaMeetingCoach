@@ -420,6 +420,15 @@ async function startMicrophone() {
       token.token,
       token.region);
     speechConfig.speechRecognitionLanguage = token.language;
+    speechConfig.setProperty(
+      window.SpeechSDK.PropertyId.Speech_SegmentationSilenceTimeoutMs,
+      "1200");
+    speechConfig.setProperty(
+      window.SpeechSDK.PropertyId.Speech_SegmentationMaximumTimeMs,
+      "20000");
+    speechConfig.setProperty(
+      window.SpeechSDK.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs,
+      "1200");
     audioConfig = window.SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
     recognizer = new window.SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
 
@@ -430,6 +439,11 @@ async function startMicrophone() {
       }
     };
     recognizer.recognized = (_, event) => {
+      if (event.result?.reason === window.SpeechSDK.ResultReason.NoMatch) {
+        elements.microphonePreview.textContent =
+          "No final phrase was recognized. Pause briefly, then try again.";
+        return;
+      }
       if (event.result?.reason !== window.SpeechSDK.ResultReason.RecognizedSpeech) {
         return;
       }
