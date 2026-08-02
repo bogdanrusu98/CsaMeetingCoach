@@ -261,8 +261,11 @@ public sealed class FoundryConversationCoachAgent(
         }
         catch (JsonException exception)
         {
+            var jsonPath = string.IsNullOrWhiteSpace(exception.Path)
+                ? "$"
+                : exception.Path;
             throw new InvalidOperationException(
-                "Foundry returned a coaching decision that does not match the contract.",
+                $"Foundry returned a coaching decision that does not match the contract at JSON path '{jsonPath}'.",
                 exception);
         }
 
