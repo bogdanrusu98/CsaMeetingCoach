@@ -13,7 +13,7 @@
       document.documentElement.setAttribute("data-theme", theme);
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=20260801d">
+  <link rel="stylesheet" href="styles.css?v=20260803a">
 </head>
 <body>
   <main class="app-shell">
@@ -89,12 +89,12 @@ Define owners and next steps</textarea>
                aria-labelledby="microphone-heading">
         <div class="microphone-main">
           <button id="microphone-toggle" type="button" class="microphone-button"
-                  aria-label="Set up the local microphone" aria-pressed="false">
+                  aria-label="Set up meeting audio" aria-pressed="false">
             <span class="microphone-icon" aria-hidden="true"></span>
           </button>
           <div class="microphone-copy">
             <div class="microphone-title-row">
-              <h2 id="microphone-heading">Microphone</h2>
+              <h2 id="microphone-heading">Meeting audio</h2>
               <span id="microphone-status" class="status neutral">Off</span>
             </div>
             <p id="microphone-preview" class="live-caption" aria-live="polite">
@@ -110,12 +110,22 @@ Define owners and next steps</textarea>
                     aria-label="Close microphone setup">×</button>
           </div>
           <p>
-            Captures only audio reaching this microphone. Azure Speech processes
-            the audio; raw audio is not stored by the coach.
+            Azure Speech processes the selected audio; raw audio is not stored by
+            the coach. Screen video is not processed or uploaded.
           </p>
           <label class="consent-option">
             <input id="microphone-consent" type="checkbox">
             <span>I notified participants and have permission to transcribe.</span>
+          </label>
+          <label class="consent-option">
+            <input id="include-system-audio" type="checkbox">
+            <span>
+              Include meeting audio played by this device.
+              <span class="field-hint">
+                In Edge or Chrome, choose the Teams tab, or Entire screen for the
+                desktop app, and enable Share system audio.
+              </span>
+            </span>
           </label>
           <label>
             Demo access code
@@ -201,6 +211,6 @@ Define owners and next steps</textarea>
   <div id="toast" role="status" aria-live="polite" class="toast hidden"></div>
   <script src="https://res.cdn.office.net/teams-js/2.31.0/js/MicrosoftTeams.min.js"></script>
   <script src="vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0"></script>
-  <script src="app.js?v=20260802d"></script>
+  <script src="app.js?v=20260803a"></script>
 </body>
 </html>

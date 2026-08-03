@@ -6,6 +6,8 @@ const state = {
   browserSpeechAuthorized: false,
   microphoneRecognizer: null,
   microphoneAudioConfig: null,
+  microphoneCapture: null,
+  microphoneSourceLabel: "Presenter microphone",
   microphoneRefreshTimer: null,
   microphoneStartupAbortController: null,
   microphoneRefreshAbortController: null,
@@ -13,7 +15,10 @@ const state = {
   microphoneOperation: Promise.resolve(),
   speechPublishQueue: Promise.resolve(),
   speechPublishAbortController: null,
-  seenRecognitionIds: new Set()
+  seenRecognitionIds: new Set(),
+  systemAudioCaptureAvailable: Boolean(
+    navigator.mediaDevices?.getDisplayMedia
+      && (window.AudioContext || window.webkitAudioContext))
 };
 
 const elements = {
@@ -23,6 +28,7 @@ const elements = {
   transcriptForm: document.querySelector("#transcript-form"),
   microphonePanel: document.querySelector("#microphone-panel"),
   microphoneConsent: document.querySelector("#microphone-consent"),
+  includeSystemAudio: document.querySelector("#include-system-audio"),
   microphoneAccessKey: document.querySelector("#microphone-access-key"),
   microphoneToggle: document.querySelector("#microphone-toggle"),
   microphoneUnlock: document.querySelector("#microphone-unlock"),
@@ -76,6 +82,7 @@ const teamsContextReady = initializeTeamsContext();
 initializeBrowserSpeechAvailability();
 
 elements.microphoneConsent.addEventListener("change", renderMicrophoneControls);
+elements.includeSystemAudio.addEventListener("change", renderMicrophoneControls);
 elements.microphoneAccessKey.addEventListener("input", renderMicrophoneControls);
 elements.microphoneToggle.addEventListener("click", async () => {
   if (!state.microphoneRecognizer
@@ -422,11 +429,20 @@ async function startMicrophone() {
   state.speechPublishAbortController = speechPublishAbortController;
   let recognizer = null;
   let audioConfig = null;
+  let capture = null;
   let recognitionStarted = false;
   try {
+    if (elements.includeSystemAudio.checked) {
+      capture = await createMixedMeetingAudioCapture();
+      state.microphoneCapture = capture;
+      attachSystemAudioEndedHandler(capture);
+      ensureMixedMeetingAudioActive(capture);
+      ensureMicrophoneSessionActive(sessionId);
+    }
     const token = await requestSpeechToken(
       sessionId,
       startupAbortController.signal);
+    ensureMixedMeetingAudioActive(capture);
     ensureMicrophoneSessionActive(sessionId);
     const speechConfig = window.SpeechSDK.SpeechConfig.fromAuthorizationToken(
       token.token,
@@ -441,7 +457,9 @@ async function startMicrophone() {
     speechConfig.setProperty(
       window.SpeechSDK.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs,
       "1200");
-    audioConfig = window.SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+    audioConfig = capture
+      ? window.SpeechSDK.AudioConfig.fromStreamInput(capture.stream)
+      : window.SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
     recognizer = new window.SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
 
     recognizer.recognizing = (_, event) => {
@@ -470,7 +488,11 @@ async function startMicrophone() {
       }
 
       elements.microphonePreview.textContent = text;
-      enqueueSpeechSegment(text);
+      enqueueSpeechSegment(
+        text,
+        capture
+          ? "Meeting audio (microphone + system)"
+          : "Presenter microphone");
     };
     recognizer.canceled = (_, event) => {
       if (state.microphoneRecognizer !== recognizer) {
@@ -491,16 +513,25 @@ async function startMicrophone() {
 
     state.microphoneRecognizer = recognizer;
     state.microphoneAudioConfig = audioConfig;
+    state.microphoneCapture = capture;
+    state.microphoneSourceLabel = capture
+      ? "Meeting audio (microphone + system)"
+      : "Presenter microphone";
     state.seenRecognitionIds.clear();
     await startContinuousRecognition(recognizer);
     recognitionStarted = true;
+    ensureMixedMeetingAudioActive(capture);
     ensureMicrophoneSessionActive(sessionId);
     elements.microphoneUnlock.classList.add("hidden");
-    elements.microphonePreview.textContent = "Listening for the next discussion point…";
+    elements.microphonePreview.textContent = capture
+      ? "Listening to your microphone and shared meeting audio…"
+      : "Listening for the next discussion point…";
     scheduleSpeechTokenRefresh(token, recognizer);
   } catch (error) {
     state.microphoneRecognizer = null;
     state.microphoneAudioConfig = null;
+    state.microphoneCapture = null;
+    state.microphoneSourceLabel = "Presenter microphone";
     speechPublishAbortController.abort();
     if (state.speechPublishAbortController === speechPublishAbortController) {
       state.speechPublishAbortController = null;
@@ -510,6 +541,10 @@ async function startMicrophone() {
     }
     recognizer?.close();
     audioConfig?.close();
+    await closeMixedMeetingAudioCapture(capture);
+    if (capture?.ended) {
+      throw new Error("Shared meeting audio stopped before recognition started.");
+    }
     throw error;
   } finally {
     if (state.microphoneStartupAbortController === startupAbortController) {
@@ -523,11 +558,14 @@ async function startMicrophone() {
 async function stopMicrophone() {
   const recognizer = state.microphoneRecognizer;
   const audioConfig = state.microphoneAudioConfig;
+  const capture = state.microphoneCapture;
   const speechPublishAbortController = state.speechPublishAbortController;
   state.microphoneBusy = true;
   cancelMicrophoneTokenRequests();
   state.microphoneRecognizer = null;
   state.microphoneAudioConfig = null;
+  state.microphoneCapture = null;
+  state.microphoneSourceLabel = "Presenter microphone";
   window.clearTimeout(state.microphoneRefreshTimer);
   state.microphoneRefreshTimer = null;
   renderMicrophoneControls();
@@ -541,6 +579,7 @@ async function stopMicrophone() {
       recognizer.close();
     }
     audioConfig?.close();
+    await closeMixedMeetingAudioCapture(capture);
     await drainSpeechPublishQueue(speechPublishAbortController);
   } finally {
     speechPublishAbortController?.abort();
@@ -627,13 +666,13 @@ function scheduleSpeechTokenRefresh(token, recognizer) {
   }, refreshDelay);
 }
 
-function enqueueSpeechSegment(text) {
+function enqueueSpeechSegment(text, speaker = state.microphoneSourceLabel) {
   const abortController = state.speechPublishAbortController;
   if (!abortController || abortController.signal.aborted) {
     return;
   }
   const segment = {
-    speaker: "Presenter microphone",
+    speaker,
     text,
     occurredAtUtc: new Date().toISOString(),
     isFinal: true,
@@ -676,6 +715,138 @@ async function drainSpeechPublishQueue(abortController) {
   abortController?.abort();
   await queue;
   showToast("Microphone stopped before all final speech segments could be uploaded.");
+}
+
+async function createMixedMeetingAudioCapture() {
+  if (!state.systemAudioCaptureAvailable) {
+    throw new Error(
+      "This browser cannot capture meeting audio. Open the coach in Microsoft Edge or Chrome.");
+  }
+
+  let displayStream = null;
+  let microphoneStream = null;
+  let audioContext = null;
+  try {
+    const displayPromise = navigator.mediaDevices.getDisplayMedia({
+      video: {
+        displaySurface: "monitor"
+      },
+      audio: true,
+      systemAudio: "include",
+      selfBrowserSurface: "exclude",
+      surfaceSwitching: "exclude",
+      monitorTypeSurfaces: "include"
+    });
+    displayStream = await displayPromise;
+    if (displayStream.getAudioTracks().length === 0) {
+      throw new Error(
+        "System audio was not shared. Choose the Teams tab or Entire screen and enable Share system audio.");
+    }
+
+    for (const videoTrack of displayStream.getVideoTracks()) {
+      videoTrack.enabled = false;
+    }
+
+    microphoneStream = await navigator.mediaDevices.getUserMedia({
+      video: false,
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
+
+    const AudioContextType = window.AudioContext || window.webkitAudioContext;
+    audioContext = new AudioContextType();
+    const mixedDestination = audioContext.createMediaStreamDestination();
+    const compressor = audioContext.createDynamicsCompressor();
+    const microphoneGain = audioContext.createGain();
+    const systemGain = audioContext.createGain();
+    microphoneGain.gain.value = 0.85;
+    systemGain.gain.value = 0.85;
+
+    audioContext
+      .createMediaStreamSource(microphoneStream)
+      .connect(microphoneGain)
+      .connect(compressor);
+    audioContext
+      .createMediaStreamSource(displayStream)
+      .connect(systemGain)
+      .connect(compressor);
+    compressor.connect(mixedDestination);
+    if (audioContext.state === "suspended") {
+      await audioContext.resume();
+    }
+
+    return {
+      stream: mixedDestination.stream,
+      displayStream,
+      microphoneStream,
+      audioContext,
+      closing: false,
+      ended: false
+    };
+  } catch (error) {
+    stopMediaStream(displayStream);
+    stopMediaStream(microphoneStream);
+    if (audioContext && audioContext.state !== "closed") {
+      await audioContext.close().catch(() => {});
+    }
+    throw error;
+  }
+}
+
+function attachSystemAudioEndedHandler(capture) {
+  const handleEnded = () => {
+    if (capture.closing
+        || capture.ended
+        || state.microphoneCapture !== capture) {
+      return;
+    }
+
+    capture.ended = true;
+    cancelMicrophoneTokenRequests();
+    showToast("Shared meeting audio stopped. Speech recognition is stopping safely.");
+    void queueMicrophoneOperation(stopMicrophone);
+  };
+
+  for (const track of capture.displayStream.getTracks()) {
+    track.addEventListener("ended", handleEnded, { once: true });
+  }
+}
+
+function ensureMixedMeetingAudioActive(capture) {
+  if (!capture) {
+    return;
+  }
+
+  const tracks = capture.displayStream.getTracks();
+  if (capture.ended
+      || tracks.length === 0
+      || tracks.some(track => track.readyState !== "live")) {
+    capture.ended = true;
+    throw new Error("Shared meeting audio stopped before recognition started.");
+  }
+}
+
+async function closeMixedMeetingAudioCapture(capture) {
+  if (!capture || capture.closing) {
+    return;
+  }
+
+  capture.closing = true;
+  stopMediaStream(capture.stream);
+  stopMediaStream(capture.displayStream);
+  stopMediaStream(capture.microphoneStream);
+  if (capture.audioContext.state !== "closed") {
+    await capture.audioContext.close().catch(() => {});
+  }
+}
+
+function stopMediaStream(stream) {
+  for (const track of stream?.getTracks() ?? []) {
+    track.stop();
+  }
 }
 
 function cancelMicrophoneTokenRequests() {
@@ -735,6 +906,7 @@ function renderMicrophoneControls() {
     "hidden",
     !state.browserSpeechAvailable);
   const listening = Boolean(state.microphoneRecognizer);
+  const mixedAudio = Boolean(state.microphoneCapture);
   const sessionCompleted = state.session?.status === "completed";
   elements.microphoneToggle.classList.toggle("listening", listening);
   elements.microphoneToggle.disabled = state.microphoneBusy
@@ -747,12 +919,19 @@ function renderMicrophoneControls() {
       && !elements.microphoneAccessKey.value);
   elements.microphoneConsent.disabled =
     state.microphoneBusy || listening || sessionCompleted;
+  elements.includeSystemAudio.disabled =
+    state.microphoneBusy
+    || listening
+    || sessionCompleted
+    || !state.systemAudioCaptureAvailable;
   elements.microphoneAccessKey.disabled =
     state.microphoneBusy || listening || sessionCompleted;
   elements.microphoneStatus.textContent = state.microphoneBusy
     ? "Starting"
     : listening
-      ? "Listening"
+      ? mixedAudio
+        ? "Mic + meeting"
+        : "Listening"
       : "Off";
   elements.microphoneStatus.className =
     `status ${listening ? "listening" : "neutral"}`;
@@ -760,12 +939,16 @@ function renderMicrophoneControls() {
   elements.microphoneToggle.setAttribute(
     "aria-label",
     listening
-      ? "Stop listening to the local microphone"
+      ? mixedAudio
+        ? "Stop listening to the microphone and shared meeting audio"
+        : "Stop listening to the local microphone"
       : elements.microphoneConsent.checked
           && (state.browserSpeechAuthorized
             || elements.microphoneAccessKey.value)
-        ? "Start listening to the local microphone"
-        : "Set up the local microphone");
+        ? elements.includeSystemAudio.checked
+          ? "Start listening to the microphone and shared meeting audio"
+          : "Start listening to the local microphone"
+        : "Set up meeting audio");
 }
 
 function queueMicrophoneOperation(operation) {
@@ -795,7 +978,15 @@ async function initializeBrowserSpeechAvailability() {
 
 function normalizeMicrophoneError(error) {
   const message = error?.message || String(error);
-  if (/permission|notallowed|denied/i.test(message)) {
+  if (error?.name === "NotAllowedError"
+      && elements.includeSystemAudio.checked) {
+    return "Microphone or meeting-audio sharing was not allowed. Share the Teams tab or Entire screen with audio enabled, then try again.";
+  }
+  if (error?.name === "InvalidStateError"
+      && elements.includeSystemAudio.checked) {
+    return "Meeting audio sharing must be started directly from the Start listening button.";
+  }
+  if (/permission|notallowed|denied/i.test(`${error?.name || ""} ${message}`)) {
     return "Microphone permission was denied. Allow microphone access and try again.";
   }
   return message;
@@ -858,4 +1049,5 @@ window.addEventListener("pagehide", () => {
   state.speechPublishAbortController?.abort();
   state.microphoneRecognizer?.close();
   state.microphoneAudioConfig?.close();
+  void closeMixedMeetingAudioCapture(state.microphoneCapture);
 });

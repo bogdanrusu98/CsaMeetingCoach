@@ -624,6 +624,12 @@ h3 {
   flex: 0 0 auto;
 }
 
+.consent-option .field-hint {
+  display: block;
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
 .focus-card {
   border-top: 3px solid var(--cp-accent);
   background: var(--cp-bg-elevated);
