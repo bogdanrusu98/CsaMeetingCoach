@@ -909,7 +909,7 @@ public sealed class MeetingSessionCoordinatorTests
         Assert.Single(final.Transcript);
         Assert.Contains(
             final.Warnings,
-            w => w.Contains("timed out", StringComparison.OrdinalIgnoreCase));
+            w => w.Contains("temporarily unavailable", StringComparison.OrdinalIgnoreCase));
 
         neverCompletes.Release();
     }
@@ -944,7 +944,167 @@ public sealed class MeetingSessionCoordinatorTests
         Assert.Single(final.Transcript);
         Assert.Contains(
             final.Warnings,
-            w => w.Contains("error", StringComparison.OrdinalIgnoreCase));
+            w => w.Contains("temporarily unavailable", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task AddTranscript_RepeatedAiFailures_DoNotAccumulateDuplicateWarnings()
+    {
+        var publisher = new CapturingSessionUpdatePublisher();
+        using var coordinator = new MeetingSessionCoordinator(
+            new InMemoryMeetingSessionStore(),
+            new MeetingChecklistPlanner(),
+            new HeuristicConversationCoachAgent(),
+            new ThrowingAiAgent(),
+            publisher,
+            analysisOptions: new AnalysisOptions(TimeSpan.Zero, TimeSpan.FromMinutes(5)));
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("CSA", "First statement."),
+            CancellationToken.None);
+        await publisher.WaitForAsync(
+            state => !state.IsAnalyzing && state.Transcript.Count == 1,
+            TimeSpan.FromSeconds(10));
+
+        await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("CSA", "Second statement."),
+            CancellationToken.None);
+        var final = await publisher.WaitForAsync(
+            state => !state.IsAnalyzing && state.Transcript.Count == 2,
+            TimeSpan.FromSeconds(10));
+
+        Assert.Single(final.Warnings);
+        Assert.Contains(
+            "temporarily unavailable",
+            final.Warnings[0],
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task AddTranscript_ActiveAiFailureWarning_RemainsUntilSuccessfulRetry()
+    {
+        var publisher = new CapturingSessionUpdatePublisher();
+        var aiAgent = new FailureThenControlledSuccessAgent();
+        using var coordinator = new MeetingSessionCoordinator(
+            new InMemoryMeetingSessionStore(),
+            new MeetingChecklistPlanner(),
+            new HeuristicConversationCoachAgent(),
+            aiAgent,
+            publisher,
+            analysisOptions: new AnalysisOptions(TimeSpan.Zero, TimeSpan.FromMinutes(5)));
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("CSA", "First statement."),
+            CancellationToken.None);
+        await publisher.WaitForAsync(
+            state => !state.IsAnalyzing && state.Warnings.Count == 1,
+            TimeSpan.FromSeconds(10));
+
+        var retrying = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("CSA", "Second statement."),
+            CancellationToken.None);
+
+        Assert.True(retrying.IsAnalyzing);
+        Assert.Single(retrying.Warnings);
+        await aiAgent.WaitForRetryAsync();
+        aiAgent.ReleaseRetry();
+        var recovered = await publisher.WaitForAsync(
+            state => !state.IsAnalyzing
+                && state.Transcript.Count == 2
+                && state.Warnings.Count == 0,
+            TimeSpan.FromSeconds(10));
+
+        Assert.Empty(recovered.Warnings);
+    }
+
+    [Fact]
+    public async Task AddTranscript_SupersededAiFailure_DoesNotSurfaceWarning()
+    {
+        var publisher = new CapturingSessionUpdatePublisher();
+        var aiAgent = new StaleFailureThenSuccessAgent();
+        using var coordinator = new MeetingSessionCoordinator(
+            new InMemoryMeetingSessionStore(),
+            new MeetingChecklistPlanner(),
+            new HeuristicConversationCoachAgent(),
+            aiAgent,
+            publisher,
+            analysisOptions: new AnalysisOptions(TimeSpan.Zero, TimeSpan.FromMinutes(5)));
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("Customer", "First statement."),
+            CancellationToken.None);
+        await aiAgent.WaitForFirstCallAsync();
+
+        await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("Customer", "Latest statement."),
+            CancellationToken.None);
+        aiAgent.ReleaseFailure();
+        var final = await publisher.WaitForAsync(
+            state => !state.IsAnalyzing && state.Transcript.Count == 2,
+            TimeSpan.FromSeconds(10));
+
+        Assert.Equal(2, aiAgent.CallCount);
+        Assert.Empty(final.Warnings);
+    }
+
+    [Fact]
+    public async Task AddTranscript_RecommendationCanReferenceKnownEarlierSegment()
+    {
+        using var coordinator = CreateCoordinator(new EarlierContextRecommendationAgent());
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        var first = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Customer",
+                "We need to clarify the Project Atlas ownership model."),
+            CancellationToken.None);
+
+        var second = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Customer",
+                "The next topic is the delivery timeline."),
+            CancellationToken.None);
+
+        var recommendation = Assert.Single(second.RecommendedTasks);
+        Assert.Equal(first.Transcript[0].Id, Assert.Single(recommendation.SourceTranscriptSegmentIds));
+        Assert.Empty(second.Warnings);
+    }
+
+    [Fact]
+    public async Task AddTranscript_CurrentCleanResult_RemovesResolvedDecisionWarnings()
+    {
+        using var coordinator = CreateCoordinator(new InvalidProposalOnceAgent());
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        var first = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("Customer", "First statement."),
+            CancellationToken.None);
+        Assert.NotEmpty(first.Warnings);
+
+        var second = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("Customer", "Second statement."),
+            CancellationToken.None);
+
+        Assert.Empty(second.Warnings);
     }
 
     [Fact]
@@ -1085,6 +1245,111 @@ public sealed class MeetingSessionCoordinatorTests
             TranscriptSegment latestSegment,
             CancellationToken cancellationToken) =>
             throw new InvalidOperationException("AI service unavailable.");
+    }
+
+    private sealed class StaleFailureThenSuccessAgent : IConversationCoachAgent
+    {
+        private readonly TaskCompletionSource _firstCallStarted = new();
+        private readonly TaskCompletionSource _releaseFailure = new();
+        private int _callCount;
+
+        public int CallCount => Volatile.Read(ref _callCount);
+
+        public Task WaitForFirstCallAsync() => _firstCallStarted.Task;
+
+        public void ReleaseFailure() => _releaseFailure.TrySetResult();
+
+        public async Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _callCount) == 1)
+            {
+                _firstCallStarted.TrySetResult();
+                await _releaseFailure.Task.WaitAsync(cancellationToken);
+                throw new InvalidOperationException("Superseded provider failure.");
+            }
+
+            return new CoachAgentDecision([], []);
+        }
+    }
+
+    private sealed class FailureThenControlledSuccessAgent : IConversationCoachAgent
+    {
+        private readonly TaskCompletionSource _retryStarted = new();
+        private readonly TaskCompletionSource _releaseRetry = new();
+        private int _callCount;
+
+        public Task WaitForRetryAsync() => _retryStarted.Task;
+
+        public void ReleaseRetry() => _releaseRetry.TrySetResult();
+
+        public async Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _callCount) == 1)
+            {
+                throw new InvalidOperationException("Initial provider failure.");
+            }
+
+            _retryStarted.TrySetResult();
+            await _releaseRetry.Task.WaitAsync(cancellationToken);
+            return new CoachAgentDecision([], []);
+        }
+    }
+
+    private sealed class EarlierContextRecommendationAgent : IConversationCoachAgent
+    {
+        public Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken)
+        {
+            if (context.RecentTranscript.Count < 2)
+            {
+                return Task.FromResult(new CoachAgentDecision([], []));
+            }
+
+            var source = context.RecentTranscript[0];
+            return Task.FromResult(new CoachAgentDecision(
+                [],
+                [
+                    new RecommendedTaskProposal(
+                        "Clarify the Project Atlas ownership model",
+                        "The earlier customer statement introduced a concrete need.",
+                        0.9,
+                        [source.Id])
+                ]));
+        }
+    }
+
+    private sealed class InvalidProposalOnceAgent : IConversationCoachAgent
+    {
+        private int _callCount;
+
+        public Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _callCount) != 1)
+            {
+                return Task.FromResult(new CoachAgentDecision([], []));
+            }
+
+            return Task.FromResult(new CoachAgentDecision(
+                [],
+                [
+                    new RecommendedTaskProposal(
+                        "Unsupported task",
+                        "This task has no real transcript source.",
+                        0.9,
+                        [Guid.NewGuid()])
+                ]));
+        }
     }
 
     private sealed class CapturingSessionUpdatePublisher : ISessionUpdatePublisher

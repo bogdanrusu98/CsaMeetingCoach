@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CsaMeetingCoach.Contracts;
+using Microsoft.Extensions.Logging;
 
 namespace CsaMeetingCoach.Core;
 
@@ -49,7 +50,7 @@ public static class FoundryAgentContract
         Recommend at most one concise, actionable talking point about what the CSA should discuss,
         validate, compare, show, or ask next. It must be
         supported by an explicit customer need, question, constraint, workload fact,
-        or meeting objective in the latest or recent transcript. Its rationale must
+        or meeting objective in the latest or earlier transcript context. Its rationale must
         identify that supporting customer signal and explain why the action helps.
         When the available requirements are insufficient, recommend a focused
         clarification or assessment instead of selecting a product.
@@ -92,8 +93,12 @@ public static class FoundryAgentContract
 
         Do not generate generic administrative follow-up work. Do not repeat a
         recommendation already proposed, accepted, completed, or dismissed, or a
-        topic already covered by the checklist or meeting context. Every proposal
-        must reference the latest segment ID. Return no proposal when neither a
+        topic already covered by the checklist or meeting context. Proposal source
+        IDs must be copied exactly from recentTranscript. Cite the latest segment only
+        when it directly supports the proposal; otherwise cite the real earlier segment
+        IDs. Never invent an ID. If the latest segment only completes an accepted
+        recommendation, do not create another proposal unless it also introduces a
+        distinct unmet customer need. Return no proposal when neither a
         grounded next action nor a useful clarification is supported.
 
         In the same response, evaluate currently accepted recommendations for
@@ -186,7 +191,8 @@ public static class FoundryAgentContract
 }
 
 public sealed class FoundryConversationCoachAgent(
-    IFoundryAgentClient foundryClient) : IConversationCoachAgent
+    IFoundryAgentClient foundryClient,
+    ILogger<FoundryConversationCoachAgent>? logger = null) : IConversationCoachAgent
 {
     private const int MaximumDecisionAttempts = 2;
     private const int MaximumDecisionLength = 100_000;
@@ -256,9 +262,10 @@ public sealed class FoundryConversationCoachAgent(
             try
             {
                 var decision = ParseDecision(decisionJson);
-                return CrossCuttingRecommendationPolicy.Apply(
+                var policyDecision = CrossCuttingRecommendationPolicy.Apply(
                     decision,
                     latestSegment);
+                return SanitizeDecision(policyDecision, context, latestSegment);
             }
             catch (InvalidOperationException exception)
             {
@@ -317,6 +324,89 @@ public sealed class FoundryConversationCoachAgent(
             throw new InvalidOperationException(
                 "Foundry returned more than one recommended task.");
         }
+    }
+
+    private CoachAgentDecision SanitizeDecision(
+        CoachAgentDecision decision,
+        CoachAgentContext context,
+        TranscriptSegment latestSegment)
+    {
+        var pendingChecklistIds = context.Checklist
+            .Where(item => item.Status == ChecklistItemStatus.Pending)
+            .Select(item => item.Id)
+            .ToHashSet();
+        var transcriptIds = context.RecentTranscript
+            .Where(segment => segment.IsFinal)
+            .Select(segment => segment.Id)
+            .ToHashSet();
+        var acceptedRecommendations = (context.RecommendedTasks ?? [])
+            .Where(item => item.Status == RecommendationStatus.Accepted)
+            .ToDictionary(item => item.Id);
+        var rawRecommendationEvaluations = decision.RecommendationEvaluations!;
+
+        var checklistEvaluations = decision.ChecklistEvaluations
+            .Where(evaluation => evaluation is not null
+                && evaluation.ShouldComplete
+                && pendingChecklistIds.Contains(evaluation.ChecklistItemId)
+                && HasExactCompletionEvidence(
+                    evaluation.Confidence,
+                    evaluation.Reason,
+                    evaluation.EvidenceQuote,
+                    latestSegment))
+            .ToArray();
+        var recommendedTasks = decision.RecommendedTasks
+            .Where(proposal => proposal is not null
+                && !string.IsNullOrWhiteSpace(proposal.Title)
+                && !string.IsNullOrWhiteSpace(proposal.Rationale)
+                && double.IsFinite(proposal.Confidence)
+                && proposal.Confidence is >= 0.70 and <= 1
+                && proposal.SourceTranscriptSegmentIds is { Count: > 0 }
+                && proposal.SourceTranscriptSegmentIds.All(transcriptIds.Contains))
+            .ToArray();
+        var recommendationEvaluations = rawRecommendationEvaluations
+            .Where(evaluation => evaluation is not null
+                && evaluation.ShouldComplete
+                && acceptedRecommendations.TryGetValue(
+                    evaluation.RecommendationId,
+                    out var recommendation)
+                && HasExactCompletionEvidence(
+                    evaluation.Confidence,
+                    evaluation.Reason,
+                    evaluation.EvidenceQuote,
+                    latestSegment)
+                && recommendation.AcceptedAtUtc is not null
+                && latestSegment.OccurredAtUtc > recommendation.AcceptedAtUtc
+                && !recommendation.SourceTranscriptSegmentIds.Contains(latestSegment.Id))
+            .ToArray();
+
+        var discardedCount =
+            decision.ChecklistEvaluations.Count - checklistEvaluations.Length
+            + decision.RecommendedTasks.Count - recommendedTasks.Length
+            + rawRecommendationEvaluations.Count - recommendationEvaluations.Length;
+        if (discardedCount > 0)
+        {
+            logger?.LogDebug(
+                "Filtered {DiscardedDecisionCount} ungrounded Foundry coaching artifacts before coordinator merge.",
+                discardedCount);
+        }
+
+        return new CoachAgentDecision(
+            checklistEvaluations,
+            recommendedTasks,
+            recommendationEvaluations);
+    }
+
+    private static bool HasExactCompletionEvidence(
+        double confidence,
+        string reason,
+        string evidenceQuote,
+        TranscriptSegment latestSegment)
+    {
+        return double.IsFinite(confidence)
+            && confidence is >= 0 and <= 1
+            && !string.IsNullOrWhiteSpace(reason)
+            && !string.IsNullOrWhiteSpace(evidenceQuote)
+            && latestSegment.Text.Contains(evidenceQuote, StringComparison.Ordinal);
     }
 
     private static string DescribeDecisionShape(string decisionJson)

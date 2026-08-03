@@ -314,6 +314,15 @@ strict JSON schema is stored on the agent definition; invocation requests do not
 override it. Responses are validated again before the session coordinator can
 apply them.
 
+Foundry analysis is asynchronous, coalesced after eight seconds, and bounded by
+a 60-second timeout so File Search and one structured retry have enough time.
+Completion claims without an exact latest-segment quote, unknown recommendation
+IDs, and tasks with invented transcript IDs are filtered before merge and logged
+server-side instead of appearing as routine user-facing rejection errors. A
+recommendation may cite a real earlier transcript segment when that is its actual
+source. Current operational warnings are deduplicated, superseded failures are
+suppressed, and a later clean analysis removes resolved warning state.
+
 On Azure, grant the VM system-assigned managed identity an approved Foundry role
 on the Foundry resource or project. Automatic agent creation requires a role that
 can manage agents, such as `Azure AI User`/`Foundry User` as exposed by the tenant.

@@ -41,7 +41,7 @@ public sealed record AnalysisOptions(TimeSpan DebounceWindow, TimeSpan AiTimeout
 {
     public static readonly AnalysisOptions Default = new(
         TimeSpan.FromSeconds(8),
-        TimeSpan.FromSeconds(30));
+        TimeSpan.FromSeconds(60));
 
     public void Validate()
     {

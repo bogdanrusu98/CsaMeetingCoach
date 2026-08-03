@@ -8,6 +8,8 @@ namespace CsaMeetingCoach.Core;
 public sealed class MeetingSessionCoordinator : IDisposable
 {
     public const double AutoCompletionThreshold = 0.82;
+    private const string AnalysisUnavailableWarning =
+        "AI coaching is temporarily unavailable. Transcript and local checklist processing continued.";
 
     private readonly IMeetingSessionStore _store;
     private readonly IMeetingChecklistPlanner _checklistPlanner;
@@ -165,7 +167,12 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 : deterministicDecision with { RecommendedTasks = [] };
             var decision = CrossCuttingRecommendationPolicy.Apply(fastLaneDecision, segment);
 
-            var warnings = transcriptUpdate.Warnings.ToList();
+            var warnings = transcriptUpdate.Warnings
+                .Where(warning => string.Equals(
+                    warning,
+                    AnalysisUnavailableWarning,
+                    StringComparison.Ordinal))
+                .ToList();
             var checklist = ApplyChecklistEvaluations(
                 transcriptUpdate.Checklist,
                 decision.ChecklistEvaluations,
@@ -180,7 +187,6 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 evaluatedRecommendations,
                 decision.RecommendedTasks,
                 finalTranscript,
-                segment,
                 transcriptUpdate.Checklist,
                 transcriptUpdate.Purpose,
                 warnings);
@@ -196,7 +202,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 Transcript = analyzedTranscript,
                 Checklist = checklist,
                 RecommendedTasks = recommendations,
-                Warnings = warnings.TakeLast(20).ToArray(),
+                Warnings = NormalizeWarnings(warnings),
                 IsAnalyzing = _aiAgent is not null,
                 Revision = transcriptUpdate.Revision + 1,
                 UpdatedAtUtc = analyzedAtUtc
@@ -292,10 +298,14 @@ public sealed class MeetingSessionCoordinator : IDisposable
                         ex,
                         "Async AI coaching analysis failed for session {SessionId}.",
                         sessionId);
-                    await TryAddAnalysisWarningAsync(
-                        sessionId,
-                        "AI coaching analysis encountered an error and was skipped. Transcript was preserved.",
-                        state.IsAnalyzing);
+                    if (state.LatestRequestedGeneration <= analysisGeneration)
+                    {
+                        await TryAddAnalysisWarningAsync(
+                            sessionId,
+                            AnalysisUnavailableWarning,
+                            state,
+                            analysisGeneration);
+                    }
                 }
             }
         }
@@ -379,10 +389,14 @@ public sealed class MeetingSessionCoordinator : IDisposable
             _logger?.LogWarning(
                 "AI coaching analysis timed out for session {SessionId}.",
                 sessionId);
-            await TryAddAnalysisWarningAsync(
-                sessionId,
-                "AI coaching analysis timed out. Transcript was preserved.",
-                state.IsAnalyzing);
+            if (state.LatestRequestedGeneration <= analysisGeneration)
+            {
+                await TryAddAnalysisWarningAsync(
+                    sessionId,
+                    AnalysisUnavailableWarning,
+                    state,
+                    analysisGeneration);
+            }
             return;
         }
 
@@ -416,7 +430,12 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 return;
             }
 
-            var mergeWarnings = current.Warnings.ToList();
+            var mergeWarnings = current.Warnings
+                .Where(warning => !string.Equals(
+                    warning,
+                    AnalysisUnavailableWarning,
+                    StringComparison.Ordinal))
+                .ToList();
 
             // Use the originally analyzed segment for evidence checking (not the current latest).
             // This preserves evidence-quote integrity for AI completions.
@@ -434,7 +453,6 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 evaluatedRecommendations,
                 aiDecision.RecommendedTasks,
                 finalTranscript,
-                latestSegment,
                 current.Checklist,
                 current.Purpose,
                 mergeWarnings);
@@ -444,7 +462,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
             {
                 Checklist = checklist,
                 RecommendedTasks = recommendations,
-                Warnings = mergeWarnings.TakeLast(20).ToArray(),
+                Warnings = NormalizeWarnings(mergeWarnings),
                 IsAnalyzing = state.IsAnalyzing,
                 Revision = current.Revision + 1,
                 UpdatedAtUtc = DateTimeOffset.UtcNow
@@ -476,7 +494,8 @@ public sealed class MeetingSessionCoordinator : IDisposable
     private async Task TryAddAnalysisWarningAsync(
         Guid sessionId,
         string warning,
-        bool isAnalyzing)
+        SessionAnalysisState state,
+        long analysisGeneration)
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         try
@@ -490,11 +509,15 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 {
                     return;
                 }
+                if (state.LatestRequestedGeneration > analysisGeneration)
+                {
+                    return;
+                }
 
                 var updated = session with
                 {
-                    Warnings = session.Warnings.Append(warning).TakeLast(20).ToArray(),
-                    IsAnalyzing = isAnalyzing,
+                    Warnings = NormalizeWarnings(session.Warnings.Append(warning)),
+                    IsAnalyzing = state.IsAnalyzing,
                     Revision = session.Revision + 1,
                     UpdatedAtUtc = DateTimeOffset.UtcNow
                 };
@@ -781,7 +804,6 @@ public sealed class MeetingSessionCoordinator : IDisposable
         IReadOnlyList<RecommendedTaskState> current,
         IReadOnlyList<RecommendedTaskProposal> proposals,
         IReadOnlyList<TranscriptSegment> transcript,
-        TranscriptSegment latestSegment,
         IReadOnlyList<ChecklistItemState> checklist,
         MeetingPurpose purpose,
         ICollection<string> warnings)
@@ -813,7 +835,6 @@ public sealed class MeetingSessionCoordinator : IDisposable
 
             if (proposal.SourceTranscriptSegmentIds is null
                 || proposal.SourceTranscriptSegmentIds.Count == 0
-                || !proposal.SourceTranscriptSegmentIds.Contains(latestSegment.Id)
                 || proposal.SourceTranscriptSegmentIds.Any(id => !segmentIds.Contains(id)))
             {
                 warnings.Add(
@@ -840,6 +861,15 @@ public sealed class MeetingSessionCoordinator : IDisposable
         }
 
         return result;
+    }
+
+    private static IReadOnlyList<string> NormalizeWarnings(IEnumerable<string> warnings)
+    {
+        return warnings
+            .Where(warning => !string.IsNullOrWhiteSpace(warning))
+            .Distinct(StringComparer.Ordinal)
+            .TakeLast(20)
+            .ToArray();
     }
 
     private static IReadOnlyList<RecommendedTaskState> ApplyRecommendationEvaluations(

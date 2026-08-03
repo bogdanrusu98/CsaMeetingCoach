@@ -119,7 +119,7 @@ public sealed class FoundryConversationCoachAgentTests
     }
 
     [Fact]
-    public async Task Analyze_CompletionInventsEvidence_IsPreservedForCoordinatorWarning()
+    public async Task Analyze_CompletionInventsEvidence_IsFilteredBeforeCoordinatorMerge()
     {
         var latestSegment = CreateLatestSegment();
         var context = CreateContext(latestSegment);
@@ -144,11 +144,11 @@ public sealed class FoundryConversationCoachAgentTests
             latestSegment,
             CancellationToken.None);
 
-        Assert.Single(decision.ChecklistEvaluations);
+        Assert.Empty(decision.ChecklistEvaluations);
     }
 
     [Fact]
-    public async Task Analyze_TaskDoesNotReferenceLatestSegment_IsPreservedForCoordinatorWarning()
+    public async Task Analyze_TaskReferencesUnknownSegment_IsFilteredBeforeCoordinatorMerge()
     {
         var latestSegment = CreateLatestSegment();
         var context = CreateContext(latestSegment);
@@ -172,7 +172,41 @@ public sealed class FoundryConversationCoachAgentTests
             latestSegment,
             CancellationToken.None);
 
-        Assert.Single(decision.RecommendedTasks);
+        Assert.Empty(decision.RecommendedTasks);
+    }
+
+    [Fact]
+    public async Task Analyze_TaskReferencesKnownEarlierSegment_IsPreserved()
+    {
+        var latestSegment = CreateLatestSegment("The next topic is the delivery timeline.");
+        var earlierSegment = CreateLatestSegment(
+            "We need to assess the database migration dependencies.");
+        var context = CreateContext(
+            latestSegment,
+            transcript: [earlierSegment, latestSegment]);
+        var proposal = new RecommendedTaskProposal(
+            "Assess the database migration dependencies",
+            "An earlier customer statement introduced a concrete migration need.",
+            0.88,
+            [earlierSegment.Id]);
+        var response = JsonSerializer.Serialize(
+            new CoachAgentDecision([], [proposal], []),
+            JsonOptions);
+        var agent = new FoundryConversationCoachAgent(
+            new RecordingFoundryClient(response));
+
+        var decision = await agent.AnalyzeAsync(
+            context,
+            latestSegment,
+            CancellationToken.None);
+
+        var recommendation = Assert.Single(decision.RecommendedTasks);
+        Assert.Equal(proposal.Title, recommendation.Title);
+        Assert.Equal(proposal.Rationale, recommendation.Rationale);
+        Assert.Equal(proposal.Confidence, recommendation.Confidence);
+        Assert.Equal(
+            proposal.SourceTranscriptSegmentIds,
+            recommendation.SourceTranscriptSegmentIds);
     }
 
     [Fact]
@@ -225,7 +259,7 @@ public sealed class FoundryConversationCoachAgentTests
     }
 
     [Fact]
-    public async Task Analyze_UnknownRecommendationEvaluation_IsPreservedForCoordinatorWarning()
+    public async Task Analyze_UnknownRecommendationEvaluation_IsFilteredBeforeCoordinatorMerge()
     {
         var latestSegment = CreateLatestSegment();
         var response = JsonSerializer.Serialize(
@@ -249,7 +283,45 @@ public sealed class FoundryConversationCoachAgentTests
             latestSegment,
             CancellationToken.None);
 
-        Assert.Single(decision.RecommendationEvaluations!);
+        Assert.Empty(decision.RecommendationEvaluations!);
+    }
+
+    [Fact]
+    public async Task Analyze_RecommendationCompletionInventsEvidence_IsFilteredBeforeCoordinatorMerge()
+    {
+        var latestSegment = CreateLatestSegment();
+        var acceptedRecommendation = new RecommendedTaskState(
+            Guid.NewGuid(),
+            "Confirm the delivery owner",
+            "The plan needs explicit ownership.",
+            0.9,
+            [Guid.NewGuid()],
+            RecommendationStatus.Accepted,
+            latestSegment.OccurredAtUtc.AddMinutes(-2),
+            latestSegment.OccurredAtUtc.AddMinutes(-1));
+        var context = CreateContext(latestSegment, [acceptedRecommendation]);
+        var response = JsonSerializer.Serialize(
+            new CoachAgentDecision(
+                [],
+                [],
+                [
+                    new RecommendationEvaluation(
+                        acceptedRecommendation.Id,
+                        true,
+                        0.94,
+                        "The owner was confirmed.",
+                        "This quote was never spoken.")
+                ]),
+            JsonOptions);
+        var agent = new FoundryConversationCoachAgent(
+            new RecordingFoundryClient(response));
+
+        var decision = await agent.AnalyzeAsync(
+            context,
+            latestSegment,
+            CancellationToken.None);
+
+        Assert.Empty(decision.RecommendationEvaluations!);
     }
 
     [Fact]
@@ -453,7 +525,8 @@ public sealed class FoundryConversationCoachAgentTests
 
     private static CoachAgentContext CreateContext(
         TranscriptSegment latestSegment,
-        IReadOnlyList<RecommendedTaskState>? recommendations = null)
+        IReadOnlyList<RecommendedTaskState>? recommendations = null,
+        IReadOnlyList<TranscriptSegment>? transcript = null)
     {
         var checklist = new MeetingChecklistPlanner().CreateChecklist(
             TestData.CreatePurpose(),
@@ -461,7 +534,7 @@ public sealed class FoundryConversationCoachAgentTests
         return new CoachAgentContext(
             TestData.CreatePurpose(),
             checklist,
-            [latestSegment],
+            transcript ?? [latestSegment],
             recommendations);
     }
 
