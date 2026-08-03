@@ -37,7 +37,15 @@ public sealed class AzureFoundryAgentClientTests
             FoundryAgentContract.ResponseJsonSchema,
             StringComparison.Ordinal);
         Assert.Contains(
+            "contextualCards",
+            FoundryAgentContract.ResponseJsonSchema,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "\"maxItems\": 1",
+            FoundryAgentContract.ResponseJsonSchema,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "\"maxItems\": 2",
             FoundryAgentContract.ResponseJsonSchema,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -106,6 +114,10 @@ public sealed class AzureFoundryAgentClientTests
             StringComparison.Ordinal);
         Assert.Contains(
             "grounded cross-cutting failure mode",
+            normalizedInstructions,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "plain-language definition or a concise meeting hint",
             normalizedInstructions,
             StringComparison.Ordinal);
     }

@@ -1108,6 +1108,59 @@ public sealed class MeetingSessionCoordinatorTests
     }
 
     [Fact]
+    public async Task AddTranscript_ContextualCardsPersistAndDeduplicateByTitle()
+    {
+        using var coordinator = CreateCoordinator(new ContextualCardAgent());
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        var first = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Customer",
+                "Our recovery objective requires an RTO of one hour."),
+            CancellationToken.None);
+        var firstCard = Assert.Single(first.ContextualCards);
+
+        var second = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "CSA",
+                "We should validate the RTO with the application owner."),
+            CancellationToken.None);
+
+        var persistedCard = Assert.Single(second.ContextualCards);
+        Assert.Equal(firstCard.Id, persistedCard.Id);
+        Assert.Equal(ContextualCardKind.Definition, persistedCard.Kind);
+        Assert.Equal("RTO", persistedCard.Title);
+        Assert.Empty(second.Warnings);
+    }
+
+    [Fact]
+    public async Task AddTranscript_ContextualCardHistoryIsBounded()
+    {
+        using var coordinator = CreateCoordinator(new UniqueContextualCardAgent());
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        MeetingSessionState current = session;
+
+        for (var index = 1; index <= 14; index++)
+        {
+            current = await coordinator.AddTranscriptAsync(
+                session.Id,
+                new AddTranscriptSegmentRequest(
+                    "Customer",
+                    $"Azure topic {index}"),
+                CancellationToken.None);
+        }
+
+        Assert.Equal(12, current.ContextualCards.Count);
+        Assert.DoesNotContain(current.ContextualCards, card => card.Title == "Azure topic 1");
+        Assert.Contains(current.ContextualCards, card => card.Title == "Azure topic 14");
+    }
+
+    [Fact]
     public async Task AddTranscript_CrossCuttingPolicy_AppliedInFastLane()
     {
         using var coordinator = CreateCoordinator(
@@ -1349,6 +1402,50 @@ public sealed class MeetingSessionCoordinatorTests
                         0.9,
                         [Guid.NewGuid()])
                 ]));
+        }
+    }
+
+    private sealed class ContextualCardAgent : IConversationCoachAgent
+    {
+        public Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new CoachAgentDecision([], [])
+            {
+                ContextualCards =
+                [
+                    new ContextualCardProposal(
+                        ContextualCardKind.Definition,
+                        "RTO",
+                        "Recovery Time Objective is the maximum target time for restoring a service.",
+                        0.9,
+                        [latestSegment.Id])
+                ]
+            });
+        }
+    }
+
+    private sealed class UniqueContextualCardAgent : IConversationCoachAgent
+    {
+        public Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new CoachAgentDecision([], [])
+            {
+                ContextualCards =
+                [
+                    new ContextualCardProposal(
+                        ContextualCardKind.Hint,
+                        latestSegment.Text,
+                        $"Ask one focused question about {latestSegment.Text}.",
+                        0.9,
+                        [latestSegment.Id])
+                ]
+            });
         }
     }
 

@@ -25,7 +25,20 @@ public sealed class MeetingSessionStoreTests : IDisposable
             Checklist: [],
             Transcript: [],
             RecommendedTasks: [],
-            Warnings: []);
+            Warnings: [])
+        {
+            ContextualCards =
+            [
+                new ContextualCardState(
+                    Guid.NewGuid(),
+                    ContextualCardKind.Definition,
+                    "RTO",
+                    "Recovery Time Objective is the target restoration time.",
+                    0.9,
+                    [Guid.NewGuid()],
+                    now)
+            ]
+        };
 
         await store.SaveAsync(session, CancellationToken.None);
         var loaded = await store.GetAsync(session.Id, CancellationToken.None);
@@ -33,6 +46,9 @@ public sealed class MeetingSessionStoreTests : IDisposable
         Assert.NotNull(loaded);
         Assert.Equal(session.Id, loaded.Id);
         Assert.Equal(session.Purpose.Objective, loaded.Purpose.Objective);
+        var card = Assert.Single(loaded.ContextualCards);
+        Assert.Equal(ContextualCardKind.Definition, card.Kind);
+        Assert.Equal("RTO", card.Title);
     }
 
     [Fact]
@@ -83,6 +99,7 @@ public sealed class MeetingSessionStoreTests : IDisposable
         Assert.Null(recommendation.CompletionReason);
         Assert.Empty(recommendation.Evidence!);
         Assert.Equal(RecommendationStatus.Dismissed, recommendation.Status);
+        Assert.Empty(loaded.ContextualCards);
     }
 
     [Fact]

@@ -16,6 +16,8 @@ const state = {
   speechPublishQueue: Promise.resolve(),
   speechPublishAbortController: null,
   seenRecognitionIds: new Set(),
+  contextualCardTimers: new Map(),
+  dismissedContextualCardIds: new Set(),
   systemAudioCaptureAvailable: Boolean(
     navigator.mediaDevices?.getDisplayMedia
       && (window.AudioContext || window.webkitAudioContext))
@@ -41,12 +43,14 @@ const elements = {
   recommendations: document.querySelector("#recommendations"),
   acceptedRecommendations: document.querySelector("#accepted-recommendations"),
   transcript: document.querySelector("#transcript"),
+  contextualCardHistory: document.querySelector("#contextual-card-history"),
   warningsPanel: document.querySelector("#warnings-panel"),
   warnings: document.querySelector("#warnings"),
   connectionStatus: document.querySelector("#connection-status"),
   diagnosticsDialog: document.querySelector("#diagnostics-dialog"),
   openDiagnostics: document.querySelector("#open-diagnostics"),
   closeDiagnostics: document.querySelector("#close-diagnostics"),
+  contextualCards: document.querySelector("#contextual-cards"),
   toast: document.querySelector("#toast")
 };
 
@@ -135,6 +139,16 @@ elements.diagnosticsDialog.addEventListener("click", event => {
     elements.diagnosticsDialog.close();
   }
 });
+elements.contextualCards.addEventListener("click", event => {
+  const button = event.target instanceof Element
+    ? event.target.closest("button[data-contextual-card-dismiss]")
+    : null;
+  if (!button || !elements.contextualCards.contains(button)) {
+    return;
+  }
+
+  dismissContextualCard(button.dataset.contextualCardDismiss);
+});
 
 elements.sessionForm.addEventListener("submit", async event => {
   event.preventDefault();
@@ -163,6 +177,7 @@ elements.sessionForm.addEventListener("submit", async event => {
       })
     });
 
+    resetContextualCards();
     state.session = session;
     elements.setupView.classList.add("hidden");
     elements.sessionView.classList.remove("hidden");
@@ -295,6 +310,9 @@ function render() {
   document.querySelector("#complete-meeting").disabled = session.status === "completed";
   document.querySelector("#transcript-form button").disabled = session.status === "completed";
   renderMicrophoneControls();
+  const contextualCards = session.contextualCards ?? [];
+  renderContextualCards(contextualCards);
+  renderContextualCardHistory(contextualCards);
 
   const liveRecommendations = session.recommendedTasks.filter(
     task => task.status === "accepted" || task.status === "completed");
@@ -400,6 +418,137 @@ function render() {
   elements.warnings.innerHTML = session.warnings
     .map(warning => `<div class="warning">${escapeHtml(warning)}</div>`)
     .join("");
+}
+
+function renderContextualCards(cards) {
+  const candidates = cards.filter(
+    card => !state.dismissedContextualCardIds.has(card.id));
+  const overflow = candidates.slice(0, Math.max(0, candidates.length - 3));
+  overflow.forEach(card => state.dismissedContextualCardIds.add(card.id));
+  const visibleCards = candidates.slice(-3);
+  const visibleIds = new Set(visibleCards.map(card => card.id));
+
+  elements.contextualCards
+    .querySelectorAll("[data-contextual-card-id]")
+    .forEach(cardElement => {
+      if (!visibleIds.has(cardElement.dataset.contextualCardId)) {
+        cardElement.remove();
+      }
+    });
+
+  visibleCards.forEach(card => {
+    if (elements.contextualCards.querySelector(
+      `[data-contextual-card-id="${CSS.escape(card.id)}"]`)) {
+      return;
+    }
+
+    const kind = String(card.kind).toLowerCase() === "definition"
+      ? "definition"
+      : "hint";
+    const kindLabel = kind === "definition" ? "Definition" : "Meeting hint";
+    const cardElement = document.createElement("article");
+    cardElement.className = `contextual-card ${kind}`;
+    cardElement.dataset.contextualCardId = card.id;
+    cardElement.innerHTML = `
+      <div class="contextual-card-heading">
+        <span class="contextual-card-kind">${kindLabel}</span>
+        <button class="contextual-card-dismiss" type="button">&times;</button>
+      </div>
+      <strong class="contextual-card-title">${escapeHtml(card.title)}</strong>
+      <p>${escapeHtml(card.content)}</p>`;
+    const dismissButton = cardElement.querySelector(".contextual-card-dismiss");
+    dismissButton.dataset.contextualCardDismiss = card.id;
+    dismissButton.setAttribute("aria-label", `Dismiss ${card.title}`);
+    cardElement.addEventListener(
+      "pointerenter",
+      () => pauseContextualCardDismissal(card.id));
+    cardElement.addEventListener(
+      "pointerleave",
+      () => scheduleContextualCardDismissal(card.id));
+    cardElement.addEventListener(
+      "focusin",
+      () => pauseContextualCardDismissal(card.id));
+    cardElement.addEventListener(
+      "focusout",
+      () => window.setTimeout(
+        () => scheduleContextualCardDismissal(card.id),
+        0));
+    elements.contextualCards.append(cardElement);
+
+    scheduleContextualCardDismissal(card.id);
+  });
+}
+
+function scheduleContextualCardDismissal(cardId) {
+  pauseContextualCardDismissal(cardId);
+  const cardElement = elements.contextualCards.querySelector(
+    `[data-contextual-card-id="${CSS.escape(cardId)}"]`);
+  if (!cardElement
+      || cardElement.matches(":hover")
+      || cardElement.contains(document.activeElement)) {
+    return;
+  }
+
+  state.contextualCardTimers.set(
+    cardId,
+    window.setTimeout(() => dismissContextualCard(cardId), 25_000));
+}
+
+function pauseContextualCardDismissal(cardId) {
+  window.clearTimeout(state.contextualCardTimers.get(cardId));
+  state.contextualCardTimers.delete(cardId);
+}
+
+function dismissContextualCard(cardId) {
+  if (!cardId) {
+    return;
+  }
+
+  state.dismissedContextualCardIds.add(cardId);
+  window.clearTimeout(state.contextualCardTimers.get(cardId));
+  state.contextualCardTimers.delete(cardId);
+  const cardElement = elements.contextualCards.querySelector(
+    `[data-contextual-card-id="${CSS.escape(cardId)}"]`);
+  if (!cardElement) {
+    return;
+  }
+
+  cardElement.classList.add("leaving");
+  window.setTimeout(() => cardElement.remove(), 180);
+}
+
+function renderContextualCardHistory(cards) {
+  if (cards.length === 0) {
+    elements.contextualCardHistory.className =
+      "contextual-card-history diagnostic-content empty-state";
+    elements.contextualCardHistory.textContent = "No contextual cards yet.";
+    return;
+  }
+
+  elements.contextualCardHistory.className =
+    "contextual-card-history diagnostic-content";
+  elements.contextualCardHistory.innerHTML = cards
+    .slice()
+    .reverse()
+    .map(card => {
+      const kindLabel = String(card.kind).toLowerCase() === "definition"
+        ? "Definition"
+        : "Meeting hint";
+      return `
+        <div class="contextual-card-history-entry">
+          <span class="contextual-card-kind">${kindLabel}</span>
+          <strong>${escapeHtml(card.title)}</strong>
+          <span>${escapeHtml(card.content)}</span>
+        </div>`;
+    })
+    .join("");
+}
+
+function resetContextualCards() {
+  state.contextualCardTimers.forEach(timer => window.clearTimeout(timer));
+  state.contextualCardTimers.clear();
+  state.dismissedContextualCardIds.clear();
+  elements.contextualCards.replaceChildren();
 }
 
 async function startMicrophone() {
@@ -1045,6 +1194,7 @@ function resolveSourceTranscript(task, transcript) {
 
 window.addEventListener("pagehide", () => {
   window.clearTimeout(state.microphoneRefreshTimer);
+  state.contextualCardTimers.forEach(timer => window.clearTimeout(timer));
   cancelMicrophoneTokenRequests();
   state.speechPublishAbortController?.abort();
   state.microphoneRecognizer?.close();

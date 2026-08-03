@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using CsaMeetingCoach.Contracts;
 using CsaMeetingCoach.Core;
 
@@ -26,6 +27,11 @@ public sealed class AzureOpenAiConversationCoachAgentTests
             RecommendationStatus.Accepted,
             latest.OccurredAtUtc.AddMinutes(-2),
             latest.OccurredAtUtc.AddMinutes(-1));
+        var decisionJsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        decisionJsonOptions.Converters.Add(
+            new JsonStringEnumConverter(
+                JsonNamingPolicy.CamelCase,
+                allowIntegerValues: false));
         var decisionJson = JsonSerializer.Serialize(
             new CoachAgentDecision(
                 [],
@@ -37,8 +43,19 @@ public sealed class AzureOpenAiConversationCoachAgentTests
                         0.9,
                         "The accepted topic was explicitly covered.",
                         "staged rollout rings")
-                ]),
-            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                ])
+            {
+                ContextualCards =
+                [
+                    new ContextualCardProposal(
+                        ContextualCardKind.Hint,
+                        "Staged rollout rings",
+                        "Use progressive exposure groups to limit deployment risk.",
+                        0.9,
+                        [latest.Id])
+                ]
+            },
+            decisionJsonOptions);
         var responseJson = JsonSerializer.Serialize(new
         {
             choices = new[]
@@ -66,6 +83,7 @@ public sealed class AzureOpenAiConversationCoachAgentTests
             CancellationToken.None);
 
         Assert.Single(decision.RecommendationEvaluations!);
+        Assert.Single(decision.ContextualCards);
         Assert.Equal(1, handler.CallCount);
         Assert.Contains(
             "acceptedRecommendations",
@@ -73,6 +91,10 @@ public sealed class AzureOpenAiConversationCoachAgentTests
             StringComparison.Ordinal);
         Assert.Contains(
             "recommendationEvaluations",
+            handler.RequestBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "contextualCards",
             handler.RequestBody,
             StringComparison.Ordinal);
     }

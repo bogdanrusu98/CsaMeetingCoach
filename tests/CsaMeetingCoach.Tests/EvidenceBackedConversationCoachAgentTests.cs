@@ -118,6 +118,37 @@ public sealed class EvidenceBackedConversationCoachAgentTests
     }
 
     [Fact]
+    public async Task Analyze_PrimaryContextualCard_IsPreserved()
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Customer",
+            "Our RTO is one hour.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var contextualCard = new ContextualCardProposal(
+            ContextualCardKind.Definition,
+            "RTO",
+            "Recovery Time Objective is the maximum target restoration time.",
+            0.9,
+            [latest.Id]);
+        var primaryDecision = new CoachAgentDecision([], [], [])
+        {
+            ContextualCards = [contextualCard]
+        };
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(primaryDecision),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [], [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.Same(contextualCard, Assert.Single(decision.ContextualCards));
+    }
+
+    [Fact]
     public async Task Analyze_PrimaryFails_DoesNotSilentlyFallBack()
     {
         var expected = new InvalidOperationException("Primary provider failed.");

@@ -20,6 +20,8 @@ stream to maintain an evidence-backed checklist and recommend live private talki
 - Recommends what the CSA should discuss, show, or ask next from explicit customer
   needs and meeting context. Accepted talking points auto-complete only from exact
   evidence in a later final transcript segment and can be reopened.
+- Shows grounded definitions or concise meeting hints in dismissible lower-right
+  cards when the latest final transcript explicitly mentions the term or topic.
 - Pushes session updates to the side panel with Server-Sent Events.
 - Protects each session with a scoped HttpOnly access cookie so another local
   caller cannot read or alter a transcript by guessing its session ID.
@@ -233,6 +235,11 @@ The live view intentionally keeps only the meeting bar, microphone, next
 coaching action, and compact progress visible. Consent and the memory-only
 access code are shown during microphone activation. Transcript simulation,
 evidence, and safety warnings are kept in a single diagnostics dialog.
+Up to three contextual cards can be visible at once above the normal status
+toast. Each card can be dismissed and closes automatically after 25 seconds;
+dismissed cards do not replay on later SSE updates. Hovering or moving keyboard
+focus into a card pauses its timer, and the latest retained cards remain
+available in Diagnostics after the popup closes.
 
 ## Architecture
 
@@ -322,6 +329,15 @@ server-side instead of appearing as routine user-facing rejection errors. A
 recommendation may cite a real earlier transcript segment when that is its actual
 source. Current operational warnings are deduplicated, superseded failures are
 suppressed, and a later clean analysis removes resolved warning state.
+
+Each Foundry analysis may also return at most two contextual cards. The card
+title must be an exact term or short topic phrase from the latest final segment,
+its source must include that segment, and definitions use the reviewed File
+Search knowledge. The coordinator filters low-confidence, oversized, duplicate,
+invented-source, and earlier-only cards without turning those model artifacts
+into user-facing warnings. It retains only the latest 12 cards per session.
+Cards never assert unverified pricing, licensing, compliance, legal conclusions,
+availability, customer intent, or product selection.
 
 On Azure, grant the VM system-assigned managed identity an approved Foundry role
 on the Foundry resource or project. Automatic agent creation requires a role that

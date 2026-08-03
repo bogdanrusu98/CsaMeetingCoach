@@ -13,7 +13,7 @@
       document.documentElement.setAttribute("data-theme", theme);
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=20260803a">
+  <link rel="stylesheet" href="styles.css?v=20260803b">
 </head>
 <body>
   <main class="app-shell">
@@ -202,15 +202,28 @@ Define owners and next steps</textarea>
       </div>
     </details>
 
+    <details class="diagnostic-section">
+      <summary>Contextual card history</summary>
+      <div id="contextual-card-history"
+           class="contextual-card-history diagnostic-content empty-state">
+        No contextual cards yet.
+      </div>
+    </details>
+
     <details id="warnings-panel" class="diagnostic-section warning-panel hidden">
       <summary>Rejected agent decisions</summary>
       <div id="warnings" class="diagnostic-content compact-list"></div>
     </details>
   </dialog>
 
+  <section id="contextual-cards"
+           class="contextual-card-stack"
+           aria-label="Contextual coaching"
+           aria-live="polite"
+           aria-relevant="additions"></section>
   <div id="toast" role="status" aria-live="polite" class="toast hidden"></div>
   <script src="https://res.cdn.office.net/teams-js/2.31.0/js/MicrosoftTeams.min.js"></script>
   <script src="vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0"></script>
-  <script src="app.js?v=20260803a"></script>
+  <script src="app.js?v=20260803b"></script>
 </body>
 </html>

@@ -35,6 +35,9 @@ public sealed class EvidenceBackedConversationCoachAgent(
             primaryDecision.RecommendedTasks,
             (primaryDecision.RecommendationEvaluations ?? [])
                 .Concat(deterministicDecision.RecommendationEvaluations ?? [])
-                .ToArray());
+                .ToArray())
+        {
+            ContextualCards = primaryDecision.ContextualCards
+        };
     }
 }

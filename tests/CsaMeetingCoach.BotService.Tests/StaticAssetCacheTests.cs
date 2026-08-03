@@ -18,8 +18,8 @@ public sealed class StaticAssetCacheTests
         indexResponse.EnsureSuccessStatusCode();
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
-        Assert.Contains("styles.css?v=20260803a", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260803a", html, StringComparison.Ordinal);
+        Assert.Contains("styles.css?v=20260803b", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260803b", html, StringComparison.Ordinal);
         Assert.Contains("data-theme", html, StringComparison.Ordinal);
         Assert.Contains("id=\"microphone-toggle\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"include-system-audio\"", html, StringComparison.Ordinal);
@@ -28,12 +28,14 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("Next up", html, StringComparison.Ordinal);
         Assert.Contains("Meeting progress", html, StringComparison.Ordinal);
         Assert.Contains("id=\"diagnostics-dialog\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"contextual-cards\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"contextual-card-history\"", html, StringComparison.Ordinal);
         Assert.Contains(
             "vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0",
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260803a");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260803b");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
@@ -59,10 +61,15 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("AudioConfig.fromStreamInput", script, StringComparison.Ordinal);
         Assert.Contains("createMediaStreamDestination", script, StringComparison.Ordinal);
         Assert.Contains("Share system audio", script, StringComparison.Ordinal);
+        Assert.Contains("renderContextualCards", script, StringComparison.Ordinal);
+        Assert.Contains("data-contextual-card-dismiss", script, StringComparison.Ordinal);
 
-        using var styleResponse = await client.GetAsync("/styles.css?v=20260803a");
+        using var styleResponse = await client.GetAsync("/styles.css?v=20260803b");
         styleResponse.EnsureSuccessStatusCode();
         AssertNoStore(styleResponse);
+        var styles = await styleResponse.Content.ReadAsStringAsync();
+        Assert.Contains(".contextual-card-stack", styles, StringComparison.Ordinal);
+        Assert.Contains(".contextual-card", styles, StringComparison.Ordinal);
 
         using var speechSdkResponse = await client.GetAsync(
             "/vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0");

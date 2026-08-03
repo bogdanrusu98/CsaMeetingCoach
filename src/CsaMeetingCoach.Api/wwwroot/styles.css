@@ -951,6 +951,7 @@ html[data-theme="contrast"] .compact-item.completed .item-indicator {
 }
 
 .transcript-entry,
+.contextual-card-history-entry,
 .warning {
   padding: 10px;
   border: 1px solid var(--cp-border);
@@ -967,10 +968,126 @@ html[data-theme="contrast"] .compact-item.completed .item-indicator {
   color: var(--cp-accent);
 }
 
+.contextual-card-history-entry {
+  display: grid;
+  gap: 4px;
+}
+
+.contextual-card-history-entry strong {
+  color: var(--cp-text);
+  font-size: 13px;
+}
+
 .warning {
   color: var(--cp-warning);
   border-color: var(--cp-warning);
   background: var(--cp-warning-soft);
+}
+
+.contextual-card-stack {
+  position: fixed;
+  z-index: 29;
+  right: 14px;
+  bottom: 72px;
+  display: grid;
+  width: min(360px, calc(100% - 28px));
+  max-height: min(62vh, 520px);
+  gap: 10px;
+  overflow: auto;
+  pointer-events: none;
+}
+
+.contextual-card {
+  display: grid;
+  gap: 7px;
+  padding: 13px 14px;
+  border: 1px solid var(--cp-border);
+  border-left: 4px solid var(--cp-link);
+  border-radius: .75rem;
+  color: var(--cp-text);
+  background: var(--cp-panel-strong);
+  box-shadow: var(--cp-shadow);
+  pointer-events: auto;
+  animation: contextual-card-in 180ms ease-out both;
+}
+
+.contextual-card.hint {
+  border-left-color: var(--cp-accent);
+}
+
+.contextual-card.leaving {
+  animation: contextual-card-out 160ms ease-in both;
+}
+
+.contextual-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.contextual-card-kind {
+  color: var(--cp-link);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.contextual-card.hint .contextual-card-kind {
+  color: var(--cp-accent);
+}
+
+.contextual-card-title {
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.contextual-card p {
+  margin: 0;
+  color: var(--cp-text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.contextual-card-dismiss {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: .375rem;
+  place-items: center;
+  color: var(--cp-text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.contextual-card-dismiss:hover {
+  color: var(--cp-text);
+  background: var(--cp-surface-soft);
+}
+
+.contextual-card-dismiss:focus-visible {
+  outline: 2px solid var(--cp-accent);
+  outline-offset: 1px;
+}
+
+@keyframes contextual-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@keyframes contextual-card-out {
+  to {
+    opacity: 0;
+    transform: translateX(18px);
+  }
 }
 
 .toast {
@@ -1028,6 +1145,12 @@ html[data-theme="contrast"] .compact-item.completed .item-indicator {
   .focus-card,
   .progress-card {
     padding: 14px;
+  }
+
+  .contextual-card-stack {
+    right: 10px;
+    bottom: 68px;
+    width: calc(100% - 20px);
   }
 }
 

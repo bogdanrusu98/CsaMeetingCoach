@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using CsaMeetingCoach.Contracts;
 using CsaMeetingCoach.Core;
 
@@ -6,8 +7,17 @@ namespace CsaMeetingCoach.Tests;
 
 public sealed class FoundryConversationCoachAgentTests
 {
-    private static readonly JsonSerializerOptions JsonOptions =
-        new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+
+    private static JsonSerializerOptions CreateJsonOptions()
+    {
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        options.Converters.Add(
+            new JsonStringEnumConverter(
+                JsonNamingPolicy.CamelCase,
+                allowIntegerValues: false));
+        return options;
+    }
 
     [Fact]
     public async Task Analyze_SendsMinimalMeetingDataAndParsesDecision()
@@ -207,6 +217,45 @@ public sealed class FoundryConversationCoachAgentTests
         Assert.Equal(
             proposal.SourceTranscriptSegmentIds,
             recommendation.SourceTranscriptSegmentIds);
+    }
+
+    [Fact]
+    public async Task Analyze_ContextualCardsRequireLatestGroundedSegment()
+    {
+        var latestSegment = CreateLatestSegment(
+            "The recovery objective requires an RTO of one hour.");
+        var context = CreateContext(latestSegment);
+        var decisionPayload = new CoachAgentDecision([], [], [])
+        {
+            ContextualCards =
+            [
+                new ContextualCardProposal(
+                    ContextualCardKind.Definition,
+                    "RTO",
+                    "Recovery Time Objective is the maximum target time for restoring a service.",
+                    0.92,
+                    [latestSegment.Id]),
+                new ContextualCardProposal(
+                    ContextualCardKind.Hint,
+                    "Unsupported hint",
+                    "This card has an invented transcript source.",
+                    0.95,
+                    [Guid.NewGuid()])
+            ]
+        };
+        var agent = new FoundryConversationCoachAgent(
+            new RecordingFoundryClient(
+                JsonSerializer.Serialize(decisionPayload, JsonOptions)));
+
+        var decision = await agent.AnalyzeAsync(
+            context,
+            latestSegment,
+            CancellationToken.None);
+
+        var card = Assert.Single(decision.ContextualCards);
+        Assert.Equal(ContextualCardKind.Definition, card.Kind);
+        Assert.Equal("RTO", card.Title);
+        Assert.Equal(latestSegment.Id, Assert.Single(card.SourceTranscriptSegmentIds));
     }
 
     [Fact]

@@ -56,6 +56,7 @@ public sealed class JsonMeetingSessionStore(string dataDirectory) : IMeetingSess
                 : session with
                 {
                     IsAnalyzing = false,
+                    ContextualCards = session.ContextualCards ?? [],
                     RecommendedTasks = session.RecommendedTasks
                         .Select(item => item with
                         {

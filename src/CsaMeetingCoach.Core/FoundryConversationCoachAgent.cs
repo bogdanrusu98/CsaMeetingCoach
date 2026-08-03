@@ -91,6 +91,17 @@ public static class FoundryAgentContract
         Do not upsell, assemble an unsupported product bundle, or recommend a product only
         because its name appears in retrieved knowledge.
 
+        Return up to two contextual pop-up cards when the latest segment explicitly
+        mentions a term or topic for which a plain-language definition or a concise meeting hint
+        would help the CSA immediately. Copy the card title as an exact term or short
+        phrase from latestSegment.text and cite latestSegment.id. A definition must
+        be grounded with file search and explain the term in no more than two short
+        sentences. A hint must suggest a useful question, distinction, or validation
+        point without duplicating a recommended task. Do not create a card for a term
+        already present in existingContextualCards. Do not infer pricing, licensing,
+        compliance, legal conclusions, availability, customer intent, or product
+        selection. Return no card when the value would be generic or speculative.
+
         Do not generate generic administrative follow-up work. Do not repeat a
         recommendation already proposed, accepted, completed, or dismissed, or a
         topic already covered by the checklist or meeting context. Proposal source
@@ -178,12 +189,47 @@ public static class FoundryAgentContract
                 ],
                 "additionalProperties": false
               }
+            },
+            "contextualCards": {
+              "type": "array",
+              "maxItems": 2,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [ "definition", "hint" ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "content": {
+                    "type": "string",
+                    "maxLength": 320
+                  },
+                  "confidence": { "type": "number" },
+                  "sourceTranscriptSegmentIds": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                },
+                "required": [
+                  "kind",
+                  "title",
+                  "content",
+                  "confidence",
+                  "sourceTranscriptSegmentIds"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
             "checklistEvaluations",
             "recommendedTasks",
-            "recommendationEvaluations"
+            "recommendationEvaluations",
+            "contextualCards"
           ],
           "additionalProperties": false
         }
@@ -199,7 +245,13 @@ public sealed class FoundryConversationCoachAgent(
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = false,
-        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+        Converters =
+        {
+            new JsonStringEnumConverter(
+                JsonNamingPolicy.CamelCase,
+                allowIntegerValues: false)
+        }
     };
 
     public async Task<CoachAgentDecision> AnalyzeAsync(
@@ -236,6 +288,13 @@ public sealed class FoundryConversationCoachAgent(
                     item.Rationale,
                     item.AcceptedAtUtc,
                     item.SourceTranscriptSegmentIds
+                }),
+            existingContextualCards = (context.ContextualCards ?? [])
+                .Select(card => new
+                {
+                    card.Kind,
+                    card.Title,
+                    card.Content
                 }),
             recentTranscript = context.RecentTranscript.Select(item => new
             {
@@ -314,7 +373,8 @@ public sealed class FoundryConversationCoachAgent(
     {
         if (decision.ChecklistEvaluations is null
             || decision.RecommendedTasks is null
-            || decision.RecommendationEvaluations is null)
+            || decision.RecommendationEvaluations is null
+            || decision.ContextualCards is null)
         {
             throw new InvalidOperationException(
                 "Foundry returned a coaching decision with missing collections.");
@@ -323,6 +383,11 @@ public sealed class FoundryConversationCoachAgent(
         {
             throw new InvalidOperationException(
                 "Foundry returned more than one recommended task.");
+        }
+        if (decision.ContextualCards.Count > 2)
+        {
+            throw new InvalidOperationException(
+                "Foundry returned more than two contextual cards.");
         }
     }
 
@@ -343,6 +408,7 @@ public sealed class FoundryConversationCoachAgent(
             .Where(item => item.Status == RecommendationStatus.Accepted)
             .ToDictionary(item => item.Id);
         var rawRecommendationEvaluations = decision.RecommendationEvaluations!;
+        var rawContextualCards = decision.ContextualCards;
 
         var checklistEvaluations = decision.ChecklistEvaluations
             .Where(evaluation => evaluation is not null
@@ -378,11 +444,29 @@ public sealed class FoundryConversationCoachAgent(
                 && latestSegment.OccurredAtUtc > recommendation.AcceptedAtUtc
                 && !recommendation.SourceTranscriptSegmentIds.Contains(latestSegment.Id))
             .ToArray();
+        var contextualCards = rawContextualCards
+            .Where(card => card is not null
+                && Enum.IsDefined(card.Kind)
+                && !string.IsNullOrWhiteSpace(card.Title)
+                && card.Title.Trim().Length <= 80
+                && latestSegment.Text.Contains(
+                    card.Title.Trim(),
+                    StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(card.Content)
+                && card.Content.Trim().Length <= 320
+                && double.IsFinite(card.Confidence)
+                && card.Confidence is >= 0.75 and <= 1
+                && card.SourceTranscriptSegmentIds is { Count: > 0 }
+                && card.SourceTranscriptSegmentIds.Contains(latestSegment.Id)
+                && card.SourceTranscriptSegmentIds.All(transcriptIds.Contains))
+            .Take(2)
+            .ToArray();
 
         var discardedCount =
             decision.ChecklistEvaluations.Count - checklistEvaluations.Length
             + decision.RecommendedTasks.Count - recommendedTasks.Length
-            + rawRecommendationEvaluations.Count - recommendationEvaluations.Length;
+            + rawRecommendationEvaluations.Count - recommendationEvaluations.Length
+            + rawContextualCards.Count - contextualCards.Length;
         if (discardedCount > 0)
         {
             logger?.LogDebug(
@@ -393,7 +477,10 @@ public sealed class FoundryConversationCoachAgent(
         return new CoachAgentDecision(
             checklistEvaluations,
             recommendedTasks,
-            recommendationEvaluations);
+            recommendationEvaluations)
+        {
+            ContextualCards = contextualCards
+        };
     }
 
     private static bool HasExactCompletionEvidence(
@@ -432,7 +519,8 @@ public sealed class FoundryConversationCoachAgent(
             {
                 "checklistEvaluations",
                 "recommendedTasks",
-                "recommendationEvaluations"
+                "recommendationEvaluations",
+                "contextualCards"
             };
             var missing = expected
                 .Where(property => !properties.Contains(property))

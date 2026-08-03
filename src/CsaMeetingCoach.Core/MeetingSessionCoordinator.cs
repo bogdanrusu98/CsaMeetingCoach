@@ -8,6 +8,9 @@ namespace CsaMeetingCoach.Core;
 public sealed class MeetingSessionCoordinator : IDisposable
 {
     public const double AutoCompletionThreshold = 0.82;
+    private const double ContextualCardThreshold = 0.75;
+    private const int MaximumContextualCardsPerAnalysis = 2;
+    private const int MaximumRetainedContextualCards = 12;
     private const string AnalysisUnavailableWarning =
         "AI coaching is temporarily unavailable. Transcript and local checklist processing continued.";
 
@@ -159,12 +162,17 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 transcriptUpdate.Purpose,
                 transcriptUpdate.Checklist,
                 finalTranscript.TakeLast(20).ToArray(),
-                transcriptUpdate.RecommendedTasks);
+                transcriptUpdate.RecommendedTasks,
+                transcriptUpdate.ContextualCards);
             var deterministicDecision = await _deterministicAgent.AnalyzeAsync(
                 context, segment, cancellationToken);
             var fastLaneDecision = _aiAgent is null
                 ? deterministicDecision
-                : deterministicDecision with { RecommendedTasks = [] };
+                : deterministicDecision with
+                {
+                    RecommendedTasks = [],
+                    ContextualCards = []
+                };
             var decision = CrossCuttingRecommendationPolicy.Apply(fastLaneDecision, segment);
 
             var warnings = transcriptUpdate.Warnings
@@ -190,6 +198,11 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 transcriptUpdate.Checklist,
                 transcriptUpdate.Purpose,
                 warnings);
+            var contextualCards = ApplyContextualCards(
+                transcriptUpdate.ContextualCards,
+                decision.ContextualCards,
+                finalTranscript,
+                segment);
             var analyzedAtUtc = DateTimeOffset.UtcNow;
             var analyzedTranscript = transcript
                 .Select(item => item.Id == segment.Id
@@ -202,6 +215,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 Transcript = analyzedTranscript,
                 Checklist = checklist,
                 RecommendedTasks = recommendations,
+                ContextualCards = contextualCards,
                 Warnings = NormalizeWarnings(warnings),
                 IsAnalyzing = _aiAgent is not null,
                 Revision = transcriptUpdate.Revision + 1,
@@ -367,7 +381,8 @@ public sealed class MeetingSessionCoordinator : IDisposable
                     session.Purpose,
                     session.Checklist,
                     finalTranscript,
-                    session.RecommendedTasks);
+                    session.RecommendedTasks,
+                    session.ContextualCards);
             }
             finally
             {
@@ -456,12 +471,18 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 current.Checklist,
                 current.Purpose,
                 mergeWarnings);
+            var contextualCards = ApplyContextualCards(
+                current.ContextualCards,
+                aiDecision.ContextualCards,
+                finalTranscript,
+                latestSegment);
 
             state.MarkCompleted(analysisGeneration);
             var mergedSession = current with
             {
                 Checklist = checklist,
                 RecommendedTasks = recommendations,
+                ContextualCards = contextualCards,
                 Warnings = NormalizeWarnings(mergeWarnings),
                 IsAnalyzing = state.IsAnalyzing,
                 Revision = current.Revision + 1,
@@ -861,6 +882,64 @@ public sealed class MeetingSessionCoordinator : IDisposable
         }
 
         return result;
+    }
+
+    private static IReadOnlyList<ContextualCardState> ApplyContextualCards(
+        IReadOnlyList<ContextualCardState> current,
+        IReadOnlyList<ContextualCardProposal> proposals,
+        IReadOnlyList<TranscriptSegment> transcript,
+        TranscriptSegment latestSegment)
+    {
+        var segmentIds = transcript.Select(segment => segment.Id).ToHashSet();
+        var knownTitles = current
+            .Select(card => HeuristicConversationCoachAgent.Normalize(card.Title))
+            .ToHashSet(StringComparer.Ordinal);
+        var result = current.TakeLast(MaximumRetainedContextualCards).ToList();
+        var acceptedCount = 0;
+
+        foreach (var proposal in proposals)
+        {
+            if (acceptedCount >= MaximumContextualCardsPerAnalysis)
+            {
+                break;
+            }
+
+            if (proposal is null
+                || !Enum.IsDefined(proposal.Kind)
+                || string.IsNullOrWhiteSpace(proposal.Title)
+                || proposal.Title.Trim().Length > 80
+                || !latestSegment.Text.Contains(
+                    proposal.Title.Trim(),
+                    StringComparison.OrdinalIgnoreCase)
+                || string.IsNullOrWhiteSpace(proposal.Content)
+                || proposal.Content.Trim().Length > 320
+                || !double.IsFinite(proposal.Confidence)
+                || proposal.Confidence is < ContextualCardThreshold or > 1
+                || proposal.SourceTranscriptSegmentIds is not { Count: > 0 }
+                || !proposal.SourceTranscriptSegmentIds.Contains(latestSegment.Id)
+                || proposal.SourceTranscriptSegmentIds.Any(id => !segmentIds.Contains(id)))
+            {
+                continue;
+            }
+
+            var normalizedTitle = HeuristicConversationCoachAgent.Normalize(proposal.Title);
+            if (normalizedTitle.Length == 0 || !knownTitles.Add(normalizedTitle))
+            {
+                continue;
+            }
+
+            result.Add(new ContextualCardState(
+                Guid.NewGuid(),
+                proposal.Kind,
+                proposal.Title.Trim(),
+                proposal.Content.Trim(),
+                proposal.Confidence,
+                proposal.SourceTranscriptSegmentIds.Distinct().ToArray(),
+                DateTimeOffset.UtcNow));
+            acceptedCount++;
+        }
+
+        return result.TakeLast(MaximumRetainedContextualCards).ToArray();
     }
 
     private static IReadOnlyList<string> NormalizeWarnings(IEnumerable<string> warnings)

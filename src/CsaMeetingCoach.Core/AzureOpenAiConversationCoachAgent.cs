@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using CsaMeetingCoach.Contracts;
 
 namespace CsaMeetingCoach.Core;
@@ -14,7 +15,15 @@ public sealed class AzureOpenAiConversationCoachAgent(
     HttpClient httpClient,
     AzureOpenAiOptions options) : IConversationCoachAgent
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters =
+        {
+            new JsonStringEnumConverter(
+                JsonNamingPolicy.CamelCase,
+                allowIntegerValues: false)
+        }
+    };
 
     public async Task<CoachAgentDecision> AnalyzeAsync(
         CoachAgentContext context,
@@ -59,7 +68,13 @@ public sealed class AzureOpenAiConversationCoachAgent(
 
                         Evaluate each currently accepted recommendation for coverage in the same
                         response. Complete it only from explicit evidence in the latest segment that
-                        occurred after acceptance; never use its source segment. Return JSON only:
+                        occurred after acceptance; never use its source segment.
+
+                        Return up to two contextualCards only when a term or topic explicitly present
+                        in the latest segment merits a concise definition or meeting hint. Copy the
+                        title exactly from the latest segment, cite its ID, and do not repeat
+                        existingContextualCards. Do not infer commercial, compliance, legal, or
+                        product-selection claims. Return JSON only:
                         {
                           "checklistEvaluations": [{
                             "checklistItemId": "guid",
@@ -80,6 +95,13 @@ public sealed class AzureOpenAiConversationCoachAgent(
                             "confidence": 0.0,
                             "reason": "string",
                             "evidenceQuote": "exact quote"
+                          }],
+                          "contextualCards": [{
+                             "kind": "definition|hint",
+                             "title": "exact term or phrase",
+                             "content": "concise grounded explanation",
+                             "confidence": 0.0,
+                             "sourceTranscriptSegmentIds": ["guid"]
                           }]
                         }
                         """
@@ -95,6 +117,7 @@ public sealed class AzureOpenAiConversationCoachAgent(
                         existingRecommendations = context.RecommendedTasks ?? [],
                         acceptedRecommendations = (context.RecommendedTasks ?? [])
                             .Where(item => item.Status == RecommendationStatus.Accepted),
+                        existingContextualCards = context.ContextualCards ?? [],
                         recentTranscript = context.RecentTranscript,
                         latestSegment
                     }, JsonOptions)
@@ -129,7 +152,8 @@ public sealed class AzureOpenAiConversationCoachAgent(
 
         if (decision.ChecklistEvaluations is null
             || decision.RecommendedTasks is null
-            || decision.RecommendationEvaluations is null)
+            || decision.RecommendationEvaluations is null
+            || decision.ContextualCards is null)
         {
             throw new InvalidOperationException(
                 "Azure OpenAI returned a coaching decision with missing collections.");

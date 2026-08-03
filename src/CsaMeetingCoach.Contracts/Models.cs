@@ -20,6 +20,12 @@ public enum RecommendationStatus
     Completed = 3
 }
 
+public enum ContextualCardKind
+{
+    Definition,
+    Hint
+}
+
 public sealed record MeetingPurpose(
     string Title,
     string MeetingType,
@@ -84,6 +90,15 @@ public sealed record RecommendedTaskState(
     string? CompletionReason = null,
     IReadOnlyList<ChecklistEvidence>? Evidence = null);
 
+public sealed record ContextualCardState(
+    Guid Id,
+    ContextualCardKind Kind,
+    string Title,
+    string Content,
+    double Confidence,
+    IReadOnlyList<Guid> SourceTranscriptSegmentIds,
+    DateTimeOffset CreatedAtUtc);
+
 public sealed record MeetingSessionState(
     Guid Id,
     MeetingPurpose Purpose,
@@ -96,7 +111,10 @@ public sealed record MeetingSessionState(
     IReadOnlyList<RecommendedTaskState> RecommendedTasks,
     IReadOnlyList<string> Warnings,
     string? TeamsOnlineMeetingId = null,
-    bool IsAnalyzing = false);
+    bool IsAnalyzing = false)
+{
+    public IReadOnlyList<ContextualCardState> ContextualCards { get; init; } = [];
+}
 
 public sealed record AdapterTranscriptSegmentRequest(
     string TeamsOnlineMeetingId,
@@ -115,6 +133,13 @@ public sealed record RecommendedTaskProposal(
     double Confidence,
     IReadOnlyList<Guid> SourceTranscriptSegmentIds);
 
+public sealed record ContextualCardProposal(
+    ContextualCardKind Kind,
+    string Title,
+    string Content,
+    double Confidence,
+    IReadOnlyList<Guid> SourceTranscriptSegmentIds);
+
 public sealed record RecommendationEvaluation(
     Guid RecommendationId,
     bool ShouldComplete,
@@ -126,9 +151,13 @@ public sealed record CoachAgentContext(
     MeetingPurpose Purpose,
     IReadOnlyList<ChecklistItemState> Checklist,
     IReadOnlyList<TranscriptSegment> RecentTranscript,
-    IReadOnlyList<RecommendedTaskState>? RecommendedTasks = null);
+    IReadOnlyList<RecommendedTaskState>? RecommendedTasks = null,
+    IReadOnlyList<ContextualCardState>? ContextualCards = null);
 
 public sealed record CoachAgentDecision(
     IReadOnlyList<ChecklistEvaluation> ChecklistEvaluations,
     IReadOnlyList<RecommendedTaskProposal> RecommendedTasks,
-    IReadOnlyList<RecommendationEvaluation>? RecommendationEvaluations = null);
+    IReadOnlyList<RecommendationEvaluation>? RecommendationEvaluations = null)
+{
+    public IReadOnlyList<ContextualCardProposal> ContextualCards { get; init; } = [];
+}
