@@ -159,10 +159,11 @@ public sealed class MeetingSessionCoordinator : IDisposable
             var finalTranscript = transcript
                 .Where(transcriptSegment => transcriptSegment.IsFinal)
                 .ToArray();
+            var analysisWindow = TranscriptAnalysisWindow.Select(finalTranscript);
             var context = new CoachAgentContext(
                 transcriptUpdate.Purpose,
                 transcriptUpdate.Checklist,
-                TranscriptAnalysisWindow.Select(finalTranscript),
+                finalTranscript,
                 transcriptUpdate.RecommendedTasks,
                 transcriptUpdate.ContextualCards);
             var deterministicDecision = await _deterministicAgent.AnalyzeAsync(
@@ -172,7 +173,10 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 : deterministicDecision with
                 {
                     RecommendedTasks = [],
-                    ContextualCards = []
+                    ContextualCards = PresentationCoachingPolicy.SelectContextualCards(
+                        context,
+                        [],
+                        analysisWindow)
                 };
             var decision = CrossCuttingRecommendationPolicy.Apply(fastLaneDecision, segment);
 
@@ -185,14 +189,14 @@ public sealed class MeetingSessionCoordinator : IDisposable
             var checklist = ApplyChecklistEvaluations(
                 transcriptUpdate.Checklist,
                 decision.ChecklistEvaluations,
-                context.RecentTranscript,
+                analysisWindow,
                 segment,
                 finalTranscript,
                 warnings);
             var evaluatedRecommendations = ApplyRecommendationEvaluations(
                 transcriptUpdate.RecommendedTasks,
                 decision.RecommendationEvaluations ?? [],
-                context.RecentTranscript,
+                analysisWindow,
                 segment,
                 finalTranscript,
                 warnings);
@@ -206,7 +210,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
             var contextualCards = ApplyContextualCards(
                 transcriptUpdate.ContextualCards,
                 decision.ContextualCards,
-                context.RecentTranscript);
+                analysisWindow);
             var analyzedAtUtc = DateTimeOffset.UtcNow;
             var analyzedTranscript = transcript
                 .Select(item => item.Id == segment.Id
@@ -830,35 +834,50 @@ public sealed class MeetingSessionCoordinator : IDisposable
             .GroupBy(candidate => candidate.Evaluation!.ChecklistItemId)
             .ToDictionary(
                 group => group.Key,
-                group => group
+                group =>
+                {
+                    var ordered = group
                     .OrderByDescending(candidate => candidate.Evaluation!.Confidence)
-                    .First());
+                    .DistinctBy(candidate => (
+                        candidate.EvidenceSegment!.Id,
+                        candidate.Evaluation!.EvidenceQuote.Trim()))
+                    .ToArray();
+                    return currentById.TryGetValue(group.Key, out var item)
+                        && HeuristicConversationCoachAgent.RequiresCompoundEvidence(item)
+                            ? ordered
+                            : ordered.Take(1).ToArray();
+                });
 
         return current.Select(item =>
         {
             if (item.Status == ChecklistItemStatus.Completed
-                || !byItem.TryGetValue(item.Id, out var candidate))
+                || !byItem.TryGetValue(item.Id, out var candidates))
             {
                 return item;
             }
 
-            var evaluation = candidate.Evaluation!;
-            var evidenceSegment = candidate.EvidenceSegment!;
-            var evidence = new ChecklistEvidence(
-                evidenceSegment.Id,
-                evidenceSegment.Speaker,
-                evaluation.EvidenceQuote.Trim(),
-                evidenceSegment.OccurredAtUtc,
-                Math.Clamp(evaluation.Confidence, 0, 1));
+            var primaryEvaluation = candidates[0].Evaluation!;
+            var evidence = candidates
+                .Select(candidate => new ChecklistEvidence(
+                    candidate.EvidenceSegment!.Id,
+                    candidate.EvidenceSegment.Speaker,
+                    candidate.Evaluation!.EvidenceQuote.Trim(),
+                    candidate.EvidenceSegment.OccurredAtUtc,
+                    Math.Clamp(candidate.Evaluation.Confidence, 0, 1)))
+                .ToArray();
 
             return item with
             {
                 Status = ChecklistItemStatus.Completed,
                 AutoCompleted = true,
-                Confidence = evidence.Confidence,
-                CompletionReason = evaluation.Reason.Trim(),
+                Confidence = evidence.Min(entry => entry.Confidence),
+                CompletionReason = primaryEvaluation.Reason.Trim(),
                 CompletedAtUtc = DateTimeOffset.UtcNow,
-                Evidence = item.Evidence.Append(evidence).ToArray()
+                Evidence = item.Evidence
+                    .Concat(evidence)
+                    .DistinctBy(entry => (entry.TranscriptSegmentId, entry.Quote))
+                    .TakeLast(20)
+                    .ToArray()
             };
         }).ToArray();
     }
@@ -906,12 +925,16 @@ public sealed class MeetingSessionCoordinator : IDisposable
             }
 
             var normalizedTitle = HeuristicConversationCoachAgent.Normalize(proposal.Title);
-            if (!knownTitles.Add(normalizedTitle)
-                || coveredContext.Any(context => context == normalizedTitle))
+            if (knownTitles.Contains(normalizedTitle)
+                || coveredContext.Any(context =>
+                    PresentationCoachingPolicy.HasSubstantialOverlap(
+                        normalizedTitle,
+                        context)))
             {
                 continue;
             }
 
+            knownTitles.Add(normalizedTitle);
             result.Add(new RecommendedTaskState(
                 Guid.NewGuid(),
                 proposal.Title.Trim(),
@@ -956,11 +979,10 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 || proposal.SourceTranscriptSegmentIds is not { Count: > 0 }
                 || proposal.SourceTranscriptSegmentIds.Any(
                     id => !analysisWindowById.ContainsKey(id))
-                || !proposal.SourceTranscriptSegmentIds
-                    .Select(id => analysisWindowById[id])
-                    .Any(segment => segment.Text.Contains(
-                        proposal.Title.Trim(),
-                        StringComparison.OrdinalIgnoreCase)))
+                || !PresentationCoachingPolicy.IsTitleGrounded(
+                    proposal.Title,
+                    proposal.SourceTranscriptSegmentIds,
+                    analysisWindow))
             {
                 continue;
             }

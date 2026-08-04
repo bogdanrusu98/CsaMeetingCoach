@@ -15,6 +15,8 @@ stream to maintain an evidence-backed checklist and recommend live private talki
 - Auto-completes a checklist item only above a confidence threshold and only
   when the agent supplies an exact quote from its cited final transcript segment
   and the deterministic evaluator independently approves that same source.
+  Compound criteria require every configured discussion signal across the
+  current window, and all supporting source fragments are retained.
 - Stores the speaker, timestamp, quote, rationale, and confidence for every
   automatic completion.
 - Allows users to undo any automatic completion.
@@ -333,8 +335,10 @@ snapshot can merge while newer speech remains queued, preventing continuous
 audio from starving recommendations and contextual cards.
 The latest 20 final Speech fragments form one analysis window, allowing adjacent
 sentence and product-name fragments to be interpreted as a coherent discussion
-without synthesizing transcript evidence. Every checklist or accepted-task
-completion still cites one real source segment and an exact quote from it.
+without synthesizing transcript evidence. A simple completion still cites one
+real source segment and an exact quote from it. A compound checklist criterion
+must cover every configured discussion signal and retains each distinct exact
+source fragment that jointly proves completion.
 Server-controlled final-transcript order, rather than a client-supplied speech
 timestamp, determines whether evidence arrived after an item was accepted or
 reopened. This prevents old window evidence from immediately restoring a
@@ -347,14 +351,22 @@ recommendation may cite a real earlier transcript segment when that is its actua
 source. Current operational warnings are deduplicated, superseded failures are
 suppressed, and a later clean analysis removes resolved warning state.
 
-Each Foundry analysis may also return at most two contextual cards. The card
+Each analysis may also return at most two contextual cards. Reviewed
+deterministic cards for recognized high-value presentation terms can appear in
+the fast lane before Foundry completes, while Foundry supplies broader
+context-sensitive definitions and hints. The card
 title must be an exact term or short topic phrase from a cited segment in the
-analysis window, and definitions use the reviewed File
-Search knowledge. The coordinator filters low-confidence, oversized, duplicate,
+analysis window, and generated definitions use the reviewed File Search
+knowledge. The coordinator filters low-confidence, oversized, duplicate,
 invented-source, and outside-window cards without turning those model artifacts
 into user-facing warnings. It retains only the latest 12 cards per session.
 Cards never assert unverified pricing, licensing, compliance, legal conclusions,
 availability, customer intent, or product selection.
+
+Recommendations that substantially repeat a checklist criterion are discarded.
+For a recognized Azure Load Balancer presentation, a reviewed technical fallback
+focuses the next discussion on traffic exposure, health behavior, availability,
+and outbound connectivity if Foundry returns only a checklist-like suggestion.
 
 On Azure, grant the VM system-assigned managed identity an approved Foundry role
 on the Foundry resource or project. Automatic agent creation requires a role that

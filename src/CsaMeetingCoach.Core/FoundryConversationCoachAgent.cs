@@ -31,9 +31,12 @@ public static class FoundryAgentContract
         third-person wording. If attribution or intent is ambiguous, recommend
         clarification instead of auto-completing an item.
         Never infer emotion, sentiment, tone, employee performance, health,
-        ethnicity, hidden traits, or any other sensitive attribute. Complete a
-        checklist item only when one analysisWindow segment contains direct
-        evidence. For every completion, evidenceQuote must be an exact ordinal
+        ethnicity, hidden traits, or any other sensitive attribute. A simple
+        checklist item may complete from one analysisWindow segment. A compound
+        completionCriteria containing multiple required topics must not complete
+        from one narrow fragment; every required discussion signal must be covered
+        across the analysis window and will be verified independently. For every
+        completion, evidenceQuote must be an exact ordinal
         substring of that segment and sourceTranscriptSegmentId must copy its ID.
 
         Evaluate every pending checklist item independently on every request.
@@ -63,8 +66,11 @@ public static class FoundryAgentContract
         current Microsoft service and recommend the highest-value uncovered
         function, decision factor, limitation, validation, or customer discovery
         question. Ground it in the meeting objective plus explicit analysisWindow
-        content and reviewed knowledge. Do not fall back to generic success
-        criteria when a concrete technical topic is being presented.
+        content and reviewed knowledge. Do not fall back to customer requirements,
+        success criteria, business outcomes, ownership, or another meeting-process
+        action when a concrete technical topic is being presented. Never restate
+        a pending checklist item as a recommendation. Prefer an uncovered
+        technical function, design choice, failure mode, limitation, or validation.
 
         When the discussion identifies a concrete service, project, system,
         workload, migration, modernization, or production rollout, do not stop at
@@ -104,7 +110,11 @@ public static class FoundryAgentContract
 
         Return up to two contextual pop-up cards when analysisWindow explicitly
         mentions a term or topic for which a plain-language definition or a concise meeting hint
-        would help the CSA immediately. Copy the card title as an exact term or
+        would help the CSA immediately. During a presentation, demo, workshop, or
+        training discussion that introduces a concrete Microsoft technical term,
+        return at least one useful card unless that term is already present in
+        existingContextualCards. If the speaker already explained the definition,
+        return a decision-oriented hint instead. Copy the card title as an exact term or
         short phrase from one cited analysisWindow segment and cite that segment's
         ID. A definition must
         be grounded with file search and explain the term in no more than two short

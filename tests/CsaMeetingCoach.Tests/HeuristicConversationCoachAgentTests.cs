@@ -466,6 +466,98 @@ public sealed class HeuristicConversationCoachAgentTests
         Assert.Empty(decision.ChecklistEvaluations);
     }
 
+    [Fact]
+    public async Task Analyze_CompoundCriterion_DoesNotCompleteFromOneNarrowHint()
+    {
+        var item = new ChecklistItemState(
+            Guid.NewGuid(),
+            "Explain the Azure Load Balancer backend",
+            "Explain the backend pool and the health probe.",
+            ["backend pool", "health probe", "health check"],
+            ChecklistItemStatus.Pending,
+            AutoCompleted: false,
+            Confidence: null,
+            CompletionReason: null,
+            CompletedAtUtc: null,
+            Evidence: []);
+        var latest = CreateFinalSegment("Then we have a backend pool.");
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [item], [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.Empty(decision.ChecklistEvaluations);
+    }
+
+    [Fact]
+    public async Task Analyze_CompoundCriterion_UsesAllFragmentedEvidence()
+    {
+        var item = new ChecklistItemState(
+            Guid.NewGuid(),
+            "Explain the Azure Load Balancer backend",
+            "Explain the backend pool and the health probe.",
+            ["backend pool", "health probe", "health check"],
+            ChecklistItemStatus.Pending,
+            AutoCompleted: false,
+            Confidence: null,
+            CompletionReason: null,
+            CompletedAtUtc: null,
+            Evidence: []);
+        var backend = CreateFinalSegment("Then we have a backend pool.");
+        var probe = CreateFinalSegment(
+            "The health probe checks whether an instance can receive traffic.");
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [item],
+                [backend, probe]),
+            probe,
+            CancellationToken.None);
+
+        Assert.Equal(2, decision.ChecklistEvaluations.Count);
+        Assert.All(decision.ChecklistEvaluations, evaluation =>
+        {
+            Assert.True(evaluation.ShouldComplete);
+            Assert.Equal(item.Id, evaluation.ChecklistItemId);
+        });
+        Assert.Equal(
+            [backend.Id, probe.Id],
+            decision.ChecklistEvaluations
+                .Select(evaluation => evaluation.SourceTranscriptSegmentId)
+                .ToArray());
+    }
+
+    [Fact]
+    public async Task Analyze_CompoundCriterion_DoesNotReuseEvidenceBeforeEligibilityBoundary()
+    {
+        var oldBackend = CreateFinalSegment("Then we have a backend pool.");
+        var newProbe = CreateFinalSegment("The health probe checks application health.");
+        var item = new ChecklistItemState(
+            Guid.NewGuid(),
+            "Explain the Azure Load Balancer backend",
+            "Explain the backend pool and the health probe.",
+            ["backend pool", "health probe"],
+            ChecklistItemStatus.Pending,
+            AutoCompleted: false,
+            Confidence: null,
+            CompletionReason: null,
+            CompletedAtUtc: null,
+            Evidence: [],
+            CompletionEligibleFromTranscriptIndex: 1);
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [item],
+                [oldBackend, newProbe]),
+            newProbe,
+            CancellationToken.None);
+
+        Assert.Empty(decision.ChecklistEvaluations);
+    }
+
     private static ChecklistItemState CreatePendingItem(
         string title,
         string completionCriteria,

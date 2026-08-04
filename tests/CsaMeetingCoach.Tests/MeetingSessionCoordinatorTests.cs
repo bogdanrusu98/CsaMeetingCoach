@@ -707,6 +707,32 @@ public sealed class MeetingSessionCoordinatorTests
     }
 
     [Fact]
+    public async Task AddTranscript_LoadBalancerCardAppearsBeforeAiCompletes()
+    {
+        var blocking = new BlockingAgent();
+        using var coordinator = CreateCoordinator(
+            new HeuristicConversationCoachAgent(),
+            aiAgent: blocking,
+            analysisOptions: new AnalysisOptions(TimeSpan.Zero, TimeSpan.FromMinutes(5)));
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Presenter",
+                "Azure Load Balancer distributes incoming traffic."),
+            CancellationToken.None);
+
+        var card = Assert.Single(updated.ContextualCards);
+        Assert.Equal(ContextualCardKind.Definition, card.Kind);
+        Assert.Equal("Azure Load Balancer", card.Title);
+        Assert.True(updated.IsAnalyzing);
+        blocking.Release();
+    }
+
+    [Fact]
     public async Task AddTranscript_DeterministicFastLane_CompletesChecklistWithoutAi()
     {
         using var coordinator = CreateCoordinator(
@@ -728,6 +754,84 @@ public sealed class MeetingSessionCoordinatorTests
             item => item.Status == ChecklistItemStatus.Completed));
         Assert.True(completed.AutoCompleted);
         Assert.False(updated.IsAnalyzing);
+    }
+
+    [Fact]
+    public async Task AddTranscript_CompoundChecklist_PersistsEverySupportingFragment()
+    {
+        using var coordinator = CreateCoordinator(
+            new HeuristicConversationCoachAgent(),
+            aiAgent: null);
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(
+                TestData.CreatePurpose(),
+                [
+                    new ChecklistSeed(
+                        "Explain the Azure Load Balancer backend",
+                        "Explain the backend pool and the health probe.",
+                        ["backend pool", "health probe"])
+                ]),
+            CancellationToken.None);
+
+        var partial = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Presenter",
+                "Then we have a backend pool."),
+            CancellationToken.None);
+        var completed = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Presenter",
+                "The health probe checks whether an instance can receive traffic."),
+            CancellationToken.None);
+
+        Assert.Equal(
+            ChecklistItemStatus.Pending,
+            Assert.Single(partial.Checklist).Status);
+        var item = Assert.Single(completed.Checklist);
+        Assert.Equal(ChecklistItemStatus.Completed, item.Status);
+        Assert.Equal(2, item.Evidence.Count);
+        Assert.Contains(item.Evidence, evidence =>
+            evidence.Quote == "Then we have a backend pool.");
+        Assert.Contains(item.Evidence, evidence =>
+            evidence.Quote == "The health probe checks whether an instance can receive traffic.");
+    }
+
+    [Fact]
+    public async Task AddTranscript_SimpleChecklist_PersistsOnlyBestSupportingFragment()
+    {
+        using var coordinator = CreateCoordinator(
+            new MultipleEvidenceAgent(),
+            aiAgent: null);
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(
+                TestData.CreatePurpose(),
+                [
+                    new ChecklistSeed(
+                        "Explain the frontend",
+                        "Explain the frontend IP address.",
+                        ["frontend IP"])
+                ]),
+            CancellationToken.None);
+
+        await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Presenter",
+                "The first frontend IP explanation."),
+            CancellationToken.None);
+        var completed = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Presenter",
+                "The clearer frontend IP explanation."),
+            CancellationToken.None);
+
+        var item = Assert.Single(completed.Checklist);
+        var evidence = Assert.Single(item.Evidence);
+        Assert.Equal("The clearer frontend IP explanation.", evidence.Quote);
+        Assert.Equal(0.95, evidence.Confidence);
     }
 
     [Fact]
@@ -1640,6 +1744,41 @@ public sealed class MeetingSessionCoordinatorTests
                         [source.Id])
                 ]
             });
+        }
+    }
+
+    private sealed class MultipleEvidenceAgent : IConversationCoachAgent
+    {
+        public Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken)
+        {
+            if (context.RecentTranscript.Count < 2)
+            {
+                return Task.FromResult(new CoachAgentDecision([], []));
+            }
+
+            var item = context.Checklist[0];
+            var first = context.RecentTranscript[0];
+            return Task.FromResult(new CoachAgentDecision(
+                [
+                    new ChecklistEvaluation(
+                        item.Id,
+                        ShouldComplete: true,
+                        Confidence: 0.90,
+                        "The simple criterion was discussed.",
+                        first.Text,
+                        first.Id),
+                    new ChecklistEvaluation(
+                        item.Id,
+                        ShouldComplete: true,
+                        Confidence: 0.95,
+                        "The simple criterion was discussed more clearly.",
+                        latestSegment.Text,
+                        latestSegment.Id)
+                ],
+                []));
         }
     }
 

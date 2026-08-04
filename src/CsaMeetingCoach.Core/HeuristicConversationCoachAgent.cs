@@ -242,9 +242,11 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
         var normalizedText = Normalize(latestSegment.Text);
         var evaluations = context.Checklist
             .Where(item => item.Status == ChecklistItemStatus.Pending)
-            .Select(item => Evaluate(item, latestSegment, normalizedText))
-            .Where(evaluation => evaluation is not null)
-            .Cast<ChecklistEvaluation>()
+            .SelectMany(item => Evaluate(
+                item,
+                context.RecentTranscript,
+                latestSegment,
+                normalizedText))
             .ToArray();
 
         var recommendations = CreateRecommendations(latestSegment, normalizedText);
@@ -260,11 +262,17 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
             recommendationEvaluations));
     }
 
-    private ChecklistEvaluation? Evaluate(
+    private IReadOnlyList<ChecklistEvaluation> Evaluate(
         ChecklistItemState item,
+        IReadOnlyList<TranscriptSegment> recentTranscript,
         TranscriptSegment segment,
         string normalizedText)
     {
+        if (RequiresCompoundEvidence(item))
+        {
+            return EvaluateCompoundEvidence(item, recentTranscript, segment);
+        }
+
         var matchedHints = item.EvidenceHints
             .Select(Normalize)
             .Where(hint => hint.Length >= 3
@@ -287,7 +295,7 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
 
         if (matchedHints.Count == 0)
         {
-            return null;
+            return [];
         }
 
         var confidence = Math.Min(0.97, 0.84 + ((matchedHints.Count - 1) * 0.03));
@@ -313,13 +321,147 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
             confidence = Math.Min(confidence, 0.70);
         }
 
-        return new ChecklistEvaluation(
-            item.Id,
-            ShouldComplete: confidence >= MeetingSessionCoordinator.AutoCompletionThreshold,
-            confidence,
-            $"Matched discussion evidence: {string.Join(", ", matchedHints)}.",
-            segment.Text.Trim(),
-            segment.Id);
+        return
+        [
+            new ChecklistEvaluation(
+                item.Id,
+                ShouldComplete: confidence >= MeetingSessionCoordinator.AutoCompletionThreshold,
+                confidence,
+                $"Matched discussion evidence: {string.Join(", ", matchedHints)}.",
+                segment.Text.Trim(),
+                segment.Id)
+        ];
+    }
+
+    private IReadOnlyList<ChecklistEvaluation> EvaluateCompoundEvidence(
+        ChecklistItemState item,
+        IReadOnlyList<TranscriptSegment> recentTranscript,
+        TranscriptSegment evaluatedSegment)
+    {
+        var finalTranscript = recentTranscript
+            .Where(segment => segment.IsFinal)
+            .ToArray();
+        if (finalTranscript.Length == 0
+            || finalTranscript[^1].Id != evaluatedSegment.Id)
+        {
+            return [];
+        }
+
+        var eligibleFrom = Math.Clamp(
+            item.CompletionEligibleFromTranscriptIndex ?? 0,
+            0,
+            finalTranscript.Length);
+        var eligibleWindow = finalTranscript
+            .Skip(eligibleFrom)
+            .TakeLast(TranscriptAnalysisWindow.MaximumSegments)
+            .ToArray();
+        var requiredHintGroups = BuildRequiredHintGroups(item.EvidenceHints
+            .Select(Normalize)
+            .Where(hint => hint.Length >= 3)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray());
+        if (requiredHintGroups.Count < 2)
+        {
+            return [];
+        }
+
+        var matches = requiredHintGroups
+            .Select(group => (
+                Group: group,
+                Segment: eligibleWindow.FirstOrDefault(segment =>
+                {
+                    var normalizedSegment = Normalize(segment.Text);
+                    return group.Any(hint =>
+                        ContainsEquivalentTerm(normalizedSegment, hint));
+                })))
+            .ToArray();
+        if (matches.Any(match => match.Segment is null))
+        {
+            return [];
+        }
+
+        var combinedNormalizedText = string.Join(
+            ' ',
+            eligibleWindow.Select(segment => Normalize(segment.Text)));
+        var combinedOriginalText = string.Join(
+            ' ',
+            eligibleWindow.Select(segment => segment.Text));
+        if (RequiresMeasurableOutcome(item)
+            && !QuantitativeOutcomeRegex().IsMatch(combinedOriginalText)
+            && !(ExplicitMeasurableOutcomeCues.Any(combinedNormalizedText.Contains)
+                && !NegatedMeasurableOutcomeCues.Any(combinedNormalizedText.Contains)))
+        {
+            return [];
+        }
+
+        if (IsCommitmentItem(item)
+            && !CommitmentCues.Any(combinedNormalizedText.Contains)
+            && !eligibleWindow.Any(segment => HasConfirmedActionAssignment(
+                Normalize(segment.Text),
+                segment.Text)))
+        {
+            return [];
+        }
+
+        var reason = $"Covered every required discussion signal: {string.Join(", ", requiredHintGroups.Select(group => group[0]))}.";
+        var confidence = Math.Min(
+            0.97,
+            0.88 + ((requiredHintGroups.Count - 2) * 0.02));
+        return matches
+            .Select(match => match.Segment!)
+            .DistinctBy(segment => segment.Id)
+            .Select(segment => new ChecklistEvaluation(
+                item.Id,
+                ShouldComplete: true,
+                confidence,
+                reason,
+                segment.Text.Trim(),
+                segment.Id))
+            .ToArray();
+    }
+
+    private IReadOnlyList<IReadOnlyList<string>> BuildRequiredHintGroups(
+        IReadOnlyList<string> hints)
+    {
+        var groups = new List<List<string>>();
+        foreach (var hint in hints)
+        {
+            var group = groups.FirstOrDefault(candidate =>
+                candidate.Any(existing => AreEquivalentHints(existing, hint)));
+            if (group is null)
+            {
+                groups.Add([hint]);
+            }
+            else
+            {
+                group.Add(hint);
+            }
+        }
+
+        return groups
+            .Select(group => (IReadOnlyList<string>)group.ToArray())
+            .ToArray();
+    }
+
+    private bool AreEquivalentHints(string left, string right)
+    {
+        var leftExpansions = semanticTerms.Expand(left);
+        var rightExpansions = semanticTerms.Expand(right);
+        if (leftExpansions.Intersect(rightExpansions, StringComparer.Ordinal).Any())
+        {
+            return true;
+        }
+
+        return left.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length >= 2
+            && right.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length >= 2
+            && (ContainsEvidenceHint(left, right)
+                || ContainsEvidenceHint(right, left));
+    }
+
+    internal static bool RequiresCompoundEvidence(ChecklistItemState item)
+    {
+        var criteria = Normalize(item.CompletionCriteria);
+        return CompoundCriteriaRegex().IsMatch(criteria);
     }
 
     internal static bool RequiresMeasurableOutcome(ChecklistItemState item)
@@ -597,4 +739,9 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
         @"\b(?:(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}|(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|today|tomorrow|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b",
         RegexOptions.CultureInvariant)]
     private static partial Regex ExplicitTimingRegex();
+
+    [GeneratedRegex(
+        @"(?:\band\b|\bthen\b|\bas well as\b|;)",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex CompoundCriteriaRegex();
 }

@@ -68,6 +68,27 @@ an application secret inventory and lifecycle.
 
 ## Network foundations
 
+### Azure Load Balancer
+
+Azure Load Balancer distributes Layer 4 TCP or UDP flows across healthy backend
+instances. A design combines a public or internal frontend IP configuration,
+backend pools, health probes, and load-balancing or inbound NAT rules.
+
+When Azure Load Balancer is discussed, distinguish it from HTTP/S application
+delivery services and ask about:
+
+- public versus internal exposure, protocol, ports, and expected traffic flows;
+- regional versus cross-region scope, availability zones, and failure domains;
+- backend membership, health-probe protocol and behavior, and maintenance;
+- session persistence, floating IP, HA Ports, inbound NAT, and outbound
+  connectivity requirements where relevant;
+- Network Security Group rules, monitoring, diagnostics, ownership, and testing.
+
+Candidate action: map the end-to-end traffic flow, then validate the frontend,
+SKU and zone design, backend pool, probe behavior, security rules, and outbound
+path against the workload requirements. Do not infer that mentioning the
+service confirms any of these customer-specific choices.
+
 ### Virtual Network and Private Link
 
 Signals include private application tiers, network segmentation, private access
@@ -159,6 +180,10 @@ analysis. No Azure service automatically makes a workload GDPR compliant.
   https://learn.microsoft.com/en-us/azure/key-vault/general/overview
 - Virtual Network:
   https://learn.microsoft.com/en-us/azure/virtual-network/virtual-networks-overview
+- Azure Load Balancer:
+  https://learn.microsoft.com/en-us/azure/load-balancer/load-balancer-overview
+- Azure Load Balancer components:
+  https://learn.microsoft.com/en-us/azure/load-balancer/components
 - Private Link:
   https://learn.microsoft.com/en-us/azure/private-link/private-link-overview
 - ExpressRoute:

@@ -28,6 +28,13 @@ public sealed partial class BuiltInSemanticTermCatalog : ISemanticTermCatalog
         ["disaster recovery", "business continuity"],
         ["rto", "recovery time objective"],
         ["rpo", "recovery point objective"],
+        ["tcp", "transmission control protocol"],
+        ["udp", "user datagram protocol"],
+        ["health probe", "health check"],
+        ["frontend ip", "frontend ip address", "front end ip"],
+        ["backend pool", "backend address pool"],
+        ["external", "public"],
+        ["availability zone", "zone redundancy", "zonal redundancy"],
         ["effort", "engineering effort", "implementation effort"],
         ["operations", "operational work", "ongoing support"],
         ["cost", "costs", "spend", "spending", "expense", "expenses", "budget", "budgets"]

@@ -6,6 +6,17 @@ namespace CsaMeetingCoach.Tests;
 public sealed class EvidenceBackedConversationCoachAgentTests
 {
     [Fact]
+    public void RecommendationOverlap_RequiresMoreThanOneGenericSharedTerm()
+    {
+        Assert.False(PresentationCoachingPolicy.HasSubstantialOverlap(
+            "validate azure load balancer traffic health and availability choices",
+            "availability"));
+        Assert.True(PresentationCoachingPolicy.HasSubstantialOverlap(
+            "confirm customer specific production requirements and an accountable owner",
+            "confirm customer production requirements and owner"));
+    }
+
+    [Fact]
     public async Task Analyze_PrimaryOmitsChecklistCompletion_AddsDeterministicEvidence()
     {
         var purpose = TestData.CreatePurpose();
@@ -146,6 +157,287 @@ public sealed class EvidenceBackedConversationCoachAgentTests
             CancellationToken.None);
 
         Assert.Same(contextualCard, Assert.Single(decision.ContextualCards));
+    }
+
+    [Fact]
+    public async Task Analyze_LoadBalancerPresentation_AddsUsefulFallbackCoaching()
+    {
+        var loadBalancer = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "Azure Load Balancer distributes traffic across a backend pool.",
+            DateTimeOffset.UtcNow.AddSeconds(-1),
+            IsFinal: true);
+        var probe = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "A health probe checks the backend instances.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [], [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(
+                TestData.CreatePurpose() with
+                {
+                    MeetingType = "Azure presentation",
+                    Objective = "Present Azure Load Balancer"
+                },
+                [],
+                [loadBalancer, probe]),
+            probe,
+            CancellationToken.None);
+
+        var recommendation = Assert.Single(decision.RecommendedTasks);
+        Assert.Contains("Load Balancer", recommendation.Title);
+        Assert.Equal([loadBalancer.Id], recommendation.SourceTranscriptSegmentIds);
+        Assert.Equal(2, decision.ContextualCards.Count);
+        Assert.Contains(
+            decision.ContextualCards,
+            card => card.Kind == ContextualCardKind.Definition
+                && card.Title == "Azure Load Balancer");
+        Assert.Contains(
+            decision.ContextualCards,
+            card => card.Kind == ContextualCardKind.Hint
+                && card.Title == "health probe");
+    }
+
+    [Fact]
+    public async Task Analyze_ChecklistDuplicateRecommendation_IsReplacedByTechnicalGap()
+    {
+        var checklistItem = new ChecklistItemState(
+            Guid.NewGuid(),
+            "Confirm customer production requirements and owner",
+            "Confirm customer-specific production requirements and an accountable owner.",
+            ["production requirements", "owner"],
+            ChecklistItemStatus.Pending,
+            AutoCompleted: false,
+            Confidence: null,
+            CompletionReason: null,
+            CompletedAtUtc: null,
+            Evidence: []);
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "The load balancer is at layer four.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var generic = new RecommendedTaskProposal(
+            "Confirm customer-specific production requirements and an accountable owner",
+            "This would complete the meeting plan.",
+            0.9,
+            [latest.Id]);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [generic], [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [checklistItem],
+                [latest]),
+            latest,
+            CancellationToken.None);
+
+        var recommendation = Assert.Single(decision.RecommendedTasks);
+        Assert.DoesNotContain(
+            "production requirements",
+            recommendation.Title,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Load Balancer", recommendation.Title);
+    }
+
+    [Fact]
+    public async Task Analyze_FragmentedLoadBalancerName_GroundsFallbackAcrossSources()
+    {
+        var first = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "This would be UDP, so this is the Azure Load",
+            DateTimeOffset.UtcNow.AddSeconds(-1),
+            IsFinal: true);
+        var second = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "Balancer. There are two different SKUs available.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [], [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [],
+                [first, second]),
+            second,
+            CancellationToken.None);
+
+        Assert.Equal(
+            [first.Id, second.Id],
+            Assert.Single(decision.RecommendedTasks).SourceTranscriptSegmentIds);
+        var card = Assert.Single(decision.ContextualCards);
+        Assert.Equal("Azure Load Balancer", card.Title);
+        Assert.Equal([first.Id, second.Id], card.SourceTranscriptSegmentIds);
+        Assert.True(PresentationCoachingPolicy.IsTitleGrounded(
+            card.Title,
+            card.SourceTranscriptSegmentIds,
+            [first, second]));
+    }
+
+    [Fact]
+    public async Task Analyze_GenericOrInvalidPrimaryOutputs_DoNotSuppressFallbacks()
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "The load balancer is a regional service.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var generic = new RecommendedTaskProposal(
+            "Review network health",
+            "This would keep the meeting aligned.",
+            0.9,
+            [latest.Id]);
+        var invalidCard = new ContextualCardProposal(
+            ContextualCardKind.Hint,
+            "load balancer",
+            "This card cites an invented source.",
+            0.9,
+            [Guid.NewGuid()]);
+        var primaryDecision = new CoachAgentDecision([], [generic], [])
+        {
+            ContextualCards = [invalidCard]
+        };
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(primaryDecision),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [],
+                [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.Contains(
+            "Load Balancer",
+            Assert.Single(decision.RecommendedTasks).Title);
+        var card = Assert.Single(decision.ContextualCards);
+        Assert.Equal("load balancer", card.Title);
+        Assert.NotEqual(invalidCard.SourceTranscriptSegmentIds, card.SourceTranscriptSegmentIds);
+        Assert.Equal([latest.Id], card.SourceTranscriptSegmentIds);
+    }
+
+    [Fact]
+    public async Task Analyze_MidWordFragmentBoundary_DoesNotInventLoadBalancerTopic()
+    {
+        var first = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "We will assess the workload",
+            DateTimeOffset.UtcNow.AddSeconds(-1),
+            IsFinal: true);
+        var second = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "Balancer settings are unrelated.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [], [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [],
+                [first, second]),
+            second,
+            CancellationToken.None);
+
+        Assert.Empty(decision.RecommendedTasks);
+        Assert.Empty(decision.ContextualCards);
+    }
+
+    [Fact]
+    public async Task Analyze_NegatedLoadBalancerTopic_DoesNotTriggerFallbackCoaching()
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "We will not use Azure Load Balancer because it is out of scope.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [], [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [],
+                [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.Empty(decision.RecommendedTasks);
+        Assert.Empty(decision.ContextualCards);
+    }
+
+    [Fact]
+    public async Task Analyze_DuplicatePrimaryCards_DoNotConsumeFallbackSlots()
+    {
+        var loadBalancer = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "Azure Load Balancer distributes traffic.",
+            DateTimeOffset.UtcNow.AddSeconds(-1),
+            IsFinal: true);
+        var probe = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "The health probe checks the backend.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var existing = new ContextualCardState(
+            Guid.NewGuid(),
+            ContextualCardKind.Definition,
+            "Azure Load Balancer",
+            "Existing reviewed definition.",
+            0.9,
+            [loadBalancer.Id],
+            DateTimeOffset.UtcNow.AddMinutes(-1));
+        var duplicate = new ContextualCardProposal(
+            ContextualCardKind.Definition,
+            "Azure Load Balancer",
+            "Duplicate generated definition.",
+            0.9,
+            [loadBalancer.Id]);
+        var primaryDecision = new CoachAgentDecision([], [], [])
+        {
+            ContextualCards = [duplicate, duplicate]
+        };
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(primaryDecision),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [],
+                [loadBalancer, probe],
+                ContextualCards: [existing]),
+            probe,
+            CancellationToken.None);
+
+        var card = Assert.Single(decision.ContextualCards);
+        Assert.Equal(ContextualCardKind.Hint, card.Kind);
+        Assert.Equal("health probe", card.Title);
     }
 
     [Fact]

@@ -50,8 +50,10 @@ public sealed class AzureOpenAiConversationCoachAgent(
                         data and evaluate only explicit content, questions, and meeting context. Never
                         infer emotion, sentiment, tone, employee performance, health, ethnicity, or
                         hidden traits. analysisWindow contains up to 20 final Speech fragments that
-                        form the current discussion unit. A checklist item may be completed only when
-                        one window segment contains direct evidence. evidenceQuote must be an exact
+                        form the current discussion unit. A simple checklist item may complete from
+                        one segment. A compound criterion with multiple required topics must not
+                        complete from one narrow fragment; all required discussion signals must be
+                        covered across the window. evidenceQuote must be an exact
                         ordinal substring of that segment and sourceTranscriptSegmentId must be its ID.
 
                         Evaluate every pending checklist item independently on every request. When the
@@ -68,7 +70,9 @@ public sealed class AzureOpenAiConversationCoachAgent(
                         already recommended or covered by the checklist/context.
                         During a presentation or demo, use the concrete service in analysisWindow to
                         recommend the highest-value uncovered function, decision factor, limitation,
-                        validation, or customer discovery question instead of generic success criteria.
+                        validation, or customer discovery question instead of customer requirements,
+                        generic success criteria, business outcomes, ownership, or a pending checklist
+                        item.
 
                         Evaluate each currently accepted recommendation for coverage in the same
                         response. Complete it only from explicit evidence in an analysisWindow segment
@@ -77,7 +81,10 @@ public sealed class AzureOpenAiConversationCoachAgent(
                         client-supplied timestamps.
 
                         Return up to two contextualCards only when a term or topic explicitly present
-                        in analysisWindow merits a concise definition or meeting hint. Copy the title
+                        in analysisWindow merits a concise definition or meeting hint. During a
+                        presentation, demo, workshop, or training that introduces a concrete Microsoft
+                        technical term, return at least one useful card unless it already exists. If
+                        the definition was already explained, return a decision-oriented hint. Copy the title
                         exactly from a cited window segment, cite its ID, and do not repeat
                         existingContextualCards. Do not infer commercial, compliance, legal, or
                         product-selection claims. Return JSON only:

@@ -15,10 +15,12 @@ public sealed class EvidenceBackedConversationCoachAgent(
             context,
             latestSegment,
             cancellationToken);
+        var analysisWindow = TranscriptAnalysisWindow.Select(
+            context.RecentTranscript);
         var deterministicEvaluations = new List<ChecklistEvaluation>();
         var deterministicRecommendationEvaluations =
             new List<RecommendationEvaluation>();
-        foreach (var segment in TranscriptAnalysisWindow.Select(context.RecentTranscript))
+        foreach (var segment in analysisWindow)
         {
             var deterministicDecision = await deterministicEvaluator.AnalyzeAsync(
                 context,
@@ -54,12 +56,18 @@ public sealed class EvidenceBackedConversationCoachAgent(
             safePrimaryEvaluations
                 .Concat(deterministicEvaluations)
                 .ToArray(),
-            primaryDecision.RecommendedTasks,
+            PresentationCoachingPolicy.SelectRecommendations(
+                context,
+                primaryDecision.RecommendedTasks,
+                analysisWindow),
             (primaryDecision.RecommendationEvaluations ?? [])
                 .Concat(deterministicRecommendationEvaluations)
                 .ToArray())
         {
-            ContextualCards = primaryDecision.ContextualCards
+            ContextualCards = PresentationCoachingPolicy.SelectContextualCards(
+                context,
+                primaryDecision.ContextualCards,
+                analysisWindow)
         };
     }
 }

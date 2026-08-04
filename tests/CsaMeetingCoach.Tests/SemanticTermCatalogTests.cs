@@ -22,6 +22,8 @@ public sealed class SemanticTermCatalogTests
     [InlineData("rehosting", "lift and shift")]
     [InlineData("refactoring", "rearchitecting")]
     [InlineData("costs", "expenses")]
+    [InlineData("health probe", "health check")]
+    [InlineData("tcp", "transmission control protocol")]
     public void Expand_MapsCommonInflections(
         string source,
         string expected)
