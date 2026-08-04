@@ -18,11 +18,12 @@ public sealed class StaticAssetCacheTests
         indexResponse.EnsureSuccessStatusCode();
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
-        Assert.Contains("styles.css?v=20260803b", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260803b", html, StringComparison.Ordinal);
+        Assert.Contains("styles.css?v=20260804a", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260804a", html, StringComparison.Ordinal);
         Assert.Contains("data-theme", html, StringComparison.Ordinal);
         Assert.Contains("id=\"microphone-toggle\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"include-system-audio\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"microphone-access-status\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"recommendations\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"live-plan\"", html, StringComparison.Ordinal);
         Assert.Contains("Next up", html, StringComparison.Ordinal);
@@ -35,12 +36,14 @@ public sealed class StaticAssetCacheTests
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260803b");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260804a");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
         var script = await scriptResponse.Content.ReadAsStringAsync();
         Assert.DoesNotContain("sessionStorage", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("navigator.clipboard", script, StringComparison.Ordinal);
+        Assert.Contains("Device authorized", script, StringComparison.Ordinal);
         Assert.Contains(
             "/api/browser-speech/access",
             script,
@@ -64,7 +67,7 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("renderContextualCards", script, StringComparison.Ordinal);
         Assert.Contains("data-contextual-card-dismiss", script, StringComparison.Ordinal);
 
-        using var styleResponse = await client.GetAsync("/styles.css?v=20260803b");
+        using var styleResponse = await client.GetAsync("/styles.css?v=20260804a");
         styleResponse.EnsureSuccessStatusCode();
         AssertNoStore(styleResponse);
         var styles = await styleResponse.Content.ReadAsStringAsync();

@@ -32,6 +32,7 @@ const elements = {
   microphoneConsent: document.querySelector("#microphone-consent"),
   includeSystemAudio: document.querySelector("#include-system-audio"),
   microphoneAccessKey: document.querySelector("#microphone-access-key"),
+  microphoneAccessStatus: document.querySelector("#microphone-access-status"),
   microphoneToggle: document.querySelector("#microphone-toggle"),
   microphoneUnlock: document.querySelector("#microphone-unlock"),
   closeMicrophoneUnlock: document.querySelector("#close-microphone-unlock"),
@@ -1074,7 +1075,13 @@ function renderMicrophoneControls() {
     || sessionCompleted
     || !state.systemAudioCaptureAvailable;
   elements.microphoneAccessKey.disabled =
-    state.microphoneBusy || listening || sessionCompleted;
+    state.microphoneBusy
+    || listening
+    || sessionCompleted
+    || state.browserSpeechAuthorized;
+  elements.microphoneAccessStatus.textContent = state.browserSpeechAuthorized
+    ? "Device authorized. The code is not stored or copied; protected access lasts up to seven days."
+    : "Enter once per browser; the code is exchanged for protected access and is not copied to the clipboard.";
   elements.microphoneStatus.textContent = state.microphoneBusy
     ? "Starting"
     : listening

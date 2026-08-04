@@ -260,10 +260,15 @@ public sealed class MeetingSessionCoordinator : IDisposable
             await foreach (var trigger in state.TriggerReader.ReadAllAsync(cancellationToken))
             {
                 var analysisGeneration = trigger;
-                // Debounce: hold off until the window expires, resetting on each new trigger.
-                var deadline = DateTimeOffset.UtcNow + _analysisOptions.DebounceWindow;
+                var batchStartedAt = DateTimeOffset.UtcNow;
+                var quietDeadline = batchStartedAt + _analysisOptions.DebounceWindow;
+                var maximumDeadline =
+                    batchStartedAt + _analysisOptions.EffectiveMaximumBatchWindow;
                 while (true)
                 {
+                    var deadline = quietDeadline <= maximumDeadline
+                        ? quietDeadline
+                        : maximumDeadline;
                     var remaining = deadline - DateTimeOffset.UtcNow;
                     if (remaining <= TimeSpan.Zero)
                     {
@@ -284,7 +289,8 @@ public sealed class MeetingSessionCoordinator : IDisposable
                                     analysisGeneration,
                                     nextGeneration);
                             }
-                            deadline = DateTimeOffset.UtcNow + _analysisOptions.DebounceWindow;
+                            quietDeadline =
+                                DateTimeOffset.UtcNow + _analysisOptions.DebounceWindow;
                         }
                     }
                     catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -437,13 +443,6 @@ public sealed class MeetingSessionCoordinator : IDisposable
             var finalTranscript = current.Transcript
                 .Where(s => s.IsFinal)
                 .ToArray();
-            var currentLatestSegment = finalTranscript.LastOrDefault();
-            if (state.LatestRequestedGeneration > analysisGeneration
-                || currentLatestSegment?.Id != latestSegment.Id)
-            {
-                state.MarkCompleted(analysisGeneration);
-                return;
-            }
 
             var mergeWarnings = current.Warnings
                 .Where(warning => !string.Equals(
@@ -452,8 +451,8 @@ public sealed class MeetingSessionCoordinator : IDisposable
                     StringComparison.Ordinal))
                 .ToList();
 
-            // Use the originally analyzed segment for evidence checking (not the current latest).
-            // This preserves evidence-quote integrity for AI completions.
+            // A completed snapshot remains grounded even when newer speech is queued.
+            // Evidence is checked against the segment that the agent actually analyzed.
             var checklist = ApplyChecklistEvaluations(
                 current.Checklist,
                 aiDecision.ChecklistEvaluations,

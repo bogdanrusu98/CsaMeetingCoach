@@ -37,11 +37,18 @@ public sealed class NullSessionUpdatePublisher : ISessionUpdatePublisher
     }
 }
 
-public sealed record AnalysisOptions(TimeSpan DebounceWindow, TimeSpan AiTimeout)
+public sealed record AnalysisOptions(
+    TimeSpan DebounceWindow,
+    TimeSpan AiTimeout,
+    TimeSpan? MaximumBatchWindow = null)
 {
     public static readonly AnalysisOptions Default = new(
         TimeSpan.FromSeconds(8),
-        TimeSpan.FromSeconds(60));
+        TimeSpan.FromSeconds(60),
+        TimeSpan.FromSeconds(20));
+
+    public TimeSpan EffectiveMaximumBatchWindow =>
+        MaximumBatchWindow ?? TimeSpan.FromSeconds(20);
 
     public void Validate()
     {
@@ -57,6 +64,14 @@ public sealed record AnalysisOptions(TimeSpan DebounceWindow, TimeSpan AiTimeout
             throw new ArgumentOutOfRangeException(
                 nameof(AiTimeout),
                 "The AI analysis timeout must be positive.");
+        }
+
+        if (EffectiveMaximumBatchWindow <= TimeSpan.Zero
+            || EffectiveMaximumBatchWindow < DebounceWindow)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaximumBatchWindow),
+                "The maximum analysis batch window must be positive and no shorter than the debounce window.");
         }
     }
 }

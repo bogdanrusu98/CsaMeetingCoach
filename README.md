@@ -232,9 +232,12 @@ blocked. Its visual system follows Microsoft Fluent and Teams interaction
 patterns without downloading runtime UI dependencies.
 
 The live view intentionally keeps only the meeting bar, microphone, next
-coaching action, and compact progress visible. Consent and the memory-only
-access code are shown during microphone activation. Transcript simulation,
-evidence, and safety warnings are kept in a single diagnostics dialog.
+coaching action, and compact progress visible. Consent and the access-code field
+are shown during microphone activation. After successful authorization the
+plaintext code is cleared and is never copied to the clipboard or browser
+storage; an HttpOnly protected cookie authorizes Speech access for up to seven
+days. Transcript simulation, evidence, and safety warnings are kept in a single
+diagnostics dialog.
 Up to three contextual cards can be visible at once above the normal status
 toast. Each card can be dismissed and closes automatically after 25 seconds;
 dismissed cards do not replay on later SSE updates. Hovering or moving keyboard
@@ -321,8 +324,12 @@ strict JSON schema is stored on the agent definition; invocation requests do not
 override it. Responses are validated again before the session coordinator can
 apply them.
 
-Foundry analysis is asynchronous, coalesced after eight seconds, and bounded by
-a 60-second timeout so File Search and one structured retry have enough time.
+Foundry analysis is asynchronous, coalesced after eight seconds of quiet, and
+forced after at most 20 seconds of continuous final transcript updates. Calls
+remain sequential and use the latest coalesced snapshot, with a 60-second timeout
+so File Search and one structured retry have enough time. A completed grounded
+snapshot can merge while newer speech remains queued, preventing continuous
+audio from starving recommendations and contextual cards.
 Completion claims without an exact latest-segment quote, unknown recommendation
 IDs, and tasks with invented transcript IDs are filtered before merge and logged
 server-side instead of appearing as routine user-facing rejection errors. A

@@ -713,7 +713,7 @@ public sealed class MeetingSessionCoordinatorTests
     }
 
     [Fact]
-    public async Task AddTranscript_NewerSpeechDiscardsStaleAiResultAndKeepsAnalyzing()
+    public async Task AddTranscript_NewerSpeechPreservesGroundedSnapshotAndKeepsAnalyzing()
     {
         var store = new InMemoryMeetingSessionStore();
         var publisher = new CapturingSessionUpdatePublisher();
@@ -747,16 +747,64 @@ public sealed class MeetingSessionCoordinatorTests
             CancellationToken.None);
         Assert.NotNull(whileLatestAnalysisRuns);
         Assert.True(whileLatestAnalysisRuns.IsAnalyzing);
-        Assert.Empty(whileLatestAnalysisRuns.RecommendedTasks);
+        Assert.Contains(
+            whileLatestAnalysisRuns.RecommendedTasks,
+            recommendation => recommendation.Title.Contains(
+                "deployment architecture",
+                StringComparison.Ordinal));
+        Assert.Contains(
+            whileLatestAnalysisRuns.ContextualCards,
+            card => card.Title.Contains(
+                "deployment architecture",
+                StringComparison.Ordinal));
 
         aiAgent.Release();
         var final = await publisher.WaitForAsync(
-            state => !state.IsAnalyzing && state.RecommendedTasks.Count == 1,
+            state => !state.IsAnalyzing && state.RecommendedTasks.Count == 2,
             TimeSpan.FromSeconds(10));
 
-        var recommendation = Assert.Single(final.RecommendedTasks);
-        Assert.Contains("regional topology", recommendation.Title, StringComparison.Ordinal);
-        Assert.DoesNotContain("deployment architecture", recommendation.Title, StringComparison.Ordinal);
+        Assert.Contains(
+            final.RecommendedTasks,
+            recommendation => recommendation.Title.Contains(
+                "regional topology",
+                StringComparison.Ordinal));
+        Assert.Equal(2, final.ContextualCards.Count);
+    }
+
+    [Fact]
+    public async Task AddTranscript_ContinuousSpeechStartsAnalysisWithinMaximumBatchWindow()
+    {
+        var aiAgent = new ControlledAgent();
+        using var coordinator = CreateCoordinator(
+            new HeuristicConversationCoachAgent(),
+            aiAgent: aiAgent,
+            analysisOptions: new AnalysisOptions(
+                TimeSpan.FromMilliseconds(250),
+                TimeSpan.FromMinutes(5),
+                TimeSpan.FromMilliseconds(600)));
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        var producer = Task.Run(async () =>
+        {
+            for (var index = 0; index < 30; index++)
+            {
+                await coordinator.AddTranscriptAsync(
+                    session.Id,
+                    new AddTranscriptSegmentRequest(
+                        "Tutorial",
+                        $"Continuous Azure tutorial segment {index}."),
+                    CancellationToken.None);
+                await Task.Delay(100);
+            }
+        });
+
+        await aiAgent.WaitForCallAsync().WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.False(producer.IsCompleted);
+        aiAgent.Release();
+        await producer;
     }
 
     [Fact]
@@ -1254,7 +1302,18 @@ public sealed class MeetingSessionCoordinatorTests
                         "The latest customer statement requires a grounded follow-up.",
                         0.9,
                         [latestSegment.Id])
-                ]);
+                ])
+            {
+                ContextualCards =
+                [
+                    new ContextualCardProposal(
+                        ContextualCardKind.Hint,
+                        latestSegment.Text,
+                        "Use this grounded topic to guide the next customer question.",
+                        0.9,
+                        [latestSegment.Id])
+                ]
+            };
         }
     }
 
