@@ -161,6 +161,59 @@ public sealed class HeuristicConversationCoachAgentTests
                 && evaluation.ShouldComplete);
     }
 
+    [Theory]
+    [InlineData(
+        "Validate Azure Availability Zones",
+        "Confirm the Azure Availability Zone design.",
+        "availability zone",
+        "The workload uses zone redundancy.")]
+    [InlineData(
+        "Validate Azure Availability Zones",
+        "Confirm the Azure Availability Zone design.",
+        "availability zone",
+        "AWS Availability Zones isolate failures.")]
+    [InlineData(
+        "Validate Availability Zones",
+        "Confirm the Availability Zone design.",
+        "availability zone",
+        "AWS Availability Zones isolate failures.")]
+    [InlineData(
+        "Validate Azure Resource Manager",
+        "Confirm Azure Resource Manager governance.",
+        "Azure Resource Manager",
+        "The Kubernetes resource manager reconciles the objects.")]
+    [InlineData(
+        "Validate Azure RBAC",
+        "Confirm Azure RBAC authorization.",
+        "Azure RBAC",
+        "Kubernetes role-based access control authorizes the service account.")]
+    public async Task Analyze_AmbiguousAlias_DoesNotCompleteAzureChecklist(
+        string title,
+        string completionCriteria,
+        string evidenceHint,
+        string transcript)
+    {
+        var item = CreatePendingItem(title, completionCriteria, evidenceHint);
+        var latest = CreateFinalSegment(transcript);
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            new CoachAgentContext(
+                TestData.CreatePurpose() with
+                {
+                    MeetingType = "Azure presentation",
+                    Objective = "Explain Azure foundations"
+                },
+                [item],
+                [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.DoesNotContain(
+            decision.ChecklistEvaluations,
+            evaluation => evaluation.ChecklistItemId == item.Id
+                && evaluation.ShouldComplete);
+    }
+
     [Fact]
     public async Task Analyze_SubstringOnlyHint_DoesNotCompleteBusinessValue()
     {
@@ -480,7 +533,8 @@ public sealed class HeuristicConversationCoachAgentTests
             CompletionReason: null,
             CompletedAtUtc: null,
             Evidence: []);
-        var latest = CreateFinalSegment("Then we have a backend pool.");
+        var latest = CreateFinalSegment(
+            "For Azure Load Balancer, we have a backend pool.");
 
         var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
             new CoachAgentContext(TestData.CreatePurpose(), [item], [latest]),
@@ -504,7 +558,8 @@ public sealed class HeuristicConversationCoachAgentTests
             CompletionReason: null,
             CompletedAtUtc: null,
             Evidence: []);
-        var backend = CreateFinalSegment("Then we have a backend pool.");
+        var backend = CreateFinalSegment(
+            "For Azure Load Balancer, we have a backend pool.");
         var probe = CreateFinalSegment(
             "The health probe checks whether an instance can receive traffic.");
 

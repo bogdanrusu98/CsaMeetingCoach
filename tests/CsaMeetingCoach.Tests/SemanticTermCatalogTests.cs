@@ -24,6 +24,9 @@ public sealed class SemanticTermCatalogTests
     [InlineData("costs", "expenses")]
     [InlineData("health probe", "health check")]
     [InlineData("tcp", "transmission control protocol")]
+    [InlineData("PaaS", "platform as a service")]
+    [InlineData("Azure AD", "microsoft entra id")]
+    [InlineData("availability zones", "availability zone")]
     public void Expand_MapsCommonInflections(
         string source,
         string expected)
@@ -31,6 +34,19 @@ public sealed class SemanticTermCatalogTests
         var expansions = new BuiltInSemanticTermCatalog().Expand(source);
 
         Assert.Contains(expected, expansions);
+    }
+
+    [Theory]
+    [InlineData("zone redundancy", "availability zone")]
+    [InlineData("resource manager", "azure resource manager")]
+    [InlineData("role based access control", "azure rbac")]
+    public void Expand_DoesNotPromoteAmbiguousTerms(
+        string source,
+        string unsafeExpansion)
+    {
+        var expansions = new BuiltInSemanticTermCatalog().Expand(source);
+
+        Assert.DoesNotContain(unsafeExpansion, expansions);
     }
 
     [Theory]

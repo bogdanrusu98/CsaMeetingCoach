@@ -208,6 +208,600 @@ public sealed class EvidenceBackedConversationCoachAgentTests
                 && !card.Content.Contains('?'));
     }
 
+    [Theory]
+    [InlineData(
+        "Cloud computing provides on-demand resources.",
+        "Cloud computing")]
+    [InlineData(
+        "The shared responsibility model changes operational duties.",
+        "shared responsibility model")]
+    [InlineData(
+        "Infrastructure as a Service provides virtualized infrastructure.",
+        "Infrastructure as a Service")]
+    [InlineData(
+        "Platform as a Service provides managed runtimes.",
+        "Platform as a Service")]
+    [InlineData(
+        "Software as a Service provides a complete hosted application.",
+        "Software as a Service")]
+    [InlineData(
+        "Azure regions contain connected datacenters.",
+        "Azure regions")]
+    [InlineData(
+        "Azure Availability Zones isolate datacenter failures.",
+        "Azure Availability Zones")]
+    [InlineData(
+        "Azure Resource Manager handles management requests.",
+        "Azure Resource Manager")]
+    [InlineData(
+        "Management groups organize subscriptions in Azure.",
+        "Management groups")]
+    [InlineData(
+        "An Azure subscription is a management boundary.",
+        "Azure subscription")]
+    [InlineData(
+        "An Azure resource group holds related resources.",
+        "resource group")]
+    [InlineData(
+        "Microsoft Entra ID handles cloud identities.",
+        "Microsoft Entra ID")]
+    [InlineData(
+        "Azure RBAC controls resource authorization.",
+        "Azure RBAC")]
+    public async Task Analyze_FoundationalAzureTerm_AddsClientReadyDefinition(
+        string text,
+        string expectedTitle)
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            text,
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [], [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [], [latest]),
+            latest,
+            CancellationToken.None);
+
+        var card = Assert.Single(decision.ContextualCards);
+        Assert.Equal(ContextualCardKind.Definition, card.Kind);
+        Assert.Equal(expectedTitle, card.Title);
+        Assert.Equal([latest.Id], card.SourceTranscriptSegmentIds);
+        Assert.True(PresentationCoachingPolicy.IsClientReadyExplanation(
+            card.Title,
+            card.Content));
+    }
+
+    [Fact]
+    public async Task Analyze_FoundationalTutorialSequence_AddsUsefulCoaching()
+    {
+        var transcript = new[]
+        {
+            "Cloud computing provides technology services over the internet.",
+            "The shared responsibility model divides duties between provider and customer.",
+            "Infrastructure as a Service is commonly shortened to IaaS.",
+            "Platform as a Service is commonly shortened to PaaS.",
+            "Software as a Service is commonly shortened to SaaS.",
+            "Azure regions contain connected datacenters.",
+            "Availability Zones provide fault isolation inside a region.",
+            "Azure Resource Manager is the management layer.",
+            "Management groups sit above Azure subscriptions.",
+            "A resource group contains related Azure resources.",
+            "Microsoft Entra ID authenticates identities.",
+            "Azure RBAC controls authorization at a scope."
+        }
+            .Select((text, index) => new TranscriptSegment(
+                Guid.NewGuid(),
+                "Presenter",
+                text,
+                DateTimeOffset.UtcNow.AddSeconds(index),
+                IsFinal: true))
+            .ToArray();
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [], [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(
+                TestData.CreatePurpose() with
+                {
+                    MeetingType = "Azure presentation",
+                    Objective = "Explain Azure foundations"
+                },
+                [],
+                transcript),
+            transcript[^1],
+            CancellationToken.None);
+
+        Assert.Equal(2, decision.ContextualCards.Count);
+        Assert.All(
+            decision.ContextualCards,
+            card => Assert.True(
+                PresentationCoachingPolicy.IsClientReadyExplanation(
+                    card.Title,
+                    card.Content)));
+        var recommendation = Assert.Single(decision.RecommendedTasks);
+        Assert.Contains(
+            "service models",
+            recommendation.Title,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.NotEmpty(recommendation.SourceTranscriptSegmentIds);
+    }
+
+    [Fact]
+    public async Task Analyze_FragmentedResourceManagerName_GroundsAcrossSources()
+    {
+        var first = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "Every request flows through Azure Resource",
+            DateTimeOffset.UtcNow.AddSeconds(-1),
+            IsFinal: true);
+        var second = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "Manager before reaching a resource provider.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [], [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [],
+                [first, second]),
+            second,
+            CancellationToken.None);
+
+        var card = Assert.Single(decision.ContextualCards);
+        Assert.Equal("Azure Resource Manager", card.Title);
+        Assert.Equal([first.Id, second.Id], card.SourceTranscriptSegmentIds);
+        Assert.Equal(
+            [first.Id, second.Id],
+            Assert.Single(decision.RecommendedTasks)
+                .SourceTranscriptSegmentIds);
+    }
+
+    [Fact]
+    public async Task Analyze_AmbiguousArmWord_DoesNotTriggerAzureResourceManager()
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "Raise your arm if the screen is visible.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [], [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [], [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.Empty(decision.RecommendedTasks);
+        Assert.Empty(decision.ContextualCards);
+    }
+
+    [Theory]
+    [InlineData("AWS Availability Zones isolate failures.")]
+    [InlineData("A Kubernetes resource group controls these objects.")]
+    [InlineData("Kubernetes role-based access control authorizes service accounts.")]
+    public async Task Analyze_NonAzurePlatformTerm_DoesNotTriggerAzureCoaching(
+        string text)
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            text,
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [], [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [], [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.Empty(decision.RecommendedTasks);
+        Assert.Empty(decision.ContextualCards);
+    }
+
+    [Fact]
+    public async Task Analyze_ConflictingThenAzureMention_UsesValidAzureOccurrence()
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "A Kubernetes resource group controls objects. "
+            + "An Azure resource group contains Azure resources.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [], [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [], [latest]),
+            latest,
+            CancellationToken.None);
+
+        var card = Assert.Single(decision.ContextualCards);
+        Assert.Equal("resource group", card.Title);
+        Assert.Single(decision.RecommendedTasks);
+    }
+
+    [Fact]
+    public async Task Analyze_AzurePrimaryOutputFromAwsEvidence_IsRejected()
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "AWS Availability Zones isolate failures.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var primaryRecommendation = new RecommendedTaskProposal(
+            "Align Azure Availability Zones to resilience requirements",
+            "Connect Azure zone design to the customer's recovery targets.",
+            0.9,
+            [latest.Id]);
+        var primaryCard = new ContextualCardProposal(
+            ContextualCardKind.Definition,
+            "Azure Availability Zones",
+            "Azure Availability Zones isolate datacenter failures within a region.",
+            0.9,
+            [latest.Id]);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [primaryRecommendation], [])
+            {
+                ContextualCards = [primaryCard]
+            }),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [], [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.Empty(decision.RecommendedTasks);
+        Assert.Empty(decision.ContextualCards);
+    }
+
+    [Fact]
+    public async Task Analyze_UnbrandedAzureConceptFromKubernetesEvidence_IsRejected()
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "A Kubernetes resource group controls these objects.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var primaryRecommendation = new RecommendedTaskProposal(
+            "Map resource groups to governance scopes",
+            "Connect each resource group to inherited access and policy.",
+            0.9,
+            [latest.Id]);
+        var primaryCard = new ContextualCardProposal(
+            ContextualCardKind.Definition,
+            "resource group",
+            "A resource group is a lifecycle boundary for related resources.",
+            0.9,
+            [latest.Id]);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [primaryRecommendation], [])
+            {
+                ContextualCards = [primaryCard]
+            }),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [], [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.Empty(decision.RecommendedTasks);
+        Assert.Empty(decision.ContextualCards);
+    }
+
+    [Fact]
+    public async Task Analyze_PrimaryAzureOutputFromMixedSource_UsesAzureSentence()
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "AWS Availability Zones isolate failures. "
+            + "Azure Availability Zones isolate failures for Azure workloads.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var primaryRecommendation = new RecommendedTaskProposal(
+            "Validate Azure Availability Zones for workload resilience",
+            "Connect Azure Availability Zones to the workload's resilience target.",
+            0.9,
+            [latest.Id]);
+        var primaryCard = new ContextualCardProposal(
+            ContextualCardKind.Definition,
+            "Azure Availability Zones",
+            "Azure Availability Zones provide isolated failure domains for an Azure workload.",
+            0.9,
+            [latest.Id]);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [primaryRecommendation], [])
+            {
+                ContextualCards = [primaryCard]
+            }),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [], [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.Equal(
+            primaryRecommendation.Title,
+            Assert.Single(decision.RecommendedTasks).Title);
+        Assert.Equal(
+            primaryCard.Content,
+            Assert.Single(decision.ContextualCards).Content);
+    }
+
+    [Fact]
+    public async Task Analyze_UnrelatedAzureSentence_DoesNotGroundConflictingConcept()
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "The Kubernetes resource manager reconciles objects. "
+            + "Azure subscriptions define billing boundaries.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var primaryRecommendation = new RecommendedTaskProposal(
+            "Map resource manager controls to governance",
+            "Connect resource manager behavior to access and policy.",
+            0.9,
+            [latest.Id]);
+        var primaryCard = new ContextualCardProposal(
+            ContextualCardKind.Definition,
+            "resource manager",
+            "A resource manager provides a management layer for resources.",
+            0.9,
+            [latest.Id]);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [primaryRecommendation], [])
+            {
+                ContextualCards = [primaryCard]
+            }),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [], [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.DoesNotContain(
+            decision.RecommendedTasks,
+            recommendation => recommendation.Title == primaryRecommendation.Title);
+        Assert.DoesNotContain(
+            decision.ContextualCards,
+            card => card.Title == primaryCard.Title);
+    }
+
+    [Fact]
+    public async Task Analyze_MultiConceptOutput_RequiresEvidenceForEveryConcept()
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "The Kubernetes resource manager reconciles objects. "
+            + "Azure subscriptions define billing boundaries.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var primaryRecommendation = new RecommendedTaskProposal(
+            "Map resource manager controls to Azure subscriptions",
+            "Connect resource manager behavior and Azure subscription boundaries.",
+            0.9,
+            [latest.Id]);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision(
+                [],
+                [primaryRecommendation],
+                [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [], [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.DoesNotContain(
+            decision.RecommendedTasks,
+            recommendation => recommendation.Title == primaryRecommendation.Title);
+    }
+
+    [Fact]
+    public async Task Analyze_AdjacentAzureContext_GroundsAvailabilityZones()
+    {
+        var azureContext = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "We are now discussing Azure.",
+            DateTimeOffset.UtcNow.AddSeconds(-1),
+            IsFinal: true);
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "Availability Zones isolate datacenter failures.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [], [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [],
+                [azureContext, latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.Equal(
+            "Availability Zones",
+            Assert.Single(decision.ContextualCards).Title);
+        Assert.Single(decision.RecommendedTasks);
+    }
+
+    [Fact]
+    public async Task Analyze_AwsToAzureTransition_UsesNearestPlatformMarker()
+    {
+        var transcript = new[]
+        {
+            "AWS uses Availability Zones.",
+            "Now switch to Azure.",
+            "Availability Zones provide fault isolation."
+        }
+            .Select((text, index) => new TranscriptSegment(
+                Guid.NewGuid(),
+                "Presenter",
+                text,
+                DateTimeOffset.UtcNow.AddSeconds(index),
+                IsFinal: true))
+            .ToArray();
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [], [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [], transcript),
+            transcript[^1],
+            CancellationToken.None);
+
+        Assert.Equal(
+            "Availability Zones",
+            Assert.Single(decision.ContextualCards).Title);
+        Assert.Single(decision.RecommendedTasks);
+    }
+
+    [Fact]
+    public async Task Analyze_PostConceptAzureQualifier_OverridesDistantAwsComparison()
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "Unlike AWS, Availability Zones in Azure isolate failures.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [], [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [], [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.Equal(
+            "Availability Zones",
+            Assert.Single(decision.ContextualCards).Title);
+        Assert.Single(decision.RecommendedTasks);
+    }
+
+    [Fact]
+    public async Task Analyze_UncatalogedAzureOutput_RequiresMatchingTechnicalAnchor()
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "AWS Policy controls access. "
+            + "Azure governance requirements define oversight.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var primaryRecommendation = new RecommendedTaskProposal(
+            "Validate Azure Policy controls",
+            "Connect Azure Policy to the customer's governance requirements.",
+            0.9,
+            [latest.Id]);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision(
+                [],
+                [primaryRecommendation],
+                [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [], [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.DoesNotContain(
+            decision.RecommendedTasks,
+            recommendation => recommendation.Title == primaryRecommendation.Title);
+    }
+
+    [Fact]
+    public async Task Analyze_AzureKubernetesService_IsNotConflictingVendorContext()
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "Azure Kubernetes Service uses Availability Zones "
+            + "for node-pool resilience.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([], [], [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [], [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.Equal(
+            "Availability Zones",
+            Assert.Single(decision.ContextualCards).Title);
+        Assert.Single(decision.RecommendedTasks);
+    }
+
+    [Fact]
+    public async Task Analyze_UncatalogedAzureOutput_AcceptsMatchingAzureAnchor()
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "Azure Policy evaluates resources against governance rules.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var primaryRecommendation = new RecommendedTaskProposal(
+            "Validate Azure Policy controls",
+            "Connect Azure Policy to the customer's governance requirements.",
+            0.9,
+            [latest.Id]);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision(
+                [],
+                [primaryRecommendation],
+                [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(TestData.CreatePurpose(), [], [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.Equal(
+            primaryRecommendation.Title,
+            Assert.Single(decision.RecommendedTasks).Title);
+    }
+
     [Fact]
     public async Task Analyze_ChecklistDuplicateRecommendation_IsReplacedByTechnicalGap()
     {
@@ -225,7 +819,7 @@ public sealed class EvidenceBackedConversationCoachAgentTests
         var latest = new TranscriptSegment(
             Guid.NewGuid(),
             "Presenter",
-            "The load balancer is at layer four.",
+            "Azure Load Balancer is at layer four.",
             DateTimeOffset.UtcNow,
             IsFinal: true);
         var generic = new RecommendedTaskProposal(
@@ -298,7 +892,7 @@ public sealed class EvidenceBackedConversationCoachAgentTests
         var latest = new TranscriptSegment(
             Guid.NewGuid(),
             "Presenter",
-            "The load balancer is a regional service.",
+            "Azure Load Balancer is a regional service.",
             DateTimeOffset.UtcNow,
             IsFinal: true);
         var generic = new RecommendedTaskProposal(
@@ -332,7 +926,7 @@ public sealed class EvidenceBackedConversationCoachAgentTests
             "Load Balancer",
             Assert.Single(decision.RecommendedTasks).Title);
         var card = Assert.Single(decision.ContextualCards);
-        Assert.Equal("load balancer", card.Title);
+        Assert.Equal("Azure Load Balancer", card.Title);
         Assert.NotEqual(invalidCard.SourceTranscriptSegmentIds, card.SourceTranscriptSegmentIds);
         Assert.Equal([latest.Id], card.SourceTranscriptSegmentIds);
     }

@@ -352,10 +352,13 @@ recommendation may cite a real earlier transcript segment when that is its actua
 source. Current operational warnings are deduplicated, superseded failures are
 suppressed, and a later clean analysis removes resolved warning state.
 
-Each analysis may also return at most two contextual cards. Reviewed
-deterministic cards for recognized high-value presentation terms can appear in
-the fast lane before Foundry completes, while Foundry supplies broader
-context-sensitive definitions and hints. Every card is declarative, client-ready
+Each analysis may also return at most two contextual cards. A data-driven,
+reviewed fast-lane catalog covers Azure Load Balancer, health probes, cloud
+computing, shared responsibility, IaaS, PaaS, SaaS, Azure regions, Availability
+Zones, Azure Resource Manager, management groups, subscriptions, resource
+groups, Microsoft Entra ID, and Azure RBAC. These cards can appear before
+Foundry completes, while Foundry supplies broader context-sensitive definitions
+and hints. Every card is declarative, client-ready
 language that the CSA can state proactively; discovery questions and instructions
 to ask, clarify, confirm, explain, tell, validate, verify, or perform another
 presenter-directed action are rejected. The card
@@ -368,9 +371,10 @@ Cards never assert unverified pricing, licensing, compliance, legal conclusions,
 availability, customer intent, or product selection.
 
 Recommendations that substantially repeat a checklist criterion are discarded.
-For a recognized Azure Load Balancer presentation, a reviewed technical fallback
-focuses the next discussion on traffic exposure, health behavior, availability,
-and outbound connectivity if Foundry returns only a checklist-like suggestion.
+Reviewed technical fallbacks cover Load Balancer design, cloud service-model
+responsibilities, Azure management scopes, regions and zones, and identity
+versus resource authorization when Foundry returns only a generic or
+checklist-like suggestion.
 
 On Azure, grant the VM system-assigned managed identity an approved Foundry role
 on the Foundry resource or project. Automatic agent creation requires a role that

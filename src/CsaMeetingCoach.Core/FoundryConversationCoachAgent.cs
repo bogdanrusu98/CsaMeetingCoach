@@ -119,7 +119,10 @@ public static class FoundryAgentContract
         a concrete Microsoft technical term, return at least one useful card unless
         that term is already present in existingContextualCards. If the speaker already
         explained the definition, return a declarative hint about a useful distinction,
-        consequence, limitation, or validation implication. Copy the card title as an
+        consequence, limitation, or validation implication. Foundational cloud and Azure
+        concepts such as service models, shared responsibility, regions, availability
+        zones, management scopes, identity, and authorization merit cards when their
+        explanation would help a client follow the presentation. Copy the card title as an
         exact term or short phrase from one cited analysisWindow segment and cite that
         segment's ID. A definition must be grounded with file search and explain the
         term in no more than two short sentences. Do not create a card for a term

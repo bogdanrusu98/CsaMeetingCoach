@@ -733,6 +733,32 @@ public sealed class MeetingSessionCoordinatorTests
     }
 
     [Fact]
+    public async Task AddTranscript_FoundationalCardAppearsBeforeAiCompletes()
+    {
+        var blocking = new BlockingAgent();
+        using var coordinator = CreateCoordinator(
+            new HeuristicConversationCoachAgent(),
+            aiAgent: blocking,
+            analysisOptions: new AnalysisOptions(TimeSpan.Zero, TimeSpan.FromMinutes(5)));
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Presenter",
+                "Microsoft Entra ID provides cloud identity and access management."),
+            CancellationToken.None);
+
+        var card = Assert.Single(updated.ContextualCards);
+        Assert.Equal(ContextualCardKind.Definition, card.Kind);
+        Assert.Equal("Microsoft Entra ID", card.Title);
+        Assert.True(updated.IsAnalyzing);
+        blocking.Release();
+    }
+
+    [Fact]
     public async Task AddTranscript_DeterministicFastLane_CompletesChecklistWithoutAi()
     {
         using var coordinator = CreateCoordinator(
@@ -777,7 +803,7 @@ public sealed class MeetingSessionCoordinatorTests
             session.Id,
             new AddTranscriptSegmentRequest(
                 "Presenter",
-                "Then we have a backend pool."),
+                "For Azure Load Balancer, we have a backend pool."),
             CancellationToken.None);
         var completed = await coordinator.AddTranscriptAsync(
             session.Id,
@@ -793,7 +819,7 @@ public sealed class MeetingSessionCoordinatorTests
         Assert.Equal(ChecklistItemStatus.Completed, item.Status);
         Assert.Equal(2, item.Evidence.Count);
         Assert.Contains(item.Evidence, evidence =>
-            evidence.Quote == "Then we have a backend pool.");
+            evidence.Quote == "For Azure Load Balancer, we have a backend pool.");
         Assert.Contains(item.Evidence, evidence =>
             evidence.Quote == "The health probe checks whether an instance can receive traffic.");
     }

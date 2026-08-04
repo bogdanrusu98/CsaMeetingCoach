@@ -273,6 +273,15 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
             return EvaluateCompoundEvidence(item, recentTranscript, segment);
         }
 
+        if (PresentationCoachingPolicy.RequiresAzureEvidence(item)
+            && !PresentationCoachingPolicy.HasAzureEvidence(
+                item,
+                recentTranscript,
+                [segment.Id]))
+        {
+            return [];
+        }
+
         var matchedHints = item.EvidenceHints
             .Select(Normalize)
             .Where(hint => hint.Length >= 3
@@ -380,6 +389,19 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
             return [];
         }
 
+        var matchedSegments = matches
+            .Select(match => match.Segment!)
+            .DistinctBy(segment => segment.Id)
+            .ToArray();
+        if (PresentationCoachingPolicy.RequiresAzureEvidence(item)
+            && !PresentationCoachingPolicy.HasAzureEvidence(
+                item,
+                recentTranscript,
+                matchedSegments.Select(segment => segment.Id).ToArray()))
+        {
+            return [];
+        }
+
         var combinedNormalizedText = string.Join(
             ' ',
             eligibleWindow.Select(segment => Normalize(segment.Text)));
@@ -407,9 +429,7 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
         var confidence = Math.Min(
             0.97,
             0.88 + ((requiredHintGroups.Count - 2) * 0.02));
-        return matches
-            .Select(match => match.Segment!)
-            .DistinctBy(segment => segment.Id)
+        return matchedSegments
             .Select(segment => new ChecklistEvaluation(
                 item.Id,
                 ShouldComplete: true,

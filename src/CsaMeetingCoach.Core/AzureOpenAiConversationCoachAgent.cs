@@ -89,7 +89,10 @@ public sealed class AzureOpenAiConversationCoachAgent(
                         introduces a concrete Microsoft technical term, return at least one useful card
                         unless it already exists. If the definition was already explained, return a
                         declarative hint about a useful distinction, consequence, limitation, or
-                        validation implication. Copy the title exactly from a cited window segment, cite
+                        validation implication. Foundational cloud and Azure concepts such as service
+                        models, shared responsibility, regions, availability zones, management scopes,
+                        identity, and authorization merit cards when their explanation would help a
+                        client follow the presentation. Copy the title exactly from a cited window segment, cite
                         its ID, and do not repeat existingContextualCards. Do not infer commercial,
                         compliance, legal, or product-selection claims. Return JSON only:
                         {

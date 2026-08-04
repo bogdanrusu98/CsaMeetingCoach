@@ -18,6 +18,7 @@ The Azure catalog was reviewed on 2026-08-02 and is synthesized from the
 official Microsoft sources linked in each file:
 
 - `azure-application-platforms.md`
+- `azure-foundations.md`
 - `azure-data-storage-ai.md`
 - `azure-network-security-governance.md`
 - `azure-reliability-operations-migration.md`
