@@ -75,3 +75,17 @@ public sealed record AnalysisOptions(
         }
     }
 }
+
+internal static class TranscriptAnalysisWindow
+{
+    public const int MaximumSegments = 20;
+
+    public static IReadOnlyList<TranscriptSegment> Select(
+        IEnumerable<TranscriptSegment> transcript)
+    {
+        return transcript
+            .Where(segment => segment.IsFinal)
+            .TakeLast(MaximumSegments)
+            .ToArray();
+    }
+}

@@ -264,6 +264,52 @@ public sealed class MeetingSessionCoordinatorTests
         Assert.Equal(ChecklistItemStatus.Pending, item.Status);
         Assert.False(item.AutoCompleted);
         Assert.Empty(item.Evidence);
+        Assert.Equal(1, item.CompletionEligibleFromTranscriptIndex);
+    }
+
+    [Fact]
+    public async Task ReopenChecklistItem_DoesNotReuseEarlierWindowEvidence()
+    {
+        var coordinator = CreateCoordinator(new FragmentedDiscussionAgent());
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(
+                TestData.CreatePurpose(),
+                [
+                    new ChecklistSeed(
+                        "Explain the frontend",
+                        "Explain the frontend IP address.",
+                        ["frontend IP address"])
+                ]),
+            CancellationToken.None);
+        await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "CSA",
+                "Azure Load Balancer uses a frontend IP address."),
+            CancellationToken.None);
+        var completed = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("CSA", "It can be internal or external."),
+            CancellationToken.None);
+        var completedItem = Assert.Single(completed.Checklist);
+        Assert.Equal(ChecklistItemStatus.Completed, completedItem.Status);
+
+        var reopened = await coordinator.ReopenChecklistItemAsync(
+            session.Id,
+            completedItem.Id,
+            CancellationToken.None);
+        Assert.Equal(
+            2,
+            Assert.Single(reopened.Checklist).CompletionEligibleFromTranscriptIndex);
+
+        var unchanged = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("CSA", "Next we will discuss health probes."),
+            CancellationToken.None);
+
+        Assert.Equal(
+            ChecklistItemStatus.Pending,
+            Assert.Single(unchanged.Checklist).Status);
     }
 
     [Fact]
@@ -290,12 +336,18 @@ public sealed class MeetingSessionCoordinatorTests
             Assert.Single(accepted.RecommendedTasks).Status);
         Assert.NotNull(Assert.Single(accepted.RecommendedTasks).AcceptedAtUtc);
         Assert.Null(Assert.Single(accepted.RecommendedTasks).CompletedAtUtc);
+        Assert.Equal(
+            1,
+            Assert.Single(accepted.RecommendedTasks).CompletionEligibleFromTranscriptIndex);
     }
 
     [Fact]
     public async Task AcceptedRecommendation_LaterExactEvidence_AutoCompletesAndReopens()
     {
-        var agent = new RecommendationLifecycleAgent();
+        var agent = new RecommendationLifecycleAgent
+        {
+            UseEarlierTranscriptEvidence = true
+        };
         var coordinator = CreateCoordinator(agent);
         var session = await coordinator.CreateAsync(
             new CreateMeetingSessionRequest(TestData.CreatePurpose()),
@@ -343,6 +395,15 @@ public sealed class MeetingSessionCoordinatorTests
         Assert.NotNull(reopenedTask.AcceptedAtUtc);
         Assert.Null(reopenedTask.CompletedAtUtc);
         Assert.Empty(reopenedTask.Evidence!);
+        Assert.Equal(2, reopenedTask.CompletionEligibleFromTranscriptIndex);
+
+        var unchanged = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("CSA", "Let's continue to the next topic."),
+            CancellationToken.None);
+        Assert.Equal(
+            RecommendationStatus.Accepted,
+            Assert.Single(unchanged.RecommendedTasks).Status);
     }
 
     [Fact]
@@ -432,7 +493,7 @@ public sealed class MeetingSessionCoordinatorTests
     }
 
     [Fact]
-    public async Task AcceptedRecommendation_PreAcceptanceEvidence_DoesNotComplete()
+    public async Task AcceptedRecommendation_BackdatedLaterEvidence_AutoCompletes()
     {
         var agent = new RecommendationLifecycleAgent();
         var coordinator = CreateCoordinator(agent);
@@ -461,11 +522,51 @@ public sealed class MeetingSessionCoordinatorTests
             CancellationToken.None);
 
         Assert.Equal(
-            RecommendationStatus.Accepted,
+            RecommendationStatus.Completed,
             Assert.Single(unchanged.RecommendedTasks).Status);
-        Assert.Contains(
+        Assert.DoesNotContain(
             unchanged.Warnings,
             warning => warning.Contains("after acceptance", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task AcceptedRecommendation_FutureDatedEarlierEvidence_DoesNotComplete()
+    {
+        var agent = new RecommendationLifecycleAgent
+        {
+            UseEarlierTranscriptEvidence = true
+        };
+        var coordinator = CreateCoordinator(agent);
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        var proposed = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Customer",
+                "How can we reduce deployment risk?"),
+            CancellationToken.None);
+        await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "CSA",
+                "We can reduce deployment risk with staged rollout rings.",
+                DateTimeOffset.UtcNow.AddDays(1)),
+            CancellationToken.None);
+        await coordinator.SetRecommendationStatusAsync(
+            session.Id,
+            Assert.Single(proposed.RecommendedTasks).Id,
+            RecommendationStatus.Accepted,
+            CancellationToken.None);
+
+        var unchanged = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("CSA", "Let's move to the next topic."),
+            CancellationToken.None);
+
+        Assert.Equal(
+            RecommendationStatus.Accepted,
+            Assert.Single(unchanged.RecommendedTasks).Status);
     }
 
     [Fact]
@@ -1135,6 +1236,45 @@ public sealed class MeetingSessionCoordinatorTests
     }
 
     [Fact]
+    public async Task AddTranscript_FragmentedDiscussionUsesExactEarlierEvidence()
+    {
+        using var coordinator = CreateCoordinator(new FragmentedDiscussionAgent());
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(
+                TestData.CreatePurpose(),
+                [
+                    new ChecklistSeed(
+                        "Explain the Azure Load Balancer frontend",
+                        "Discuss the frontend IP configuration.",
+                        ["frontend IP address"])
+                ]),
+            CancellationToken.None);
+        var first = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Presenter",
+                "Azure Load Balancer has a frontend IP address."),
+            CancellationToken.None);
+
+        var second = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Presenter",
+                "It can be internal or external."),
+            CancellationToken.None);
+
+        var card = Assert.Single(second.ContextualCards);
+        Assert.Equal("Azure Load Balancer", card.Title);
+        Assert.Equal(first.Transcript[0].Id, Assert.Single(card.SourceTranscriptSegmentIds));
+        var checklistItem = Assert.Single(second.Checklist);
+        Assert.Equal(ChecklistItemStatus.Completed, checklistItem.Status);
+        Assert.Equal(
+            first.Transcript[0].Id,
+            Assert.Single(checklistItem.Evidence).TranscriptSegmentId);
+        Assert.Empty(second.Warnings);
+    }
+
+    [Fact]
     public async Task AddTranscript_CurrentCleanResult_RemovesResolvedDecisionWarnings()
     {
         using var coordinator = CreateCoordinator(new InvalidProposalOnceAgent());
@@ -1464,6 +1604,45 @@ public sealed class MeetingSessionCoordinatorTests
         }
     }
 
+    private sealed class FragmentedDiscussionAgent : IConversationCoachAgent
+    {
+        public Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken)
+        {
+            if (context.RecentTranscript.Count < 2)
+            {
+                return Task.FromResult(new CoachAgentDecision([], []));
+            }
+
+            var source = context.RecentTranscript[0];
+            var checklistItem = context.Checklist[0];
+            return Task.FromResult(new CoachAgentDecision(
+                [
+                    new ChecklistEvaluation(
+                        checklistItem.Id,
+                        ShouldComplete: true,
+                        Confidence: 0.94,
+                        "The frontend IP was explicitly discussed.",
+                        "frontend IP address",
+                        source.Id)
+                ],
+                [])
+            {
+                ContextualCards =
+                [
+                    new ContextualCardProposal(
+                        ContextualCardKind.Definition,
+                        "Azure Load Balancer",
+                        "Azure Load Balancer distributes layer four traffic across healthy backend resources.",
+                        0.92,
+                        [source.Id])
+                ]
+            });
+        }
+    }
+
     private sealed class ContextualCardAgent : IConversationCoachAgent
     {
         public Task<CoachAgentDecision> AnalyzeAsync(
@@ -1661,6 +1840,8 @@ public sealed class MeetingSessionCoordinatorTests
 
         public bool IncludeHigherConfidenceInvalidDuplicate { get; init; }
 
+        public bool UseEarlierTranscriptEvidence { get; init; }
+
         public Task<CoachAgentDecision> AnalyzeAsync(
             CoachAgentContext context,
             TranscriptSegment latestSegment,
@@ -1683,6 +1864,11 @@ public sealed class MeetingSessionCoordinatorTests
                     []));
             }
 
+            var evidenceSegment = UseEarlierTranscriptEvidence
+                ? context.RecentTranscript.First(segment => segment.Text.Contains(
+                    "reduce deployment risk with staged rollout rings",
+                    StringComparison.Ordinal))
+                : latestSegment;
             var evaluations = new List<RecommendationEvaluation>
             {
                 new(
@@ -1692,7 +1878,8 @@ public sealed class MeetingSessionCoordinatorTests
                     "The rollout approach was explicitly discussed.",
                     ReturnInventedEvidence
                         ? "The customer approved an impossible quote."
-                        : "reduce deployment risk with staged rollout rings")
+                        : "reduce deployment risk with staged rollout rings",
+                    evidenceSegment.Id)
             };
             if (IncludeUnknownEvaluation)
             {

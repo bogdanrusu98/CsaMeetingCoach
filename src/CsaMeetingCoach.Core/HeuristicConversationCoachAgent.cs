@@ -318,7 +318,8 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
             ShouldComplete: confidence >= MeetingSessionCoordinator.AutoCompletionThreshold,
             confidence,
             $"Matched discussion evidence: {string.Join(", ", matchedHints)}.",
-            segment.Text.Trim());
+            segment.Text.Trim(),
+            segment.Id);
     }
 
     internal static bool RequiresMeasurableOutcome(ChecklistItemState item)
@@ -447,7 +448,8 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
             ShouldComplete: true,
             confidence,
             "The latest final segment explicitly discusses the accepted talking point.",
-            segment.Text.Trim());
+            segment.Text.Trim(),
+            segment.Id);
     }
 
     internal static string Normalize(string value)

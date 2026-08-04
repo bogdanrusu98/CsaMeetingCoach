@@ -15,26 +15,48 @@ public sealed class EvidenceBackedConversationCoachAgent(
             context,
             latestSegment,
             cancellationToken);
-        var deterministicDecision = await deterministicEvaluator.AnalyzeAsync(
-            context,
-            latestSegment,
-            cancellationToken);
-        var deterministicApprovals = deterministicDecision.ChecklistEvaluations
+        var deterministicEvaluations = new List<ChecklistEvaluation>();
+        var deterministicRecommendationEvaluations =
+            new List<RecommendationEvaluation>();
+        foreach (var segment in TranscriptAnalysisWindow.Select(context.RecentTranscript))
+        {
+            var deterministicDecision = await deterministicEvaluator.AnalyzeAsync(
+                context,
+                segment,
+                cancellationToken);
+            deterministicEvaluations.AddRange(
+                deterministicDecision.ChecklistEvaluations.Select(evaluation =>
+                    evaluation.SourceTranscriptSegmentId is null
+                        ? evaluation with { SourceTranscriptSegmentId = segment.Id }
+                        : evaluation));
+            deterministicRecommendationEvaluations.AddRange(
+                (deterministicDecision.RecommendationEvaluations ?? [])
+                    .Select(evaluation =>
+                        evaluation.SourceTranscriptSegmentId is null
+                            ? evaluation with { SourceTranscriptSegmentId = segment.Id }
+                            : evaluation));
+        }
+
+        var deterministicApprovals = deterministicEvaluations
             .Where(evaluation => evaluation.ShouldComplete)
-            .Select(evaluation => evaluation.ChecklistItemId)
+            .Select(evaluation => (
+                evaluation.ChecklistItemId,
+                evaluation.SourceTranscriptSegmentId))
             .ToHashSet();
         var safePrimaryEvaluations = primaryDecision.ChecklistEvaluations
             .Where(evaluation =>
                 !evaluation.ShouldComplete
-                || deterministicApprovals.Contains(evaluation.ChecklistItemId));
+                || deterministicApprovals.Contains((
+                    evaluation.ChecklistItemId,
+                    evaluation.SourceTranscriptSegmentId ?? latestSegment.Id)));
 
         return new CoachAgentDecision(
             safePrimaryEvaluations
-                .Concat(deterministicDecision.ChecklistEvaluations)
+                .Concat(deterministicEvaluations)
                 .ToArray(),
             primaryDecision.RecommendedTasks,
             (primaryDecision.RecommendationEvaluations ?? [])
-                .Concat(deterministicDecision.RecommendationEvaluations ?? [])
+                .Concat(deterministicRecommendationEvaluations)
                 .ToArray())
         {
             ContextualCards = primaryDecision.ContextualCards

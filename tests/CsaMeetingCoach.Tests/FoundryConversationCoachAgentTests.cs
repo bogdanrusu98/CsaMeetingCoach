@@ -79,6 +79,9 @@ public sealed class FoundryConversationCoachAgentTests
         Assert.Equal(
             latestSegment.Id,
             root.GetProperty("latestSegment").GetProperty("id").GetGuid());
+        Assert.Equal(
+            latestSegment.Id,
+            root.GetProperty("analysisWindow")[0].GetProperty("id").GetGuid());
         var pendingItem = root.GetProperty("pendingChecklist")[0];
         Assert.Equal(checklistItem.Id, pendingItem.GetProperty("id").GetGuid());
         Assert.False(pendingItem.TryGetProperty("status", out _));
@@ -256,6 +259,48 @@ public sealed class FoundryConversationCoachAgentTests
         Assert.Equal(ContextualCardKind.Definition, card.Kind);
         Assert.Equal("RTO", card.Title);
         Assert.Equal(latestSegment.Id, Assert.Single(card.SourceTranscriptSegmentIds));
+    }
+
+    [Fact]
+    public async Task Analyze_ContextualCardCanUseEarlierFragmentInAnalysisWindow()
+    {
+        var topicSegment = CreateLatestSegment(
+            "Azure Load Balancer provides layer four traffic distribution.");
+        var latestSegment = CreateLatestSegment(
+            "The frontend IP can be internal or external.");
+        var context = CreateContext(
+            latestSegment,
+            transcript: [topicSegment, latestSegment]);
+        var decisionPayload = new CoachAgentDecision([], [], [])
+        {
+            ContextualCards =
+            [
+                new ContextualCardProposal(
+                    ContextualCardKind.Definition,
+                    "Azure Load Balancer",
+                    "Azure Load Balancer distributes layer four TCP and UDP traffic across healthy backend resources.",
+                    0.92,
+                    [topicSegment.Id])
+            ]
+        };
+        var client = new RecordingFoundryClient(
+            JsonSerializer.Serialize(decisionPayload, JsonOptions));
+        var agent = new FoundryConversationCoachAgent(client);
+
+        var decision = await agent.AnalyzeAsync(
+            context,
+            latestSegment,
+            CancellationToken.None);
+
+        var card = Assert.Single(decision.ContextualCards);
+        Assert.Equal("Azure Load Balancer", card.Title);
+        Assert.Equal(topicSegment.Id, Assert.Single(card.SourceTranscriptSegmentIds));
+        using var payload = JsonDocument.Parse(client.InputJson!);
+        Assert.Equal(2, payload.RootElement.GetProperty("analysisWindow").GetArrayLength());
+        Assert.Contains(
+            "presentation",
+            FoundryAgentContract.Instructions,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

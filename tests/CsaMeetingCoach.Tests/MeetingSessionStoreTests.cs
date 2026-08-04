@@ -57,6 +57,8 @@ public sealed class MeetingSessionStoreTests : IDisposable
         Directory.CreateDirectory(_directory);
         var sessionId = Guid.NewGuid();
         var recommendationId = Guid.NewGuid();
+        var checklistItemId = Guid.NewGuid();
+        var transcriptSegmentId = Guid.NewGuid();
         var now = DateTimeOffset.UtcNow;
         var json = $$"""
             {
@@ -71,8 +73,22 @@ public sealed class MeetingSessionStoreTests : IDisposable
               "createdAtUtc": "{{now:O}}",
               "updatedAtUtc": "{{now:O}}",
               "revision": 1,
-              "checklist": [],
-              "transcript": [],
+              "checklist": [{
+                "id": "{{checklistItemId}}",
+                "title": "Confirm scope",
+                "completionCriteria": "The scope is explicit.",
+                "evidenceHints": ["scope"],
+                "status": 0,
+                "autoCompleted": false,
+                "evidence": []
+              }],
+              "transcript": [{
+                "id": "{{transcriptSegmentId}}",
+                "speaker": "CSA",
+                "text": "The earlier discussion mentioned scope.",
+                "occurredAtUtc": "{{now.AddMinutes(-20):O}}",
+                "isFinal": true
+              }],
               "recommendedTasks": [{
                 "id": "{{recommendationId}}",
                 "title": "Discuss architecture",
@@ -100,6 +116,10 @@ public sealed class MeetingSessionStoreTests : IDisposable
         Assert.Empty(recommendation.Evidence!);
         Assert.Equal(RecommendationStatus.Dismissed, recommendation.Status);
         Assert.Empty(loaded.ContextualCards);
+        Assert.Equal(
+            1,
+            Assert.Single(loaded.Checklist).CompletionEligibleFromTranscriptIndex);
+        Assert.Equal(MeetingSessionState.CurrentSchemaVersion, loaded.StateSchemaVersion);
     }
 
     [Fact]
@@ -144,7 +164,11 @@ public sealed class MeetingSessionStoreTests : IDisposable
             sessionId,
             CancellationToken.None);
 
-        Assert.Equal(now, Assert.Single(loaded!.RecommendedTasks).AcceptedAtUtc);
+        var recommendation = Assert.Single(loaded!.RecommendedTasks);
+        Assert.Equal(now, recommendation.AcceptedAtUtc);
+        Assert.Equal(0, recommendation.CompletionEligibleFromTranscriptIndex);
+        Assert.Empty(loaded.Checklist);
+        Assert.Equal(MeetingSessionState.CurrentSchemaVersion, loaded.StateSchemaVersion);
     }
 
     public void Dispose()

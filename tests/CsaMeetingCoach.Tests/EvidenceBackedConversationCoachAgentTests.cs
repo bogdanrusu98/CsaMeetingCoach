@@ -149,6 +149,58 @@ public sealed class EvidenceBackedConversationCoachAgentTests
     }
 
     [Fact]
+    public async Task Analyze_PrimaryCompletionFromEarlierFragment_RequiresMatchingDeterministicEvidence()
+    {
+        var checklistItem = new ChecklistItemState(
+            Guid.NewGuid(),
+            "Explain the Azure Load Balancer frontend",
+            "Discuss the frontend IP configuration.",
+            ["frontend IP address"],
+            ChecklistItemStatus.Pending,
+            AutoCompleted: false,
+            Confidence: null,
+            CompletionReason: null,
+            CompletedAtUtc: null,
+            Evidence: []);
+        var evidenceSegment = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "Azure Load Balancer has a frontend IP address.",
+            DateTimeOffset.UtcNow.AddSeconds(-2),
+            IsFinal: true);
+        var latestSegment = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "It can be internal or external.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var primaryEvaluation = new ChecklistEvaluation(
+            checklistItem.Id,
+            ShouldComplete: true,
+            Confidence: 0.94,
+            "The frontend IP was explicitly discussed.",
+            "frontend IP address",
+            evidenceSegment.Id);
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(new CoachAgentDecision([primaryEvaluation], [], [])),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [checklistItem],
+                [evidenceSegment, latestSegment]),
+            latestSegment,
+            CancellationToken.None);
+
+        Assert.Contains(
+            decision.ChecklistEvaluations,
+            completion => completion.ShouldComplete
+                && completion.Confidence == primaryEvaluation.Confidence
+                && completion.SourceTranscriptSegmentId == evidenceSegment.Id);
+    }
+
+    [Fact]
     public async Task Analyze_PrimaryFails_DoesNotSilentlyFallBack()
     {
         var expected = new InvalidOperationException("Primary provider failed.");

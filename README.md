@@ -13,15 +13,16 @@ stream to maintain an evidence-backed checklist and recommend live private talki
   selects it, audio played by the device through short-lived Azure Speech tokens;
   the subscription key never reaches the browser.
 - Auto-completes a checklist item only above a confidence threshold and only
-  when the agent supplies an exact quote from the latest transcript segment.
+  when the agent supplies an exact quote from its cited final transcript segment
+  and the deterministic evaluator independently approves that same source.
 - Stores the speaker, timestamp, quote, rationale, and confidence for every
   automatic completion.
 - Allows users to undo any automatic completion.
 - Recommends what the CSA should discuss, show, or ask next from explicit customer
   needs and meeting context. Accepted talking points auto-complete only from exact
-  evidence in a later final transcript segment and can be reopened.
+  evidence ingested after acceptance and can be reopened.
 - Shows grounded definitions or concise meeting hints in dismissible lower-right
-  cards when the latest final transcript explicitly mentions the term or topic.
+  cards when the recent coherent discussion explicitly mentions the term or topic.
 - Pushes session updates to the side panel with Server-Sent Events.
 - Protects each session with a scoped HttpOnly access cookie so another local
   caller cannot read or alter a transcript by guessing its session ID.
@@ -330,7 +331,16 @@ remain sequential and use the latest coalesced snapshot, with a 60-second timeou
 so File Search and one structured retry have enough time. A completed grounded
 snapshot can merge while newer speech remains queued, preventing continuous
 audio from starving recommendations and contextual cards.
-Completion claims without an exact latest-segment quote, unknown recommendation
+The latest 20 final Speech fragments form one analysis window, allowing adjacent
+sentence and product-name fragments to be interpreted as a coherent discussion
+without synthesizing transcript evidence. Every checklist or accepted-task
+completion still cites one real source segment and an exact quote from it.
+Server-controlled final-transcript order, rather than a client-supplied speech
+timestamp, determines whether evidence arrived after an item was accepted or
+reopened. This prevents old window evidence from immediately restoring a
+completion that the user intentionally undid. Persisted sessions from earlier
+schema versions receive the current transcript length as a conservative cutoff.
+Completion claims without that exact cited-segment quote, unknown recommendation
 IDs, and tasks with invented transcript IDs are filtered before merge and logged
 server-side instead of appearing as routine user-facing rejection errors. A
 recommendation may cite a real earlier transcript segment when that is its actual
@@ -338,10 +348,10 @@ source. Current operational warnings are deduplicated, superseded failures are
 suppressed, and a later clean analysis removes resolved warning state.
 
 Each Foundry analysis may also return at most two contextual cards. The card
-title must be an exact term or short topic phrase from the latest final segment,
-its source must include that segment, and definitions use the reviewed File
+title must be an exact term or short topic phrase from a cited segment in the
+analysis window, and definitions use the reviewed File
 Search knowledge. The coordinator filters low-confidence, oversized, duplicate,
-invented-source, and earlier-only cards without turning those model artifacts
+invented-source, and outside-window cards without turning those model artifacts
 into user-facing warnings. It retains only the latest 12 cards per session.
 Cards never assert unverified pricing, licensing, compliance, legal conclusions,
 availability, customer intent, or product selection.
@@ -356,8 +366,8 @@ variable `COACH_AGENT_PROVIDER` is explicitly set to `Foundry`.
 Foundry requires one or more comma-separated, reviewed `vs_...` IDs and refuses
 to start without them. Retrieved material can explain terminology and ground a
 recommendation, but it is never accepted as evidence that meeting participants
-discussed a topic. Exact evidence from the latest transcript and deterministic
-approval remain mandatory.
+discussed a topic. Exact evidence from the cited final transcript segment and
+deterministic approval of that same source remain mandatory.
 
 Review the non-sensitive sources in `knowledge` before indexing. The indexer
 accepts only its documented file types and enforces file-count and size limits:
@@ -430,7 +440,7 @@ authenticate the transcript adapter separately with managed identity.
 - No raw audio persistence in this MVP.
 - Automatic completion is reversible and always includes transcript evidence.
 - Live talking points require user acceptance before they become trackable; only
-  exact evidence in a later final transcript segment can complete them.
+  exact evidence ingested in a later final transcript segment can complete them.
 - Do not use real customer data until Privacy, Legal, Security, and tenant
   administrators approve the pilot, lawful basis, notice, retention, access, and
   DPIA.

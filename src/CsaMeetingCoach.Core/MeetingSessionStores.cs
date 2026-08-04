@@ -51,12 +51,27 @@ public sealed class JsonMeetingSessionStore(string dataDirectory) : IMeetingSess
                 stream,
                 JsonOptions,
                 cancellationToken);
+            var isLegacyState = session is not null
+                && session.StateSchemaVersion < MeetingSessionState.CurrentSchemaVersion;
+            var finalTranscriptCount = session?.Transcript.Count(segment => segment.IsFinal) ?? 0;
             return session is null
                 ? null
                 : session with
                 {
                     IsAnalyzing = false,
+                    StateSchemaVersion = MeetingSessionState.CurrentSchemaVersion,
                     ContextualCards = session.ContextualCards ?? [],
+                    Checklist = session.Checklist
+                        .Select(item => item with
+                        {
+                            CompletionEligibleFromTranscriptIndex =
+                                isLegacyState
+                                    && item.Status == ChecklistItemStatus.Pending
+                                    && item.CompletionEligibleFromTranscriptIndex is null
+                                        ? finalTranscriptCount
+                                        : item.CompletionEligibleFromTranscriptIndex
+                        })
+                        .ToArray(),
                     RecommendedTasks = session.RecommendedTasks
                         .Select(item => item with
                         {
@@ -64,7 +79,12 @@ public sealed class JsonMeetingSessionStore(string dataDirectory) : IMeetingSess
                                 && item.AcceptedAtUtc is null
                                     ? session.UpdatedAtUtc
                                     : item.AcceptedAtUtc,
-                            Evidence = item.Evidence ?? []
+                            Evidence = item.Evidence ?? [],
+                            CompletionEligibleFromTranscriptIndex =
+                                item.Status == RecommendationStatus.Accepted
+                                    && item.CompletionEligibleFromTranscriptIndex is null
+                                        ? finalTranscriptCount
+                                        : item.CompletionEligibleFromTranscriptIndex
                         })
                         .ToArray()
                 };

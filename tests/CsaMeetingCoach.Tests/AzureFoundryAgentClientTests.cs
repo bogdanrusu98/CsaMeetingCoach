@@ -41,6 +41,10 @@ public sealed class AzureFoundryAgentClientTests
             FoundryAgentContract.ResponseJsonSchema,
             StringComparison.Ordinal);
         Assert.Contains(
+            "sourceTranscriptSegmentId",
+            FoundryAgentContract.ResponseJsonSchema,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "\"maxItems\": 1",
             FoundryAgentContract.ResponseJsonSchema,
             StringComparison.Ordinal);
@@ -61,7 +65,11 @@ public sealed class AzureFoundryAgentClientTests
             normalizedInstructions,
             StringComparison.Ordinal);
         Assert.Contains(
-            "exact evidenceQuote from",
+            "exact evidenceQuote from its cited analysisWindow segment",
+            normalizedInstructions,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "In a presentation, demo, workshop, or training discussion",
             normalizedInstructions,
             StringComparison.Ordinal);
         Assert.Contains(

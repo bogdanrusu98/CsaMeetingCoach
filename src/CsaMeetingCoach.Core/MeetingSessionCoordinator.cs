@@ -62,7 +62,8 @@ public sealed class MeetingSessionCoordinator : IDisposable
             Transcript: [],
             RecommendedTasks: [],
             Warnings: [],
-            TeamsOnlineMeetingId: NormalizeMeetingId(request.TeamsOnlineMeetingId));
+            TeamsOnlineMeetingId: NormalizeMeetingId(request.TeamsOnlineMeetingId),
+            StateSchemaVersion: MeetingSessionState.CurrentSchemaVersion);
 
         await _store.SaveAsync(session, cancellationToken);
         await _updatePublisher.PublishAsync(session, cancellationToken);
@@ -161,7 +162,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
             var context = new CoachAgentContext(
                 transcriptUpdate.Purpose,
                 transcriptUpdate.Checklist,
-                finalTranscript.TakeLast(20).ToArray(),
+                TranscriptAnalysisWindow.Select(finalTranscript),
                 transcriptUpdate.RecommendedTasks,
                 transcriptUpdate.ContextualCards);
             var deterministicDecision = await _deterministicAgent.AnalyzeAsync(
@@ -184,12 +185,16 @@ public sealed class MeetingSessionCoordinator : IDisposable
             var checklist = ApplyChecklistEvaluations(
                 transcriptUpdate.Checklist,
                 decision.ChecklistEvaluations,
+                context.RecentTranscript,
                 segment,
+                finalTranscript,
                 warnings);
             var evaluatedRecommendations = ApplyRecommendationEvaluations(
                 transcriptUpdate.RecommendedTasks,
                 decision.RecommendationEvaluations ?? [],
+                context.RecentTranscript,
                 segment,
+                finalTranscript,
                 warnings);
             var recommendations = ApplyRecommendations(
                 evaluatedRecommendations,
@@ -201,8 +206,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
             var contextualCards = ApplyContextualCards(
                 transcriptUpdate.ContextualCards,
                 decision.ContextualCards,
-                finalTranscript,
-                segment);
+                context.RecentTranscript);
             var analyzedAtUtc = DateTimeOffset.UtcNow;
             var analyzedTranscript = transcript
                 .Select(item => item.Id == segment.Id
@@ -351,6 +355,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
         // Load current session to build context for AI.
         MeetingSessionState session;
         TranscriptSegment latestSegment;
+        IReadOnlyList<TranscriptSegment> analysisWindow;
         CoachAgentContext context;
         {
             var loadGate = _sessionLocks.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
@@ -383,6 +388,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
 
                 session = loaded;
                 latestSegment = finalTranscript[finalTranscript.Length - 1];
+                analysisWindow = TranscriptAnalysisWindow.Select(finalTranscript);
                 context = new CoachAgentContext(
                     session.Purpose,
                     session.Checklist,
@@ -456,12 +462,16 @@ public sealed class MeetingSessionCoordinator : IDisposable
             var checklist = ApplyChecklistEvaluations(
                 current.Checklist,
                 aiDecision.ChecklistEvaluations,
+                analysisWindow,
                 latestSegment,
+                finalTranscript,
                 mergeWarnings);
             var evaluatedRecommendations = ApplyRecommendationEvaluations(
                 current.RecommendedTasks,
                 aiDecision.RecommendationEvaluations ?? [],
+                analysisWindow,
                 latestSegment,
+                finalTranscript,
                 mergeWarnings);
             var recommendations = ApplyRecommendations(
                 evaluatedRecommendations,
@@ -473,8 +483,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
             var contextualCards = ApplyContextualCards(
                 current.ContextualCards,
                 aiDecision.ContextualCards,
-                finalTranscript,
-                latestSegment);
+                analysisWindow);
 
             state.MarkCompleted(analysisGeneration);
             var mergedSession = current with
@@ -598,7 +607,9 @@ public sealed class MeetingSessionCoordinator : IDisposable
                     Confidence = null,
                     CompletionReason = null,
                     CompletedAtUtc = null,
-                    Evidence = []
+                    Evidence = [],
+                    CompletionEligibleFromTranscriptIndex =
+                        session.Transcript.Count(segment => segment.IsFinal)
                 };
             }).ToArray();
 
@@ -645,7 +656,11 @@ public sealed class MeetingSessionCoordinator : IDisposable
                     Status = status,
                     AcceptedAtUtc = status == RecommendationStatus.Accepted
                         ? DateTimeOffset.UtcNow
-                        : null
+                        : null,
+                    CompletionEligibleFromTranscriptIndex =
+                        status == RecommendationStatus.Accepted
+                            ? session.Transcript.Count(segment => segment.IsFinal)
+                            : null
                 };
             }).ToArray();
 
@@ -685,7 +700,9 @@ public sealed class MeetingSessionCoordinator : IDisposable
                     Status = RecommendationStatus.Accepted,
                     CompletedAtUtc = null,
                     CompletionReason = null,
-                    Evidence = []
+                    Evidence = [],
+                    CompletionEligibleFromTranscriptIndex =
+                        session.Transcript.Count(segment => segment.IsFinal)
                 };
             }).ToArray();
 
@@ -741,10 +758,16 @@ public sealed class MeetingSessionCoordinator : IDisposable
     private static IReadOnlyList<ChecklistItemState> ApplyChecklistEvaluations(
         IReadOnlyList<ChecklistItemState> current,
         IReadOnlyList<ChecklistEvaluation> evaluations,
+        IReadOnlyList<TranscriptSegment> analysisWindow,
         TranscriptSegment latestSegment,
+        IReadOnlyList<TranscriptSegment> finalTranscript,
         ICollection<string> warnings)
     {
         var knownIds = current.Select(item => item.Id).ToHashSet();
+        var currentById = current.ToDictionary(item => item.Id);
+        var transcriptIndexById = finalTranscript
+            .Select((segment, index) => (segment.Id, Index: index))
+            .ToDictionary(item => item.Id, item => item.Index);
         foreach (var evaluation in evaluations)
         {
             if (evaluation is null)
@@ -770,42 +793,62 @@ public sealed class MeetingSessionCoordinator : IDisposable
                     $"Rejected completion for checklist item {evaluation.ChecklistItemId}: evaluation data was invalid.");
             }
             else if (evaluation.ShouldComplete
-                && !latestSegment.Text.Contains(
+                && ResolveEvidenceSegment(
+                    evaluation.SourceTranscriptSegmentId,
                     evaluation.EvidenceQuote,
-                    StringComparison.Ordinal))
+                    analysisWindow,
+                    latestSegment) is null)
             {
                 warnings.Add(
-                    $"Rejected checklist completion for item {evaluation.ChecklistItemId}: agent evidence was not present in the latest transcript segment.");
+                    $"Rejected checklist completion for item {evaluation.ChecklistItemId}: agent evidence was not present in its cited analysis-window segment.");
             }
         }
 
         var byItem = evaluations
-            .Where(evaluation => evaluation is not null
-                && knownIds.Contains(evaluation.ChecklistItemId)
-                && evaluation.ShouldComplete
-                && double.IsFinite(evaluation.Confidence)
-                && evaluation.Confidence is >= AutoCompletionThreshold and <= 1
-                && !string.IsNullOrWhiteSpace(evaluation.Reason)
-                && !string.IsNullOrWhiteSpace(evaluation.EvidenceQuote)
-                && latestSegment.Text.Contains(
-                    evaluation.EvidenceQuote,
-                    StringComparison.Ordinal))
-            .GroupBy(evaluation => evaluation.ChecklistItemId)
-            .ToDictionary(group => group.Key, group => group.OrderByDescending(item => item.Confidence).First());
+            .Select(evaluation => (
+                Evaluation: evaluation,
+                EvidenceSegment: evaluation is null
+                    ? null
+                    : ResolveEvidenceSegment(
+                        evaluation.SourceTranscriptSegmentId,
+                        evaluation.EvidenceQuote,
+                        analysisWindow,
+                        latestSegment)))
+            .Where(candidate => candidate.Evaluation is not null
+                && currentById.TryGetValue(
+                    candidate.Evaluation.ChecklistItemId,
+                    out var checklistItem)
+                && candidate.Evaluation.ShouldComplete
+                && double.IsFinite(candidate.Evaluation.Confidence)
+                && candidate.Evaluation.Confidence is >= AutoCompletionThreshold and <= 1
+                && !string.IsNullOrWhiteSpace(candidate.Evaluation.Reason)
+                && candidate.EvidenceSegment is not null
+                && IsCompletionEvidenceEligible(
+                    checklistItem.CompletionEligibleFromTranscriptIndex,
+                    candidate.EvidenceSegment.Id,
+                    transcriptIndexById))
+            .GroupBy(candidate => candidate.Evaluation!.ChecklistItemId)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .OrderByDescending(candidate => candidate.Evaluation!.Confidence)
+                    .First());
 
         return current.Select(item =>
         {
             if (item.Status == ChecklistItemStatus.Completed
-                || !byItem.TryGetValue(item.Id, out var evaluation))
+                || !byItem.TryGetValue(item.Id, out var candidate))
             {
                 return item;
             }
 
+            var evaluation = candidate.Evaluation!;
+            var evidenceSegment = candidate.EvidenceSegment!;
             var evidence = new ChecklistEvidence(
-                latestSegment.Id,
-                latestSegment.Speaker,
+                evidenceSegment.Id,
+                evidenceSegment.Speaker,
                 evaluation.EvidenceQuote.Trim(),
-                latestSegment.OccurredAtUtc,
+                evidenceSegment.OccurredAtUtc,
                 Math.Clamp(evaluation.Confidence, 0, 1));
 
             return item with
@@ -886,10 +929,9 @@ public sealed class MeetingSessionCoordinator : IDisposable
     private static IReadOnlyList<ContextualCardState> ApplyContextualCards(
         IReadOnlyList<ContextualCardState> current,
         IReadOnlyList<ContextualCardProposal> proposals,
-        IReadOnlyList<TranscriptSegment> transcript,
-        TranscriptSegment latestSegment)
+        IReadOnlyList<TranscriptSegment> analysisWindow)
     {
-        var segmentIds = transcript.Select(segment => segment.Id).ToHashSet();
+        var analysisWindowById = analysisWindow.ToDictionary(segment => segment.Id);
         var knownTitles = current
             .Select(card => HeuristicConversationCoachAgent.Normalize(card.Title))
             .ToHashSet(StringComparer.Ordinal);
@@ -907,16 +949,18 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 || !Enum.IsDefined(proposal.Kind)
                 || string.IsNullOrWhiteSpace(proposal.Title)
                 || proposal.Title.Trim().Length > 80
-                || !latestSegment.Text.Contains(
-                    proposal.Title.Trim(),
-                    StringComparison.OrdinalIgnoreCase)
                 || string.IsNullOrWhiteSpace(proposal.Content)
                 || proposal.Content.Trim().Length > 320
                 || !double.IsFinite(proposal.Confidence)
                 || proposal.Confidence is < ContextualCardThreshold or > 1
                 || proposal.SourceTranscriptSegmentIds is not { Count: > 0 }
-                || !proposal.SourceTranscriptSegmentIds.Contains(latestSegment.Id)
-                || proposal.SourceTranscriptSegmentIds.Any(id => !segmentIds.Contains(id)))
+                || proposal.SourceTranscriptSegmentIds.Any(
+                    id => !analysisWindowById.ContainsKey(id))
+                || !proposal.SourceTranscriptSegmentIds
+                    .Select(id => analysisWindowById[id])
+                    .Any(segment => segment.Text.Contains(
+                        proposal.Title.Trim(),
+                        StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
             }
@@ -953,10 +997,18 @@ public sealed class MeetingSessionCoordinator : IDisposable
     private static IReadOnlyList<RecommendedTaskState> ApplyRecommendationEvaluations(
         IReadOnlyList<RecommendedTaskState> current,
         IReadOnlyList<RecommendationEvaluation> evaluations,
+        IReadOnlyList<TranscriptSegment> analysisWindow,
         TranscriptSegment latestSegment,
+        IReadOnlyList<TranscriptSegment> finalTranscript,
         ICollection<string> warnings)
     {
         var knownIds = current.Select(item => item.Id).ToHashSet();
+        var acceptedById = current
+            .Where(item => item.Status == RecommendationStatus.Accepted)
+            .ToDictionary(item => item.Id);
+        var transcriptIndexById = finalTranscript
+            .Select((segment, index) => (segment.Id, Index: index))
+            .ToDictionary(item => item.Id, item => item.Index);
         foreach (var evaluation in evaluations)
         {
             if (evaluation is null)
@@ -982,53 +1034,70 @@ public sealed class MeetingSessionCoordinator : IDisposable
                     $"Rejected recommendation completion {evaluation.RecommendationId}: evaluation data was invalid.");
             }
             else if (evaluation.ShouldComplete
-                && !latestSegment.Text.Contains(
+                && ResolveEvidenceSegment(
+                    evaluation.SourceTranscriptSegmentId,
                     evaluation.EvidenceQuote,
-                    StringComparison.Ordinal))
+                    analysisWindow,
+                    latestSegment) is null)
             {
                 warnings.Add(
-                    $"Rejected recommendation completion {evaluation.RecommendationId}: agent evidence was not present in the latest transcript segment.");
+                    $"Rejected recommendation completion {evaluation.RecommendationId}: agent evidence was not present in its cited analysis-window segment.");
             }
         }
 
         var byItem = evaluations
-            .Where(evaluation => evaluation is not null
-                && knownIds.Contains(evaluation.RecommendationId)
-                && evaluation.ShouldComplete
-                && double.IsFinite(evaluation.Confidence)
-                && evaluation.Confidence is >= AutoCompletionThreshold and <= 1
-                && !string.IsNullOrWhiteSpace(evaluation.Reason)
-                && !string.IsNullOrWhiteSpace(evaluation.EvidenceQuote)
-                && latestSegment.Text.Contains(
-                    evaluation.EvidenceQuote,
-                    StringComparison.Ordinal))
-            .GroupBy(evaluation => evaluation.RecommendationId)
+            .Select(evaluation => (
+                Evaluation: evaluation,
+                EvidenceSegment: evaluation is null
+                    ? null
+                    : ResolveEvidenceSegment(
+                        evaluation.SourceTranscriptSegmentId,
+                        evaluation.EvidenceQuote,
+                        analysisWindow,
+                        latestSegment)))
+            .Where(candidate => candidate.Evaluation is not null
+                && acceptedById.TryGetValue(
+                    candidate.Evaluation.RecommendationId,
+                    out var recommendation)
+                && candidate.Evaluation.ShouldComplete
+                && double.IsFinite(candidate.Evaluation.Confidence)
+                && candidate.Evaluation.Confidence is >= AutoCompletionThreshold and <= 1
+                && !string.IsNullOrWhiteSpace(candidate.Evaluation.Reason)
+                && candidate.EvidenceSegment is not null
+                && recommendation.CompletionEligibleFromTranscriptIndex is { } eligibleFrom
+                && IsCompletionEvidenceEligible(
+                    eligibleFrom,
+                    candidate.EvidenceSegment.Id,
+                    transcriptIndexById)
+                && !recommendation.SourceTranscriptSegmentIds.Contains(
+                    candidate.EvidenceSegment.Id))
+            .GroupBy(candidate => candidate.Evaluation!.RecommendationId)
             .ToDictionary(
                 group => group.Key,
-                group => group.OrderByDescending(item => item.Confidence).First());
+                group => group
+                    .OrderByDescending(candidate => candidate.Evaluation!.Confidence)
+                    .First());
 
         return current.Select(item =>
         {
             if (item.Status != RecommendationStatus.Accepted
-                || !byItem.TryGetValue(item.Id, out var evaluation))
+                || !byItem.TryGetValue(item.Id, out var candidate))
             {
                 return item;
             }
 
-            if (item.AcceptedAtUtc is null
-                || latestSegment.OccurredAtUtc <= item.AcceptedAtUtc
-                || item.SourceTranscriptSegmentIds.Contains(latestSegment.Id))
+            var evaluation = candidate.Evaluation!;
+            var evidenceSegment = candidate.EvidenceSegment!;
+            if (item.AcceptedAtUtc is null)
             {
-                warnings.Add(
-                    $"Rejected completion for '{item.Title}': evidence did not occur after acceptance.");
                 return item;
             }
 
             var evidence = new ChecklistEvidence(
-                latestSegment.Id,
-                latestSegment.Speaker,
+                evidenceSegment.Id,
+                evidenceSegment.Speaker,
                 evaluation.EvidenceQuote,
-                latestSegment.OccurredAtUtc,
+                evidenceSegment.OccurredAtUtc,
                 Math.Clamp(evaluation.Confidence, 0, 1));
             return item with
             {
@@ -1038,6 +1107,33 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 Evidence = (item.Evidence ?? []).Append(evidence).TakeLast(5).ToArray()
             };
         }).ToArray();
+    }
+
+    private static TranscriptSegment? ResolveEvidenceSegment(
+        Guid? sourceTranscriptSegmentId,
+        string evidenceQuote,
+        IReadOnlyList<TranscriptSegment> analysisWindow,
+        TranscriptSegment latestSegment)
+    {
+        if (string.IsNullOrWhiteSpace(evidenceQuote))
+        {
+            return null;
+        }
+
+        var evidenceSegmentId = sourceTranscriptSegmentId ?? latestSegment.Id;
+        return analysisWindow.FirstOrDefault(segment =>
+            segment.Id == evidenceSegmentId
+            && segment.Text.Contains(evidenceQuote, StringComparison.Ordinal));
+    }
+
+    private static bool IsCompletionEvidenceEligible(
+        int? completionEligibleFromTranscriptIndex,
+        Guid evidenceSegmentId,
+        IReadOnlyDictionary<Guid, int> transcriptIndexById)
+    {
+        return completionEligibleFromTranscriptIndex is null
+            || transcriptIndexById.TryGetValue(evidenceSegmentId, out var evidenceIndex)
+            && evidenceIndex >= completionEligibleFromTranscriptIndex;
     }
 
     private static void ValidatePurpose(MeetingPurpose purpose)

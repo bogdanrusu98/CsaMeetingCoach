@@ -75,7 +75,8 @@ public sealed record ChecklistItemState(
     double? Confidence,
     string? CompletionReason,
     DateTimeOffset? CompletedAtUtc,
-    IReadOnlyList<ChecklistEvidence> Evidence);
+    IReadOnlyList<ChecklistEvidence> Evidence,
+    int? CompletionEligibleFromTranscriptIndex = null);
 
 public sealed record RecommendedTaskState(
     Guid Id,
@@ -88,7 +89,8 @@ public sealed record RecommendedTaskState(
     DateTimeOffset? AcceptedAtUtc = null,
     DateTimeOffset? CompletedAtUtc = null,
     string? CompletionReason = null,
-    IReadOnlyList<ChecklistEvidence>? Evidence = null);
+    IReadOnlyList<ChecklistEvidence>? Evidence = null,
+    int? CompletionEligibleFromTranscriptIndex = null);
 
 public sealed record ContextualCardState(
     Guid Id,
@@ -111,8 +113,11 @@ public sealed record MeetingSessionState(
     IReadOnlyList<RecommendedTaskState> RecommendedTasks,
     IReadOnlyList<string> Warnings,
     string? TeamsOnlineMeetingId = null,
-    bool IsAnalyzing = false)
+    bool IsAnalyzing = false,
+    int StateSchemaVersion = 0)
 {
+    public const int CurrentSchemaVersion = 2;
+
     public IReadOnlyList<ContextualCardState> ContextualCards { get; init; } = [];
 }
 
@@ -125,7 +130,8 @@ public sealed record ChecklistEvaluation(
     bool ShouldComplete,
     double Confidence,
     string Reason,
-    string EvidenceQuote);
+    string EvidenceQuote,
+    Guid? SourceTranscriptSegmentId = null);
 
 public sealed record RecommendedTaskProposal(
     string Title,
@@ -145,7 +151,8 @@ public sealed record RecommendationEvaluation(
     bool ShouldComplete,
     double Confidence,
     string Reason,
-    string EvidenceQuote);
+    string EvidenceQuote,
+    Guid? SourceTranscriptSegmentId = null);
 
 public sealed record CoachAgentContext(
     MeetingPurpose Purpose,
