@@ -200,8 +200,12 @@ public sealed class EvidenceBackedConversationCoachAgentTests
                 && card.Title == "Azure Load Balancer");
         Assert.Contains(
             decision.ContextualCards,
-            card => card.Kind == ContextualCardKind.Hint
-                && card.Title == "health probe");
+            card => card.Kind == ContextualCardKind.Definition
+                && card.Title == "health probe"
+                && card.Content.StartsWith(
+                    "A health probe",
+                    StringComparison.Ordinal)
+                && !card.Content.Contains('?'));
     }
 
     [Fact]
@@ -333,6 +337,121 @@ public sealed class EvidenceBackedConversationCoachAgentTests
         Assert.Equal([latest.Id], card.SourceTranscriptSegmentIds);
     }
 
+    [Theory]
+    [InlineData("Ask the customer how the health probe should be configured?")]
+    [InlineData("The CSA should confirm the client's health probe settings.")]
+    [InlineData("Can health probes detect backend availability")]
+    [InlineData("We should confirm the health probe settings.")]
+    [InlineData("The client should configure health probes.")]
+    [InlineData(
+        "Health probes control eligibility. How should the client configure them")]
+    [InlineData(
+        "Health probes control eligibility. Ask the client to confirm the settings.")]
+    [InlineData(
+        "Health probes control eligibility. Then how should the client configure them")]
+    [InlineData(
+        "Health probes control eligibility; then ask the client to confirm the settings.")]
+    [InlineData(
+        "Health probes control eligibility, then ask the client to confirm the settings.")]
+    [InlineData("Discuss the probe settings with the client.")]
+    [InlineData("Show the client the validation results.")]
+    public async Task Analyze_InstructionShapedCard_IsReplacedByClientReadyExplanation(
+        string content)
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "The health probe checks each backend instance.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var discoveryQuestion = new ContextualCardProposal(
+            ContextualCardKind.Hint,
+            "health probe",
+            content,
+            0.92,
+            [latest.Id]);
+        var primaryDecision = new CoachAgentDecision([], [], [])
+        {
+            ContextualCards = [discoveryQuestion]
+        };
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(primaryDecision),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [],
+                [latest]),
+            latest,
+            CancellationToken.None);
+
+        var card = Assert.Single(decision.ContextualCards);
+        Assert.Equal(ContextualCardKind.Definition, card.Kind);
+        Assert.Equal("health probe", card.Title);
+        Assert.StartsWith("A health probe", card.Content);
+        Assert.DoesNotContain('?', card.Content);
+        Assert.NotSame(discoveryQuestion, card);
+    }
+
+    [Fact]
+    public async Task Analyze_DeclarativeValidationExplanation_IsPreserved()
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "The health probe checks each backend instance.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var explanation = new ContextualCardProposal(
+            ContextualCardKind.Definition,
+            "health probe",
+            "Health probes validate backend availability before new traffic is sent.",
+            0.92,
+            [latest.Id]);
+        var primaryDecision = new CoachAgentDecision([], [], [])
+        {
+            ContextualCards = [explanation]
+        };
+        var agent = new EvidenceBackedConversationCoachAgent(
+            new StubAgent(primaryDecision),
+            new HeuristicConversationCoachAgent());
+
+        var decision = await agent.AnalyzeAsync(
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [],
+                [latest]),
+            latest,
+            CancellationToken.None);
+
+        Assert.Same(explanation, Assert.Single(decision.ContextualCards));
+    }
+
+    [Theory]
+    [InlineData(
+        "Can health probes detect backend availability",
+        "Health probes detect unhealthy backend instances.")]
+    [InlineData(
+        "health probe",
+        "Can health probes detect backend availability")]
+    public void ClientReadyExplanation_UnpunctuatedQuestion_IsRejected(
+        string title,
+        string content)
+    {
+        Assert.False(PresentationCoachingPolicy.IsClientReadyExplanation(
+            title,
+            content));
+    }
+
+    [Fact]
+    public void ClientReadyExplanation_HyphenatedTechnicalTerm_IsAccepted()
+    {
+        Assert.True(PresentationCoachingPolicy.IsClientReadyExplanation(
+            "What-If deployment analysis",
+            "Azure What-If previews resource changes before a deployment runs."));
+    }
+
     [Fact]
     public async Task Analyze_MidWordFragmentBoundary_DoesNotInventLoadBalancerTopic()
     {
@@ -436,7 +555,7 @@ public sealed class EvidenceBackedConversationCoachAgentTests
             CancellationToken.None);
 
         var card = Assert.Single(decision.ContextualCards);
-        Assert.Equal(ContextualCardKind.Hint, card.Kind);
+        Assert.Equal(ContextualCardKind.Definition, card.Kind);
         Assert.Equal("health probe", card.Title);
     }
 

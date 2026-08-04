@@ -81,13 +81,17 @@ public sealed class AzureOpenAiConversationCoachAgent(
                         client-supplied timestamps.
 
                         Return up to two contextualCards only when a term or topic explicitly present
-                        in analysisWindow merits a concise definition or meeting hint. During a
-                        presentation, demo, workshop, or training that introduces a concrete Microsoft
-                        technical term, return at least one useful card unless it already exists. If
-                        the definition was already explained, return a decision-oriented hint. Copy the title
-                        exactly from a cited window segment, cite its ID, and do not repeat
-                        existingContextualCards. Do not infer commercial, compliance, legal, or
-                        product-selection claims. Return JSON only:
+                        in analysisWindow merits a concise definition or explanatory hint. Cards are
+                        private presenter support, but their content must be a client-ready explanation
+                        that the CSA can state proactively. Never phrase a card as a question, an
+                        instruction to ask, clarify, confirm, explain, tell, validate, or verify
+                        something, any other presenter-directed action, or a task for the client. During a presentation, demo, workshop, or training that
+                        introduces a concrete Microsoft technical term, return at least one useful card
+                        unless it already exists. If the definition was already explained, return a
+                        declarative hint about a useful distinction, consequence, limitation, or
+                        validation implication. Copy the title exactly from a cited window segment, cite
+                        its ID, and do not repeat existingContextualCards. Do not infer commercial,
+                        compliance, legal, or product-selection claims. Return JSON only:
                         {
                           "checklistEvaluations": [{
                             "checklistItemId": "guid",

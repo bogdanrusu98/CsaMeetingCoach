@@ -23,8 +23,9 @@ stream to maintain an evidence-backed checklist and recommend live private talki
 - Recommends what the CSA should discuss, show, or ask next from explicit customer
   needs and meeting context. Accepted talking points auto-complete only from exact
   evidence ingested after acceptance and can be reopened.
-- Shows grounded definitions or concise meeting hints in dismissible lower-right
-  cards when the recent coherent discussion explicitly mentions the term or topic.
+- Shows proactive, client-ready term explanations or declarative meeting hints in
+  dismissible lower-right cards when the recent coherent discussion explicitly
+  mentions the term or topic.
 - Pushes session updates to the side panel with Server-Sent Events.
 - Protects each session with a scoped HttpOnly access cookie so another local
   caller cannot read or alter a transcript by guessing its session ID.
@@ -354,7 +355,10 @@ suppressed, and a later clean analysis removes resolved warning state.
 Each analysis may also return at most two contextual cards. Reviewed
 deterministic cards for recognized high-value presentation terms can appear in
 the fast lane before Foundry completes, while Foundry supplies broader
-context-sensitive definitions and hints. The card
+context-sensitive definitions and hints. Every card is declarative, client-ready
+language that the CSA can state proactively; discovery questions and instructions
+to ask, clarify, confirm, explain, tell, validate, verify, or perform another
+presenter-directed action are rejected. The card
 title must be an exact term or short topic phrase from a cited segment in the
 analysis window, and generated definitions use the reviewed File Search
 knowledge. The coordinator filters low-confidence, oversized, duplicate,

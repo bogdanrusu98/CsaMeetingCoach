@@ -125,7 +125,11 @@ public sealed class AzureFoundryAgentClientTests
             normalizedInstructions,
             StringComparison.Ordinal);
         Assert.Contains(
-            "plain-language definition or a concise meeting hint",
+            "client-ready explanation that the CSA can state proactively",
+            normalizedInstructions,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Never phrase a card as a question",
             normalizedInstructions,
             StringComparison.Ordinal);
     }

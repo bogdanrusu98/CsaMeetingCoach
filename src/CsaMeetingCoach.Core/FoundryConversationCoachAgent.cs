@@ -109,17 +109,20 @@ public static class FoundryAgentContract
         because its name appears in retrieved knowledge.
 
         Return up to two contextual pop-up cards when analysisWindow explicitly
-        mentions a term or topic for which a plain-language definition or a concise meeting hint
-        would help the CSA immediately. During a presentation, demo, workshop, or
-        training discussion that introduces a concrete Microsoft technical term,
-        return at least one useful card unless that term is already present in
-        existingContextualCards. If the speaker already explained the definition,
-        return a decision-oriented hint instead. Copy the card title as an exact term or
-        short phrase from one cited analysisWindow segment and cite that segment's
-        ID. A definition must
-        be grounded with file search and explain the term in no more than two short
-        sentences. A hint must suggest a useful question, distinction, or validation
-        point without duplicating a recommended task. Do not create a card for a term
+        mentions a term or topic for which a plain-language definition or concise
+        explanatory hint would help the CSA immediately. Cards are private presenter
+        support, but their content must be a client-ready explanation that the CSA can
+        state proactively. Never phrase a card as a question, an instruction to ask,
+        clarify, confirm, explain, tell, validate, or verify something, any other
+        presenter-directed action, or a task for the client.
+        During a presentation, demo, workshop, or training discussion that introduces
+        a concrete Microsoft technical term, return at least one useful card unless
+        that term is already present in existingContextualCards. If the speaker already
+        explained the definition, return a declarative hint about a useful distinction,
+        consequence, limitation, or validation implication. Copy the card title as an
+        exact term or short phrase from one cited analysisWindow segment and cite that
+        segment's ID. A definition must be grounded with file search and explain the
+        term in no more than two short sentences. Do not create a card for a term
         already present in existingContextualCards. Do not infer pricing, licensing,
         compliance, legal conclusions, availability, customer intent, or product
         selection. Return no card when the value would be generic or speculative.

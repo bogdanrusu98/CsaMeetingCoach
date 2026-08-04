@@ -97,6 +97,14 @@ public sealed class AzureOpenAiConversationCoachAgentTests
             "contextualCards",
             handler.RequestBody,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "client-ready explanation",
+            handler.RequestBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Never phrase a card as a question",
+            handler.RequestBody,
+            StringComparison.Ordinal);
     }
 
     private sealed class RecordingHandler(string responseJson) : HttpMessageHandler

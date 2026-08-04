@@ -165,7 +165,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 transcriptUpdate.Checklist,
                 finalTranscript,
                 transcriptUpdate.RecommendedTasks,
-                transcriptUpdate.ContextualCards);
+                FilterClientReadyCards(transcriptUpdate.ContextualCards));
             var deterministicDecision = await _deterministicAgent.AnalyzeAsync(
                 context, segment, cancellationToken);
             var fastLaneDecision = _aiAgent is null
@@ -398,7 +398,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
                     session.Checklist,
                     finalTranscript,
                     session.RecommendedTasks,
-                    session.ContextualCards);
+                    FilterClientReadyCards(session.ContextualCards));
             }
             finally
             {
@@ -955,10 +955,12 @@ public sealed class MeetingSessionCoordinator : IDisposable
         IReadOnlyList<TranscriptSegment> analysisWindow)
     {
         var analysisWindowById = analysisWindow.ToDictionary(segment => segment.Id);
-        var knownTitles = current
+        var result = FilterClientReadyCards(current)
+            .TakeLast(MaximumRetainedContextualCards)
+            .ToList();
+        var knownTitles = result
             .Select(card => HeuristicConversationCoachAgent.Normalize(card.Title))
             .ToHashSet(StringComparer.Ordinal);
-        var result = current.TakeLast(MaximumRetainedContextualCards).ToList();
         var acceptedCount = 0;
 
         foreach (var proposal in proposals)
@@ -974,6 +976,9 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 || proposal.Title.Trim().Length > 80
                 || string.IsNullOrWhiteSpace(proposal.Content)
                 || proposal.Content.Trim().Length > 320
+                || !PresentationCoachingPolicy.IsClientReadyExplanation(
+                    proposal.Title,
+                    proposal.Content)
                 || !double.IsFinite(proposal.Confidence)
                 || proposal.Confidence is < ContextualCardThreshold or > 1
                 || proposal.SourceTranscriptSegmentIds is not { Count: > 0 }
@@ -1005,6 +1010,16 @@ public sealed class MeetingSessionCoordinator : IDisposable
         }
 
         return result.TakeLast(MaximumRetainedContextualCards).ToArray();
+    }
+
+    private static IReadOnlyList<ContextualCardState> FilterClientReadyCards(
+        IReadOnlyList<ContextualCardState> cards)
+    {
+        return cards
+            .Where(card => PresentationCoachingPolicy.IsClientReadyExplanation(
+                card.Title,
+                card.Content))
+            .ToArray();
     }
 
     private static IReadOnlyList<string> NormalizeWarnings(IEnumerable<string> warnings)

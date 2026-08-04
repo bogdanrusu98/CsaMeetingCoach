@@ -1429,6 +1429,86 @@ public sealed class MeetingSessionCoordinatorTests
     }
 
     [Fact]
+    public async Task AddTranscript_InvalidRetainedCard_IsReplacedByExplanation()
+    {
+        var store = new InMemoryMeetingSessionStore();
+        using var coordinator = new MeetingSessionCoordinator(
+            store,
+            new MeetingChecklistPlanner(),
+            new HeuristicConversationCoachAgent(),
+            new HeuristicConversationCoachAgent(),
+            new NullSessionUpdatePublisher());
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        var invalidCard = new ContextualCardState(
+            Guid.NewGuid(),
+            ContextualCardKind.Hint,
+            "health probe",
+            "The CSA should confirm the client's health probe settings.",
+            0.92,
+            [],
+            DateTimeOffset.UtcNow.AddMinutes(-1));
+        await store.SaveAsync(
+            session with { ContextualCards = [invalidCard] },
+            CancellationToken.None);
+
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Presenter",
+                "The health probe checks each backend instance."),
+            CancellationToken.None);
+
+        var card = Assert.Single(updated.ContextualCards);
+        Assert.NotEqual(invalidCard.Id, card.Id);
+        Assert.Equal(ContextualCardKind.Definition, card.Kind);
+        Assert.StartsWith("A health probe", card.Content);
+    }
+
+    [Fact]
+    public async Task AddTranscript_InvalidRetainedCard_IsExcludedFromAiContext()
+    {
+        var store = new InMemoryMeetingSessionStore();
+        var publisher = new CapturingSessionUpdatePublisher();
+        var aiAgent = new CountingAgent();
+        using var coordinator = new MeetingSessionCoordinator(
+            store,
+            new MeetingChecklistPlanner(),
+            new HeuristicConversationCoachAgent(),
+            aiAgent,
+            publisher,
+            analysisOptions: new AnalysisOptions(TimeSpan.Zero, TimeSpan.FromSeconds(10)));
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        var invalidCard = new ContextualCardState(
+            Guid.NewGuid(),
+            ContextualCardKind.Hint,
+            "RTO",
+            "Then ask the client to confirm the RTO.",
+            0.92,
+            [],
+            DateTimeOffset.UtcNow.AddMinutes(-1));
+        await store.SaveAsync(
+            session with { ContextualCards = [invalidCard] },
+            CancellationToken.None);
+
+        await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Presenter",
+                "RTO is the target time for restoring a service."),
+            CancellationToken.None);
+        await publisher.WaitForAsync(
+            state => !state.IsAnalyzing && aiAgent.CallCount == 1,
+            TimeSpan.FromSeconds(10));
+
+        Assert.NotNull(aiAgent.LastContext);
+        Assert.Empty(aiAgent.LastContext.ContextualCards ?? []);
+    }
+
+    [Fact]
     public async Task AddTranscript_ContextualCardHistoryIsBounded()
     {
         using var coordinator = CreateCoordinator(new UniqueContextualCardAgent());
@@ -1553,7 +1633,7 @@ public sealed class MeetingSessionCoordinatorTests
                     new ContextualCardProposal(
                         ContextualCardKind.Hint,
                         latestSegment.Text,
-                        "Use this grounded topic to guide the next customer question.",
+                        "This grounded topic identifies the current customer discussion.",
                         0.9,
                         [latestSegment.Id])
                 ]
@@ -1818,7 +1898,7 @@ public sealed class MeetingSessionCoordinatorTests
                     new ContextualCardProposal(
                         ContextualCardKind.Hint,
                         latestSegment.Text,
-                        $"Ask one focused question about {latestSegment.Text}.",
+                        $"{latestSegment.Text} is relevant to the current client discussion.",
                         0.9,
                         [latestSegment.Id])
                 ]

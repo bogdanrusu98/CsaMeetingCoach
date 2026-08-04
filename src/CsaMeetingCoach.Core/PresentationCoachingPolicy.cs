@@ -5,6 +5,15 @@ namespace CsaMeetingCoach.Core;
 
 internal static partial class PresentationCoachingPolicy
 {
+    private const string InstructionActionPattern =
+        @"(?:ask|assess|check|choose|clarify|compare|configure|confirm|consider|create|define|demonstrate|deploy|describe|discuss|enable|ensure|evaluate|explain|focus\s+on|highlight|identify|keep\s+in\s+mind|look\s+at|mention|note|point\s+out|recommend|review|select|set|show|tell|think\s+about|understand|use|validate|verify|walk\s+through)";
+    private const string OptionalConnectivePrefixPattern =
+        @"(?:(?:(?:and|but|so|then|also|next|now|therefore|however)(?:,\s*|\s+))|(?:after\s+that(?:,\s*|\s+)))*";
+    private const string RequiredConnectivePrefixPattern =
+        @"(?:(?:(?:and|but|so|then|also|next|now|therefore|however)(?:,\s*|\s+))|(?:after\s+that(?:,\s*|\s+)))+";
+    private const string QuestionStarterPattern =
+        @"(?:who|what|when|where|why|how|which|can|could|should|would|will|do|does|did|is|are|was|were|has|have|had|question)";
+
     private static readonly HashSet<string> ComparisonStopWords =
     [
         "a",
@@ -136,6 +145,7 @@ internal static partial class PresentationCoachingPolicy
                 && card.Title.Trim().Length <= 80
                 && !string.IsNullOrWhiteSpace(card.Content)
                 && card.Content.Trim().Length <= 320
+                && IsClientReadyExplanation(card.Title, card.Content)
                 && double.IsFinite(card.Confidence)
                 && card.Confidence is >= 0.75 and <= 1
                 && card.SourceTranscriptSegmentIds is { Count: > 0 }
@@ -146,6 +156,7 @@ internal static partial class PresentationCoachingPolicy
                     analysisWindow))
             .ToArray();
         var knownTitles = (context.ContextualCards ?? [])
+            .Where(card => IsClientReadyExplanation(card.Title, card.Content))
             .Select(card => HeuristicConversationCoachAgent.Normalize(card.Title))
             .ToHashSet(StringComparer.Ordinal);
         var result = new List<ContextualCardProposal>();
@@ -177,8 +188,8 @@ internal static partial class PresentationCoachingPolicy
             result,
             knownTitles,
             FindMention(analysisWindow, "health probes", "health probe"),
-            ContextualCardKind.Hint,
-            "Ask how the probe protocol, port, interval, and failure threshold represent real application health, because probe results control which backends receive new flows.");
+            ContextualCardKind.Definition,
+            "A health probe periodically checks whether a backend can accept new traffic. Failed probes remove that instance from new load-balanced flows until it becomes healthy again.");
 
         return result.Take(2).ToArray();
     }
@@ -236,6 +247,72 @@ internal static partial class PresentationCoachingPolicy
         var shared = leftTerms.Count(rightTerms.Contains);
         return shared >= 2
             && shared / (double)Math.Min(leftTerms.Count, rightTerms.Count) >= 0.75;
+    }
+
+    internal static bool IsClientReadyExplanation(string title, string content)
+    {
+        return !IsQuestionShaped(title)
+            && !IsQuestionShaped(content)
+            && !IsInstructionShaped(title)
+            && !IsInstructionShaped(content);
+    }
+
+    private static bool IsQuestionShaped(string value)
+    {
+        return value.Contains('?')
+            || SplitClauses(value).Any(clause => Regex.IsMatch(
+                clause,
+                $@"^{OptionalConnectivePrefixPattern}{QuestionStarterPattern}(?:\s|$)",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant));
+    }
+
+    private static bool IsInstructionShaped(string value)
+    {
+        return SplitClauses(value).Any(IsInstructionClause);
+    }
+
+    private static bool IsInstructionClause(string clause)
+    {
+        const string humanSubject =
+            @"(?:we|you|i|(?:(?:the|our|your|a)\s+)?(?:csa|presenter|client|clients|customer|customers|audience|user|users|team|teams|organization|organizations|organisation|organisations))";
+        const string taskModal =
+            @"(?:should|must|can|could|need(?:s)?\s+to|ought\s+to|have\s+to|has\s+to|(?:is|are)\s+required\s+to)";
+        if (Regex.IsMatch(
+                clause,
+                $@"^{OptionalConnectivePrefixPattern}(?:please\s+)?{InstructionActionPattern}\b",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        {
+            return true;
+        }
+
+        return Regex.IsMatch(
+                clause,
+                $@"\b{humanSubject}\s+{taskModal}\s+[\p{{L}}][\p{{L}}\p{{N}}-]*\b",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
+            || Regex.IsMatch(
+                clause,
+                $@"^{OptionalConnectivePrefixPattern}(?:remember|try|be\s+sure|make\s+sure)\s+to\s+{InstructionActionPattern}\b",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
+            || Regex.IsMatch(
+                clause,
+                $@"^{OptionalConnectivePrefixPattern}(?:it\s+is|it's)\s+(?:important|useful|helpful|recommended|best)\s+to\s+{InstructionActionPattern}\b",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
+            || Regex.IsMatch(
+                clause,
+                $@"\b(?:next\s+step|action|recommendation)\s+is\s+to\s+{InstructionActionPattern}\b",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    private static IEnumerable<string> SplitClauses(string value)
+    {
+        var boundaries =
+            $@"[.!;:\r\n]+|,\s*(?=(?:{QuestionStarterPattern}(?:\s|$)|{RequiredConnectivePrefixPattern}(?:{QuestionStarterPattern}(?:\s|$)|{InstructionActionPattern}\b)))|\s+(?={RequiredConnectivePrefixPattern}(?:{QuestionStarterPattern}(?:\s|$)|{InstructionActionPattern}\b))";
+        return Regex.Split(
+                value,
+                boundaries,
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
+            .Where(clause => !string.IsNullOrWhiteSpace(clause))
+            .Select(clause => clause.Trim());
     }
 
     private static HashSet<string> SignificantTerms(string value) =>
