@@ -13,7 +13,7 @@
       document.documentElement.setAttribute("data-theme", theme);
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=20260804a">
+  <link rel="stylesheet" href="styles.css?v=20260804b">
 </head>
 <body>
   <main class="app-shell">
@@ -181,6 +181,20 @@ Define owners and next steps</textarea>
     </div>
 
     <details class="diagnostic-section">
+      <summary>Speech pipeline</summary>
+      <div class="diagnostic-content">
+        <p id="speech-diagnostics" class="speech-diagnostics" aria-live="polite">
+          Interim: 0 · Final: 0 · Queued: 0 · Published: 0 · Publish failures: 0.
+          Last stage: Waiting for microphone activity. (not yet)
+        </p>
+        <p class="field-hint">
+          Interim text is preview-only. Only final Azure Speech results are sent
+          to the coach and allowed to become transcript evidence.
+        </p>
+      </div>
+    </details>
+
+    <details class="diagnostic-section">
       <summary>Transcript simulator</summary>
       <form id="transcript-form" class="diagnostic-content">
         <label>
@@ -225,6 +239,6 @@ Define owners and next steps</textarea>
   <div id="toast" role="status" aria-live="polite" class="toast hidden"></div>
   <script src="https://res.cdn.office.net/teams-js/2.31.0/js/MicrosoftTeams.min.js"></script>
   <script src="vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0"></script>
-  <script src="app.js?v=20260804a"></script>
+  <script src="app.js?v=20260804b"></script>
 </body>
 </html>

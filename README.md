@@ -72,6 +72,12 @@ the existing session API. It does not persist or upload raw audio to the Coach
 API, does not start automatically, and stops when the user ends the session or
 selects **Stop listening**.
 
+Continuous recognition uses Azure Speech's `Time` segmentation strategy, with a
+1.2-second silence boundary and a 20-second maximum phrase length. This ensures
+that uninterrupted presentation audio still produces final recognition events.
+Diagnostics exposes separate interim, final, queued, published, and failed
+publish counts; interim text remains preview-only and can never become evidence.
+
 To include what the user hears, select **Include meeting audio played by this
 device** before starting. Edge or Chrome then opens its standard display-capture
 picker. For Teams in a browser, select the Teams tab and enable tab audio. For the

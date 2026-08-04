@@ -945,6 +945,16 @@ html[data-theme="contrast"] .compact-item.completed .item-indicator {
   padding: 0 16px 16px;
 }
 
+.speech-diagnostics {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--cp-border);
+  border-radius: .625rem;
+  color: var(--cp-text-soft);
+  background: var(--cp-surface-soft);
+  font: 600 12px/1.6 var(--cp-font);
+}
+
 .transcript {
   max-height: 300px;
   overflow: auto;

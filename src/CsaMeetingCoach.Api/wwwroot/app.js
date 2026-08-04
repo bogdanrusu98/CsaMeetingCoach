@@ -16,6 +16,15 @@ const state = {
   speechPublishQueue: Promise.resolve(),
   speechPublishAbortController: null,
   seenRecognitionIds: new Set(),
+  speechDiagnostics: {
+    interim: 0,
+    final: 0,
+    queued: 0,
+    published: 0,
+    publishFailures: 0,
+    lastStage: "Waiting for microphone activity.",
+    lastEventAt: null
+  },
   contextualCardTimers: new Map(),
   dismissedContextualCardIds: new Set(),
   systemAudioCaptureAvailable: Boolean(
@@ -45,6 +54,7 @@ const elements = {
   acceptedRecommendations: document.querySelector("#accepted-recommendations"),
   transcript: document.querySelector("#transcript"),
   contextualCardHistory: document.querySelector("#contextual-card-history"),
+  speechDiagnostics: document.querySelector("#speech-diagnostics"),
   warningsPanel: document.querySelector("#warnings-panel"),
   warnings: document.querySelector("#warnings"),
   connectionStatus: document.querySelector("#connection-status"),
@@ -572,6 +582,7 @@ async function startMicrophone() {
   }
 
   state.microphoneBusy = true;
+  resetSpeechDiagnostics();
   renderMicrophoneControls();
   const startupAbortController = new AbortController();
   const speechPublishAbortController = new AbortController();
@@ -602,6 +613,9 @@ async function startMicrophone() {
       window.SpeechSDK.PropertyId.Speech_SegmentationSilenceTimeoutMs,
       "1200");
     speechConfig.setProperty(
+      window.SpeechSDK.PropertyId.Speech_SegmentationStrategy,
+      "Time");
+    speechConfig.setProperty(
       window.SpeechSDK.PropertyId.Speech_SegmentationMaximumTimeMs,
       "20000");
     speechConfig.setProperty(
@@ -615,11 +629,13 @@ async function startMicrophone() {
     recognizer.recognizing = (_, event) => {
       const text = event.result?.text?.trim();
       if (text) {
+        recordSpeechDiagnostic("Interim speech received.", "interim");
         elements.microphonePreview.textContent = text;
       }
     };
     recognizer.recognized = (_, event) => {
       if (event.result?.reason === window.SpeechSDK.ResultReason.NoMatch) {
+        recordSpeechDiagnostic("Azure Speech returned no final phrase.");
         elements.microphonePreview.textContent =
           "No final phrase was recognized. Pause briefly, then try again.";
         return;
@@ -630,25 +646,37 @@ async function startMicrophone() {
 
       const text = event.result.text?.trim();
       const recognitionId = event.result.resultId;
-      if (!text || (recognitionId && state.seenRecognitionIds.has(recognitionId))) {
+      if (!text) {
+        return;
+      }
+      recordSpeechDiagnostic("Final speech received.", "final");
+      if (recognitionId && state.seenRecognitionIds.has(recognitionId)) {
+        recordSpeechDiagnostic("Duplicate final speech ignored.");
         return;
       }
       if (recognitionId) {
         state.seenRecognitionIds.add(recognitionId);
       }
 
-      elements.microphonePreview.textContent = text;
+      elements.microphonePreview.textContent =
+        "Final phrase received; sending it to the coach.";
       enqueueSpeechSegment(
         text,
         capture
           ? "Meeting audio (microphone + system)"
           : "Presenter microphone");
     };
+    recognizer.sessionStarted = () => {
+      if (state.microphoneRecognizer === recognizer) {
+        recordSpeechDiagnostic("Azure Speech session active.");
+      }
+    };
     recognizer.canceled = (_, event) => {
       if (state.microphoneRecognizer !== recognizer) {
         return;
       }
 
+      recordSpeechDiagnostic("Azure Speech recognition canceled.");
       const detail = event.errorDetails?.trim();
       showToast(detail
         ? `Microphone recognition stopped: ${detail}`
@@ -656,6 +684,7 @@ async function startMicrophone() {
       void queueMicrophoneOperation(stopMicrophone);
     };
     recognizer.sessionStopped = () => {
+      recordSpeechDiagnostic("Azure Speech session stopped.");
       if (state.microphoneRecognizer === recognizer && !state.microphoneBusy) {
         void queueMicrophoneOperation(stopMicrophone);
       }
@@ -692,6 +721,8 @@ async function startMicrophone() {
     recognizer?.close();
     audioConfig?.close();
     await closeMixedMeetingAudioCapture(capture);
+    state.seenRecognitionIds.clear();
+    recordSpeechDiagnostic("Microphone start failed.");
     if (capture?.ended) {
       throw new Error("Shared meeting audio stopped before recognition started.");
     }
@@ -731,6 +762,7 @@ async function stopMicrophone() {
     audioConfig?.close();
     await closeMixedMeetingAudioCapture(capture);
     await drainSpeechPublishQueue(speechPublishAbortController);
+    recordSpeechDiagnostic("Speech publishing stopped.");
   } finally {
     speechPublishAbortController?.abort();
     if (state.speechPublishAbortController === speechPublishAbortController) {
@@ -819,6 +851,7 @@ function scheduleSpeechTokenRefresh(token, recognizer) {
 function enqueueSpeechSegment(text, speaker = state.microphoneSourceLabel) {
   const abortController = state.speechPublishAbortController;
   if (!abortController || abortController.signal.aborted) {
+    recordSpeechDiagnostic("Final speech could not be queued because publishing is stopped.");
     return;
   }
   const segment = {
@@ -828,6 +861,7 @@ function enqueueSpeechSegment(text, speaker = state.microphoneSourceLabel) {
     isFinal: true,
     sourceSegmentId: window.crypto.randomUUID()
   };
+  recordSpeechDiagnostic("Final speech queued for the Coach API.", "queued");
 
   state.speechPublishQueue = state.speechPublishQueue
     .then(async () => {
@@ -840,12 +874,54 @@ function enqueueSpeechSegment(text, speaker = state.microphoneSourceLabel) {
         state.session = updated;
         render();
       }
+      recordSpeechDiagnostic("Coach API publish succeeded.", "published");
+      elements.microphonePreview.textContent =
+        "Final phrase sent. Live coaching is updating.";
     })
     .catch(error => {
       if (!abortController.signal.aborted) {
+        recordSpeechDiagnostic("Coach API publish failed.", "publishFailures");
         showToast(`A recognized segment could not be processed: ${error.message}`);
       }
     });
+}
+
+function resetSpeechDiagnostics() {
+  state.speechDiagnostics = {
+    interim: 0,
+    final: 0,
+    queued: 0,
+    published: 0,
+    publishFailures: 0,
+    lastStage: "Waiting for speech events.",
+    lastEventAt: null
+  };
+  renderSpeechDiagnostics();
+}
+
+function recordSpeechDiagnostic(stage, counter) {
+  if (counter && Object.hasOwn(state.speechDiagnostics, counter)) {
+    state.speechDiagnostics[counter] += 1;
+  }
+  state.speechDiagnostics.lastStage = stage;
+  state.speechDiagnostics.lastEventAt = new Date();
+  renderSpeechDiagnostics();
+}
+
+function renderSpeechDiagnostics() {
+  const diagnostics = state.speechDiagnostics;
+  const time = diagnostics.lastEventAt
+    ? diagnostics.lastEventAt.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      })
+    : "not yet";
+  elements.speechDiagnostics.textContent =
+    `Interim: ${diagnostics.interim} · Final: ${diagnostics.final} · `
+    + `Queued: ${diagnostics.queued} · Published: ${diagnostics.published} · `
+    + `Publish failures: ${diagnostics.publishFailures}. `
+    + `Last stage: ${diagnostics.lastStage} (${time})`;
 }
 
 async function drainSpeechPublishQueue(abortController) {
