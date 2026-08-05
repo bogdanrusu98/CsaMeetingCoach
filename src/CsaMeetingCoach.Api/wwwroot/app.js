@@ -456,10 +456,11 @@ function renderContextualCards(cards) {
     const kind = String(card.kind).toLowerCase() === "definition"
       ? "definition"
       : "hint";
-    const kindLabel = kind === "definition" ? "Definition" : "Meeting hint";
+    const kindLabel = kind === "definition" ? "📖 Definition" : "💡 Hint";
     const cardElement = document.createElement("article");
     cardElement.className = `contextual-card ${kind}`;
     cardElement.dataset.contextualCardId = card.id;
+    cardElement.dataset.kind = kind;
     cardElement.innerHTML = `
       <div class="contextual-card-heading">
         <span class="contextual-card-kind">${kindLabel}</span>
@@ -543,8 +544,8 @@ function renderContextualCardHistory(cards) {
     .reverse()
     .map(card => {
       const kindLabel = String(card.kind).toLowerCase() === "definition"
-        ? "Definition"
-        : "Meeting hint";
+        ? "📖 Definition"
+        : "💡 Hint";
       return `
         <div class="contextual-card-history-entry">
           <span class="contextual-card-kind">${kindLabel}</span>
@@ -559,7 +560,11 @@ function resetContextualCards() {
   state.contextualCardTimers.forEach(timer => window.clearTimeout(timer));
   state.contextualCardTimers.clear();
   state.dismissedContextualCardIds.clear();
+  const label = elements.contextualCards.querySelector(".contextual-card-stack-label");
   elements.contextualCards.replaceChildren();
+  if (label) {
+    elements.contextualCards.append(label);
+  }
 }
 
 async function startMicrophone() {

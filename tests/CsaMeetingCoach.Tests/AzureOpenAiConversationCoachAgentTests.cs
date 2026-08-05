@@ -102,7 +102,11 @@ public sealed class AzureOpenAiConversationCoachAgentTests
             handler.RequestBody,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Never phrase a card as a question",
+            "Never phrase a card as a",
+            handler.RequestBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "question",
             handler.RequestBody,
             StringComparison.Ordinal);
     }

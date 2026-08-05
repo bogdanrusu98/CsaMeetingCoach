@@ -23,9 +23,8 @@ stream to maintain an evidence-backed checklist and recommend live private talki
 - Recommends what the CSA should discuss, show, or ask next from explicit customer
   needs and meeting context. Accepted talking points auto-complete only from exact
   evidence ingested after acceptance and can be reopened.
-- Shows proactive, client-ready term explanations or declarative meeting hints in
-  dismissible lower-right cards when the recent coherent discussion explicitly
-  mentions the term or topic.
+- Shows only client-facing educational alerts in dismissible lower-right cards:
+  transcript-grounded **Definition** cards and follow-on **Hint** cards.
 - Pushes session updates to the side panel with Server-Sent Events.
 - Protects each session with a scoped HttpOnly access cookie so another local
   caller cannot read or alter a transcript by guessing its session ID.
@@ -253,6 +252,60 @@ toast. Each card can be dismissed and closes automatically after 25 seconds;
 dismissed cards do not replay on later SSE updates. Hovering or moving keyboard
 focus into a card pauses its timer, and the latest retained cards remain
 available in Diagnostics after the popup closes.
+
+## Educational Alert System
+
+Client alerts are limited to two card types:
+
+- **Definition** — explains an explicitly transcript-grounded technology term.
+- **Hint** — adds a concrete mechanism, example, prerequisite, distinction,
+  consequence, or limitation for that grounded term.
+
+Client alerts never contain CSA recommendations, sales guidance, presenter
+coaching, questions for the client, next-best actions, or recommended tasks.
+Recommended tasks remain in the separate CSA panel.
+
+The educational catalog now contains 100+ concepts across these categories:
+
+- FoundationalCloud
+- ManagementGovernance
+- IdentitySecurity
+- Networking
+- ComputeContainersAppPlatforms
+- StorageDatabases
+- DataAiIntegration
+- MonitoringReliability
+- MigrationDevOpsFinOps
+
+### Alert rejection reasons
+
+Diagnostics use structured rejection reasons:
+
+- `UnknownKind`
+- `SalesOrRecommendationContent`
+- `MissingEvidence`
+- `ContentFingerprint`
+- `CooldownActive`
+- `VendorMismatch`
+- `NegatedMention`
+- `MentionNotFound`
+- `InsufficientRanking`
+
+### Definition → Hint lifecycle
+
+- A definition is shown at most once per concept per session.
+- A hint can appear only after a definition cooldown (3 minutes).
+- Hint repeats are blocked for 15 minutes.
+- Identical alert wording is deduplicated with a normalized SHA-256 content
+  fingerprint.
+- Pacing allows at most one new educational alert per final transcript segment.
+
+### Privacy and diagnostics
+
+- Only final transcript evidence can ground an alert.
+- Consent behavior and no-raw-audio persistence are unchanged.
+- Diagnostics log structured alert decisions without logging transcript text,
+  evidence quotes, or speaker names.
 
 ## Architecture
 

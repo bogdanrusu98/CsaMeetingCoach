@@ -61,6 +61,11 @@ public sealed class JsonMeetingSessionStore(string dataDirectory) : IMeetingSess
                     IsAnalyzing = false,
                     StateSchemaVersion = MeetingSessionState.CurrentSchemaVersion,
                     ContextualCards = session.ContextualCards ?? [],
+                    ShownDefinitionKeys = session.ShownDefinitionKeys ?? new(StringComparer.Ordinal),
+                    ShownHintKeys = session.ShownHintKeys ?? new(StringComparer.Ordinal),
+                    DefinitionCooldowns = session.DefinitionCooldowns ?? new(StringComparer.Ordinal),
+                    HintCooldowns = session.HintCooldowns ?? new(StringComparer.Ordinal),
+                    ContentFingerprints = session.ContentFingerprints ?? new(StringComparer.Ordinal),
                     Checklist = session.Checklist
                         .Select(item => item with
                         {

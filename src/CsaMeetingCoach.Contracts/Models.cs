@@ -26,6 +26,26 @@ public enum ContextualCardKind
     Hint
 }
 
+public enum AlertRejectionReason
+{
+    None,
+    UnknownKind,
+    SalesOrRecommendationContent,
+    MissingEvidence,
+    ContentFingerprint,
+    CooldownActive,
+    VendorMismatch,
+    NegatedMention,
+    MentionNotFound,
+    InsufficientRanking
+}
+
+public readonly record struct AlertDiagnostic(
+    ContextualCardKind Kind,
+    string ConceptKey,
+    AlertRejectionReason Reason,
+    string Details);
+
 public sealed record MeetingPurpose(
     string Title,
     string MeetingType,
@@ -99,7 +119,10 @@ public sealed record ContextualCardState(
     string Content,
     double Confidence,
     IReadOnlyList<Guid> SourceTranscriptSegmentIds,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc)
+{
+    public string? ConceptKey { get; init; }
+}
 
 public sealed record MeetingSessionState(
     Guid Id,
@@ -116,9 +139,20 @@ public sealed record MeetingSessionState(
     bool IsAnalyzing = false,
     int StateSchemaVersion = 0)
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     public IReadOnlyList<ContextualCardState> ContextualCards { get; init; } = [];
+    public HashSet<string> ShownDefinitionKeys { get; init; } =
+        new(StringComparer.Ordinal);
+    public HashSet<string> ShownHintKeys { get; init; } =
+        new(StringComparer.Ordinal);
+    public Dictionary<string, DateTimeOffset> DefinitionCooldowns { get; init; } =
+        new(StringComparer.Ordinal);
+    public Dictionary<string, DateTimeOffset> HintCooldowns { get; init; } =
+        new(StringComparer.Ordinal);
+    public HashSet<string> ContentFingerprints { get; init; } =
+        new(StringComparer.Ordinal);
+    public int? LastEducationalCardSegmentIndex { get; init; }
 }
 
 public sealed record AdapterTranscriptSegmentRequest(
@@ -144,7 +178,10 @@ public sealed record ContextualCardProposal(
     string Title,
     string Content,
     double Confidence,
-    IReadOnlyList<Guid> SourceTranscriptSegmentIds);
+    IReadOnlyList<Guid> SourceTranscriptSegmentIds)
+{
+    public string? ConceptKey { get; init; }
+}
 
 public sealed record RecommendationEvaluation(
     Guid RecommendationId,

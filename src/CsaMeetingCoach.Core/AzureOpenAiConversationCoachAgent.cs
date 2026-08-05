@@ -80,21 +80,30 @@ public sealed class AzureOpenAiConversationCoachAgent(
                         completionEligibleFromTranscriptIndex; never use its source segment or compare
                         client-supplied timestamps.
 
-                        Return up to two contextualCards only when a term or topic explicitly present
-                        in analysisWindow merits a concise definition or explanatory hint. Cards are
-                        private presenter support, but their content must be a client-ready explanation
-                        that the CSA can state proactively. Never phrase a card as a question, an
-                        instruction to ask, clarify, confirm, explain, tell, validate, or verify
-                        something, any other presenter-directed action, or a task for the client. During a presentation, demo, workshop, or training that
-                        introduces a concrete Microsoft technical term, return at least one useful card
-                        unless it already exists. If the definition was already explained, return a
-                        declarative hint about a useful distinction, consequence, limitation, or
-                        validation implication. Foundational cloud and Azure concepts such as service
-                        models, shared responsibility, regions, availability zones, management scopes,
+                        Return contextualCards only as Definition or Hint cards. A Definition explains
+                        a technology term explicitly grounded in analysisWindow so the client can follow
+                        the discussion. A Hint adds a concrete mechanism, example, prerequisite,
+                        distinction, consequence, or limitation for that same kind of grounded term.
+                        Every contextual card must remain a client-ready explanation. Cards are
+                        private presenter support, but their content must be a client-ready
+                        explanation that the CSA can say to the client. Never phrase a card as a
+                        question. Never produce recommendations,
+                        action items, sales guidance, presenter coaching, next-best actions, or
+                        questions for the client inside contextualCards. Never phrase a card as a
+                        question or an instruction to ask, clarify, confirm, explain, tell, validate,
+                        or verify something. AI retrieved knowledge alone is never sufficient;
+                        transcript grounding in analysisWindow is mandatory. During a presentation,
+                        demo, workshop, or training that introduces a concrete Microsoft technical
+                        term, return at least one useful card unless it already exists. If the
+                        definition was already explained, return a declarative hint about a useful
+                        distinction, consequence, limitation, prerequisite, mechanism, or validation
+                        implication. Foundational cloud and Azure concepts such as service models,
+                        shared responsibility, regions, availability zones, management scopes,
                         identity, and authorization merit cards when their explanation would help a
-                        client follow the presentation. Copy the title exactly from a cited window segment, cite
-                        its ID, and do not repeat existingContextualCards. Do not infer commercial,
-                        compliance, legal, or product-selection claims. Return JSON only:
+                        client follow the presentation. Copy the title exactly from a cited window
+                        segment, cite its ID, and do not repeat existingContextualCards. Do not infer
+                        commercial, compliance, legal, pricing, or product-selection claims. Return
+                        JSON only:
                         {
                           "checklistEvaluations": [{
                             "checklistItemId": "guid",
@@ -119,7 +128,7 @@ public sealed class AzureOpenAiConversationCoachAgent(
                             "sourceTranscriptSegmentId": "guid"
                           }],
                           "contextualCards": [{
-                             "kind": "definition|hint",
+                             "kind": "definition|hint only",
                              "title": "exact term or phrase",
                              "content": "concise grounded explanation",
                              "confidence": 0.0,
@@ -174,6 +183,12 @@ public sealed class AzureOpenAiConversationCoachAgent(
         var decision = JsonSerializer.Deserialize<CoachAgentDecision>(content, JsonOptions)
             ?? throw new InvalidOperationException("Azure OpenAI returned an invalid coaching decision.");
 
+        ValidateDecision(decision);
+        return decision;
+    }
+
+    private static void ValidateDecision(CoachAgentDecision decision)
+    {
         if (decision.ChecklistEvaluations is null
             || decision.RecommendedTasks is null
             || decision.RecommendationEvaluations is null
@@ -183,6 +198,11 @@ public sealed class AzureOpenAiConversationCoachAgent(
                 "Azure OpenAI returned a coaching decision with missing collections.");
         }
 
-        return decision;
+        if (decision.ContextualCards.Any(card => !Enum.IsDefined(card.Kind)
+            || card.Kind is not ContextualCardKind.Definition and not ContextualCardKind.Hint))
+        {
+            throw new InvalidOperationException(
+                "Azure OpenAI returned a contextual card with an unsupported kind.");
+        }
     }
 }

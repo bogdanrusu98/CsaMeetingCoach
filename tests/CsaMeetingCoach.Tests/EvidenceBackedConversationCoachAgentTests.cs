@@ -241,7 +241,7 @@ public sealed class EvidenceBackedConversationCoachAgentTests
         "Azure subscription")]
     [InlineData(
         "An Azure resource group holds related resources.",
-        "resource group")]
+        "Azure resource group")]
     [InlineData(
         "Microsoft Entra ID handles cloud identities.",
         "Microsoft Entra ID")]
@@ -267,7 +267,8 @@ public sealed class EvidenceBackedConversationCoachAgentTests
             latest,
             CancellationToken.None);
 
-        var card = Assert.Single(decision.ContextualCards);
+        var card = Assert.Single(decision.ContextualCards.Where(
+            candidate => candidate.Title == expectedTitle));
         Assert.Equal(ContextualCardKind.Definition, card.Kind);
         Assert.Equal(expectedTitle, card.Title);
         Assert.Equal([latest.Id], card.SourceTranscriptSegmentIds);
@@ -436,7 +437,7 @@ public sealed class EvidenceBackedConversationCoachAgentTests
             CancellationToken.None);
 
         var card = Assert.Single(decision.ContextualCards);
-        Assert.Equal("resource group", card.Title);
+        Assert.Equal("Azure resource group", card.Title);
         Assert.Single(decision.RecommendedTasks);
     }
 
@@ -653,9 +654,9 @@ public sealed class EvidenceBackedConversationCoachAgentTests
             latest,
             CancellationToken.None);
 
-        Assert.Equal(
-            "Availability Zones",
-            Assert.Single(decision.ContextualCards).Title);
+        Assert.Contains(
+            decision.ContextualCards,
+            card => card.Title == "Availability Zones");
         Assert.Single(decision.RecommendedTasks);
     }
 
@@ -684,9 +685,9 @@ public sealed class EvidenceBackedConversationCoachAgentTests
             transcript[^1],
             CancellationToken.None);
 
-        Assert.Equal(
-            "Availability Zones",
-            Assert.Single(decision.ContextualCards).Title);
+        Assert.Contains(
+            decision.ContextualCards,
+            card => card.Title == "Availability Zones");
         Assert.Single(decision.RecommendedTasks);
     }
 
@@ -708,10 +709,8 @@ public sealed class EvidenceBackedConversationCoachAgentTests
             latest,
             CancellationToken.None);
 
-        Assert.Equal(
-            "Availability Zones",
-            Assert.Single(decision.ContextualCards).Title);
-        Assert.Single(decision.RecommendedTasks);
+        Assert.Empty(decision.ContextualCards);
+        Assert.Empty(decision.RecommendedTasks);
     }
 
     [Fact]
@@ -765,9 +764,9 @@ public sealed class EvidenceBackedConversationCoachAgentTests
             latest,
             CancellationToken.None);
 
-        Assert.Equal(
-            "Availability Zones",
-            Assert.Single(decision.ContextualCards).Title);
+        Assert.Contains(
+            decision.ContextualCards,
+            card => card.Title == "Availability Zones");
         Assert.Single(decision.RecommendedTasks);
     }
 

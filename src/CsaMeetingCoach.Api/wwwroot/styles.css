@@ -1007,6 +1007,18 @@ html[data-theme="contrast"] .compact-item.completed .item-indicator {
   pointer-events: none;
 }
 
+.contextual-card-stack-label {
+  justify-self: end;
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: var(--cp-text-soft);
+  background: color-mix(in srgb, var(--cp-panel) 86%, transparent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
 .contextual-card {
   display: grid;
   gap: 7px;
@@ -1021,7 +1033,12 @@ html[data-theme="contrast"] .compact-item.completed .item-indicator {
   animation: contextual-card-in 180ms ease-out both;
 }
 
-.contextual-card.hint {
+.contextual-card[data-kind="definition"] {
+  border-left-color: var(--cp-link);
+}
+
+.contextual-card.hint,
+.contextual-card[data-kind="hint"] {
   border-left-color: var(--cp-accent);
 }
 
@@ -1044,7 +1061,8 @@ html[data-theme="contrast"] .compact-item.completed .item-indicator {
   text-transform: uppercase;
 }
 
-.contextual-card.hint .contextual-card-kind {
+.contextual-card.hint .contextual-card-kind,
+.contextual-card[data-kind="hint"] .contextual-card-kind {
   color: var(--cp-accent);
 }
 

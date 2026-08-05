@@ -121,85 +121,6 @@ internal static partial class PresentationCoachingPolicy
         ["entra id", "azure active directory", "azure ad"]
     ];
 
-    private static readonly PresentationCardDefinition[] PresentationCardCatalog =
-    [
-        new(
-            ["Azure Load Balancer", "load balancer"],
-            ContextualCardKind.Definition,
-            "A Layer 4 Azure service that distributes TCP or UDP flows across healthy backend instances by using frontend IP configurations, load-balancing rules, and health probes.",
-            RequiresAzureContext: true),
-        new(
-            ["health probes", "health probe"],
-            ContextualCardKind.Definition,
-            "A health probe periodically checks whether a backend can accept new traffic. Failed probes remove that instance from new load-balanced flows until it becomes healthy again."),
-        new(
-            ["cloud computing"],
-            ContextualCardKind.Definition,
-            "Cloud computing delivers services such as compute, storage, networking, databases, and software over the internet with capacity that can scale on demand."),
-        new(
-            ["shared responsibility model", "shared responsibility"],
-            ContextualCardKind.Definition,
-            "The shared responsibility model divides security and operational duties between the cloud provider and customer. Data, identities, and access remain customer responsibilities across cloud service models."),
-        new(
-            ["Infrastructure as a Service", "IaaS"],
-            ContextualCardKind.Definition,
-            "Infrastructure as a Service provides virtualized compute, storage, and networking. The provider operates the physical infrastructure while the customer manages the operating system, configuration, applications, and data."),
-        new(
-            ["Platform as a Service", "PaaS"],
-            ContextualCardKind.Definition,
-            "Platform as a Service provides managed infrastructure, operating systems, middleware, and runtimes. The customer focuses primarily on application code, data, access, and workload configuration."),
-        new(
-            ["Software as a Service", "SaaS"],
-            ContextualCardKind.Definition,
-            "Software as a Service provides a complete hosted application. The provider manages most of the stack while the customer manages data, identities, access settings, and device posture."),
-        new(
-            ["Azure region", "Azure regions"],
-            ContextualCardKind.Definition,
-            "An Azure region contains one or more datacenters connected by a high-capacity, low-latency network. Region choice affects latency, data residency, service availability, and resilience options."),
-        new(
-            [
-                "Azure Availability Zone",
-                "Azure Availability Zones",
-                "availability zone",
-                "availability zones"
-            ],
-            ContextualCardKind.Definition,
-            "An availability zone is a separated group of datacenters within an Azure region, with independent power, cooling, and networking. Multi-zone designs reduce exposure to a single-zone failure.",
-            RequiresAzureContext: true),
-        new(
-            ["Azure Resource Manager", "ARM template", "ARM templates"],
-            ContextualCardKind.Definition,
-            "Azure Resource Manager is Azure's deployment and management layer. It provides consistent access control, locks, tags, and declarative deployment across management tools and APIs."),
-        new(
-            ["management group", "management groups"],
-            ContextualCardKind.Definition,
-            "An Azure management group is a governance scope above subscriptions. Policy and role assignments applied at that scope can inherit through its child management groups and subscriptions.",
-            RequiresAzureContext: true),
-        new(
-            ["Azure subscription", "Azure subscriptions"],
-            ContextualCardKind.Definition,
-            "An Azure subscription is a management and billing boundary for Azure resources. It provides a scope for access, policy, budgets, quotas, and environment isolation."),
-        new(
-            ["resource group", "resource groups"],
-            ContextualCardKind.Definition,
-            "A resource group is a container for related Azure resources that share a management lifecycle. Access, policy, locks, tags, deployments, and coordinated deletion can be scoped to the group.",
-            RequiresAzureContext: true),
-        new(
-            ["Microsoft Entra ID", "Entra ID", "Azure Active Directory", "Azure AD"],
-            ContextualCardKind.Definition,
-            "Microsoft Entra ID is Microsoft's cloud identity and access management service. It authenticates users, devices, applications, and workloads and supports policy-based access controls."),
-        new(
-            [
-                "Azure RBAC",
-                "Azure role-based access control",
-                "role-based access control",
-                "role based access control"
-            ],
-            ContextualCardKind.Definition,
-            "Azure role-based access control is the authorization system for Azure resources. A role assignment combines a security principal, role definition, and scope to determine permitted actions.",
-            RequiresAzureContext: true)
-    ];
-
     private static readonly PresentationRecommendationDefinition[]
         PresentationRecommendationCatalog =
     [
@@ -414,11 +335,28 @@ internal static partial class PresentationCoachingPolicy
             .Where(card => IsClientReadyExplanation(card.Title, card.Content))
             .Select(card => HeuristicConversationCoachAgent.Normalize(card.Title))
             .ToHashSet(StringComparer.Ordinal);
+        var knownConceptKinds = (context.ContextualCards ?? [])
+            .Select(card => (ConceptKey: TryResolveConceptKey(card), card.Kind))
+            .Where(entry => entry.ConceptKey is not null)
+            .Select(entry => $"{entry.ConceptKey}:{entry.Kind}")
+            .ToHashSet(StringComparer.Ordinal);
         var result = new List<ContextualCardProposal>();
         foreach (var card in validPrimaryCards)
         {
+            var resolvedConceptKey = EducationalConceptCatalog.TryResolveByAliasOrTitle(
+                    card.ConceptKey ?? card.Title,
+                    out var concept)
+                ? concept.ConceptKey
+                : null;
+            if (resolvedConceptKey is not null
+                && knownConceptKinds.Contains($"{resolvedConceptKey}:{card.Kind}"))
+            {
+                continue;
+            }
+
             var normalizedTitle = HeuristicConversationCoachAgent.Normalize(card.Title);
-            if (knownTitles.Any(title => HasSubstantialOverlap(
+            if (resolvedConceptKey is null
+                && knownTitles.Any(title => HasSubstantialOverlap(
                     normalizedTitle,
                     title)))
             {
@@ -426,6 +364,10 @@ internal static partial class PresentationCoachingPolicy
             }
 
             knownTitles.Add(normalizedTitle);
+            if (resolvedConceptKey is not null)
+            {
+                knownConceptKinds.Add($"{resolvedConceptKey}:{card.Kind}");
+            }
             result.Add(card);
             if (result.Count == 2)
             {
@@ -433,13 +375,15 @@ internal static partial class PresentationCoachingPolicy
             }
         }
 
-        foreach (var definition in PresentationCardCatalog)
+        foreach (var concept in EducationalConceptCatalog.All)
         {
-            AddCard(
+            AddEducationalConceptCard(
                 result,
+                knownConceptKinds,
                 knownTitles,
                 analysisWindow,
-                definition,
+                context.ContextualCards ?? [],
+                concept,
                 HasAzureMeetingContext(context.Purpose));
         }
 
@@ -574,24 +518,26 @@ internal static partial class PresentationCoachingPolicy
             .Where(term => term.Length >= 2 && !ComparisonStopWords.Contains(term))
             .ToHashSet(StringComparer.Ordinal);
 
-    private static void AddCard(
+    private static void AddEducationalConceptCard(
         ICollection<ContextualCardProposal> cards,
+        ISet<string> knownConceptKinds,
         ISet<string> knownTitles,
         IReadOnlyList<TranscriptSegment> analysisWindow,
-        PresentationCardDefinition definition,
+        IReadOnlyList<ContextualCardState> existingCards,
+        EducationalConcept concept,
         bool hasAzureMeetingContext)
     {
-        if (cards.Count >= 2
-            || IsCardDefinitionKnown(knownTitles, definition))
+        if (cards.Count >= 2)
         {
             return;
         }
 
-        var mention = FindMention(
+        var mention = TryFindEducationalMention(
             analysisWindow,
-            definition.RequiresAzureContext,
+            concept,
             hasAzureMeetingContext,
-            definition.Terms.ToArray());
+            out _,
+            out _);
         if (mention is null)
         {
             return;
@@ -606,23 +552,34 @@ internal static partial class PresentationCoachingPolicy
             return;
         }
 
-        knownTitles.Add(normalizedTitle);
-        cards.Add(new ContextualCardProposal(
-            definition.Kind,
-            mention.Title,
-            definition.Content,
-            0.93,
-            mention.SourceTranscriptSegmentIds));
-    }
+        var hasDefinition = existingCards.Any(card =>
+            card.Kind == ContextualCardKind.Definition
+            && string.Equals(
+                TryResolveConceptKey(card),
+                concept.ConceptKey,
+                StringComparison.Ordinal));
+        var kind = hasDefinition
+            ? ContextualCardKind.Hint
+            : ContextualCardKind.Definition;
+        if (knownConceptKinds.Contains($"{concept.ConceptKey}:{kind}"))
+        {
+            return;
+        }
 
-    private static bool IsCardDefinitionKnown(
-        ISet<string> knownTitles,
-        PresentationCardDefinition definition) =>
-        definition.Terms
-            .Select(HeuristicConversationCoachAgent.Normalize)
-            .Any(alias => knownTitles.Any(title =>
-                title.Equals(alias, StringComparison.Ordinal)
-                || HasSubstantialOverlap(title, alias)));
+        knownTitles.Add(normalizedTitle);
+        knownConceptKinds.Add($"{concept.ConceptKey}:{kind}");
+        cards.Add(new ContextualCardProposal(
+            kind,
+            mention.Title,
+            kind == ContextualCardKind.Definition
+                ? concept.DefinitionText
+                : concept.HintText,
+            0.93,
+            mention.SourceTranscriptSegmentIds)
+        {
+            ConceptKey = concept.ConceptKey
+        });
+    }
 
     private static IEnumerable<PresentationRecommendationMatch>
         FindRecommendationMatches(
@@ -663,12 +620,99 @@ internal static partial class PresentationCoachingPolicy
                 HeuristicConversationCoachAgent.Normalize(term))) >= 2;
     }
 
+    internal static bool TryResolveEducationalProposal(
+        ContextualCardProposal proposal,
+        IReadOnlyList<TranscriptSegment> analysisWindow,
+        MeetingPurpose purpose,
+        out EducationalConcept? concept,
+        out AlertRejectionReason reason,
+        out string details)
+    {
+        concept = null;
+        reason = AlertRejectionReason.None;
+        details = string.Empty;
+
+        if (proposal.SourceTranscriptSegmentIds is not { Count: > 0 })
+        {
+            reason = AlertRejectionReason.MissingEvidence;
+            details = "proposal has no source transcript segment IDs";
+            return false;
+        }
+
+        var sourceIds = proposal.SourceTranscriptSegmentIds.ToHashSet();
+        var scopedWindow = analysisWindow
+            .Where(segment => sourceIds.Contains(segment.Id))
+            .ToArray();
+        if (scopedWindow.Length == 0)
+        {
+            reason = AlertRejectionReason.MissingEvidence;
+            details = "proposal sources were outside the final transcript window";
+            return false;
+        }
+
+        if (!EducationalConceptCatalog.TryResolveByAliasOrTitle(
+                proposal.ConceptKey ?? proposal.Title,
+                out var resolvedConcept))
+        {
+            reason = AlertRejectionReason.MentionNotFound;
+            details = "proposal title did not map to the educational concept catalog";
+            return false;
+        }
+
+        concept = resolvedConcept;
+        var mention = TryFindEducationalMention(
+            scopedWindow,
+            resolvedConcept,
+            HasAzureMeetingContext(purpose),
+            out reason,
+            out details);
+        return mention is not null;
+    }
+
+    private static ContextualMention? TryFindEducationalMention(
+        IReadOnlyList<TranscriptSegment> segments,
+        EducationalConcept concept,
+        bool hasAzureMeetingContext,
+        out AlertRejectionReason rejectionReason,
+        out string details)
+    {
+        return FindMentionDetailed(
+            segments,
+            concept.RequiresAzureVendorScope,
+            hasAzureMeetingContext,
+            concept.Aliases,
+            out rejectionReason,
+            out details);
+    }
+
     private static ContextualMention? FindMention(
         IReadOnlyList<TranscriptSegment> segments,
         bool requiresAzureContext,
         bool hasAzureMeetingContext,
         params string[] terms)
     {
+        return FindMentionDetailed(
+            segments,
+            requiresAzureContext,
+            hasAzureMeetingContext,
+            terms,
+            out _,
+            out _);
+    }
+
+    private static ContextualMention? FindMentionDetailed(
+        IReadOnlyList<TranscriptSegment> segments,
+        bool requiresAzureContext,
+        bool hasAzureMeetingContext,
+        IReadOnlyList<string> terms,
+        out AlertRejectionReason rejectionReason,
+        out string details)
+    {
+        rejectionReason = AlertRejectionReason.None;
+        details = string.Empty;
+        var sawNegatedMention = false;
+        var sawVendorMismatch = false;
+
         for (var segmentIndex = segments.Count - 1; segmentIndex >= 0; segmentIndex--)
         {
             var segment = segments[segmentIndex];
@@ -680,8 +724,17 @@ internal static partial class PresentationCoachingPolicy
                         segment.Text,
                         index,
                         term.Length);
-                    if (IsNegatedOrOutOfScope(sentence, term))
+                    if (IsNegatedOrOutOfScope(sentence, term)
+                        || HasNearbyNegation(sentence, term))
                     {
+                        sawNegatedMention = true;
+                        continue;
+                    }
+
+                    if (requiresAzureContext
+                        && HasVendorMismatch(sentence, term))
+                    {
+                        sawVendorMismatch = true;
                         continue;
                     }
 
@@ -726,6 +779,9 @@ internal static partial class PresentationCoachingPolicy
                             index,
                             term.Length);
                         if (IsNegatedOrOutOfScope(sentence, term)
+                            || HasNearbyNegation(sentence, term)
+                            || (requiresAzureContext
+                                && HasVendorMismatch(sentence, term))
                             || (requiresAzureContext
                                 && !HasAzureContext(
                                     segments,
@@ -736,6 +792,12 @@ internal static partial class PresentationCoachingPolicy
                                     index,
                                     hasAzureMeetingContext)))
                         {
+                            sawNegatedMention = sawNegatedMention
+                                || IsNegatedOrOutOfScope(sentence, term)
+                                || HasNearbyNegation(sentence, term);
+                            sawVendorMismatch = sawVendorMismatch
+                                || (requiresAzureContext
+                                    && HasVendorMismatch(sentence, term));
                             continue;
                         }
 
@@ -759,6 +821,17 @@ internal static partial class PresentationCoachingPolicy
                             .ToArray());
                 }
             }
+        }
+
+        if (sawVendorMismatch)
+        {
+            rejectionReason = AlertRejectionReason.VendorMismatch;
+            details = "conflicting vendor keywords appeared near the matched term without nearby Azure scoping";
+        }
+        else if (sawNegatedMention)
+        {
+            rejectionReason = AlertRejectionReason.NegatedMention;
+            details = "the matched term appeared in a negated or out-of-scope context";
         }
 
         return null;
@@ -870,7 +943,7 @@ internal static partial class PresentationCoachingPolicy
                 !AzureEvidenceAnchorStopWords.Contains(term));
     }
 
-    private static bool HasAzureMeetingContext(MeetingPurpose purpose)
+    internal static bool HasAzureMeetingContext(MeetingPurpose purpose)
     {
         var purposeText = string.Join(
             ' ',
@@ -1166,15 +1239,140 @@ internal static partial class PresentationCoachingPolicy
                 RegexOptions.CultureInvariant);
     }
 
+    private static bool HasNearbyNegation(string text, string term)
+    {
+        var normalizedText = HeuristicConversationCoachAgent.Normalize(text);
+        var normalizedTerm = HeuristicConversationCoachAgent.Normalize(term);
+        if (!TryFindTokenWindow(normalizedText, normalizedTerm, out var tokens, out var start, out _))
+        {
+            return false;
+        }
+
+        var preceding = tokens
+            .Skip(Math.Max(0, start - 5))
+            .Take(start - Math.Max(0, start - 5))
+            .ToArray();
+        if (preceding.Any(token =>
+                token is "not" or "no" or "without" or "avoid" or "unlike"))
+        {
+            return true;
+        }
+
+        return HasPhrase(preceding, "instead", "of")
+            || HasPhrase(preceding, "rather", "than");
+    }
+
+    private static bool HasVendorMismatch(string text, string term)
+    {
+        var normalizedText = HeuristicConversationCoachAgent.Normalize(text);
+        var normalizedTerm = HeuristicConversationCoachAgent.Normalize(term);
+        if (!TryFindTokenWindow(normalizedText, normalizedTerm, out var tokens, out var start, out var length))
+        {
+            return false;
+        }
+
+        return HasNearbyTerms(tokens, start, length, 3, ConflictingPlatformTerms)
+            && !HasNearbyTerms(tokens, start, length, 3, AzureContextTerms);
+    }
+
+    private static bool TryFindTokenWindow(
+        string normalizedText,
+        string normalizedTerm,
+        out string[] tokens,
+        out int start,
+        out int length)
+    {
+        tokens = WordRegex()
+            .Matches(normalizedText)
+            .Select(match => match.Value)
+            .ToArray();
+        var termTokens = normalizedTerm
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        for (var tokenIndex = 0; tokenIndex <= tokens.Length - termTokens.Length; tokenIndex++)
+        {
+            if (tokens
+                .Skip(tokenIndex)
+                .Take(termTokens.Length)
+                .SequenceEqual(termTokens, StringComparer.Ordinal))
+            {
+                start = tokenIndex;
+                length = termTokens.Length;
+                return true;
+            }
+        }
+
+        start = -1;
+        length = 0;
+        return false;
+    }
+
+    private static bool HasNearbyTerms(
+        IReadOnlyList<string> tokens,
+        int start,
+        int length,
+        int maxDistance,
+        IEnumerable<string> terms)
+    {
+        foreach (var term in terms)
+        {
+            var termTokens = HeuristicConversationCoachAgent.Normalize(term)
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            for (var tokenIndex = 0; tokenIndex <= tokens.Count - termTokens.Length; tokenIndex++)
+            {
+                if (!tokens
+                        .Skip(tokenIndex)
+                        .Take(termTokens.Length)
+                        .SequenceEqual(termTokens, StringComparer.Ordinal))
+                {
+                    continue;
+                }
+
+                var beforeDistance = start - (tokenIndex + termTokens.Length);
+                var afterDistance = tokenIndex - (start + length);
+                if ((beforeDistance >= 0 && beforeDistance <= maxDistance)
+                    || (afterDistance >= 0 && afterDistance <= maxDistance)
+                    || (tokenIndex >= start && tokenIndex < start + length))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasPhrase(
+        IReadOnlyList<string> tokens,
+        string first,
+        string second)
+    {
+        for (var index = 0; index < tokens.Count - 1; index++)
+        {
+            if (tokens[index].Equals(first, StringComparison.Ordinal)
+                && tokens[index + 1].Equals(second, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string? TryResolveConceptKey(ContextualCardState card)
+    {
+        if (!string.IsNullOrWhiteSpace(card.ConceptKey))
+        {
+            return card.ConceptKey;
+        }
+
+        return EducationalConceptCatalog.TryResolveByAliasOrTitle(card.Title, out var concept)
+            ? concept.ConceptKey
+            : null;
+    }
+
     private sealed record ContextualMention(
         string Title,
         IReadOnlyList<Guid> SourceTranscriptSegmentIds);
-
-    private sealed record PresentationCardDefinition(
-        IReadOnlyList<string> Terms,
-        ContextualCardKind Kind,
-        string Content,
-        bool RequiresAzureContext = false);
 
     private sealed record PresentationRecommendationDefinition(
         IReadOnlyList<string> MentionTerms,

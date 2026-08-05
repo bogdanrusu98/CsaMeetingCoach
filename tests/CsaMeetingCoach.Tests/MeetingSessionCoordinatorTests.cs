@@ -983,12 +983,6 @@ public sealed class MeetingSessionCoordinatorTests
             recommendation => recommendation.Title.Contains(
                 "deployment architecture",
                 StringComparison.Ordinal));
-        Assert.Contains(
-            whileLatestAnalysisRuns.ContextualCards,
-            card => card.Title.Contains(
-                "deployment architecture",
-                StringComparison.Ordinal));
-
         aiAgent.Release();
         var final = await publisher.WaitForAsync(
             state => !state.IsAnalyzing && state.RecommendedTasks.Count == 2,
@@ -999,7 +993,7 @@ public sealed class MeetingSessionCoordinatorTests
             recommendation => recommendation.Title.Contains(
                 "regional topology",
                 StringComparison.Ordinal));
-        Assert.Equal(2, final.ContextualCards.Count);
+        Assert.Empty(final.ContextualCards);
     }
 
     [Fact]
@@ -1531,31 +1525,49 @@ public sealed class MeetingSessionCoordinatorTests
             TimeSpan.FromSeconds(10));
 
         Assert.NotNull(aiAgent.LastContext);
-        Assert.Empty(aiAgent.LastContext.ContextualCards ?? []);
+        Assert.All(
+            aiAgent.LastContext.ContextualCards ?? [],
+            card => Assert.True(PresentationCoachingPolicy.IsClientReadyExplanation(
+                card.Title,
+                card.Content)));
     }
 
     [Fact]
     public async Task AddTranscript_ContextualCardHistoryIsBounded()
     {
-        using var coordinator = CreateCoordinator(new UniqueContextualCardAgent());
+        using var coordinator = CreateCoordinator(new HeuristicConversationCoachAgent());
         var session = await coordinator.CreateAsync(
             new CreateMeetingSessionRequest(TestData.CreatePurpose()),
             CancellationToken.None);
         MeetingSessionState current = session;
-
-        for (var index = 1; index <= 14; index++)
+        var transcripts = new[]
+        {
+            "Cloud computing provides on-demand resources.",
+            "The shared responsibility model changes operational ownership.",
+            "Infrastructure as a Service provides virtualized infrastructure.",
+            "Platform as a Service provides managed runtimes.",
+            "Software as a Service provides a complete hosted application.",
+            "Azure regions contain connected datacenters.",
+            "Azure Availability Zones isolate datacenter failures.",
+            "Azure Resource Manager handles management requests.",
+            "Management groups organize subscriptions in Azure.",
+            "An Azure subscription is a management boundary.",
+            "An Azure resource group holds related resources.",
+            "Microsoft Entra ID handles cloud identities.",
+            "Azure RBAC controls resource authorization.",
+            "Azure Policy evaluates resources against governance rules."
+        };
+        foreach (var transcript in transcripts)
         {
             current = await coordinator.AddTranscriptAsync(
                 session.Id,
-                new AddTranscriptSegmentRequest(
-                    "Customer",
-                    $"Azure topic {index}"),
+                new AddTranscriptSegmentRequest("Customer", transcript),
                 CancellationToken.None);
         }
 
         Assert.Equal(12, current.ContextualCards.Count);
-        Assert.DoesNotContain(current.ContextualCards, card => card.Title == "Azure topic 1");
-        Assert.Contains(current.ContextualCards, card => card.Title == "Azure topic 14");
+        Assert.DoesNotContain(current.ContextualCards, card => card.Title == "Cloud computing");
+        Assert.Contains(current.ContextualCards, card => card.Title == "Azure RBAC");
     }
 
     [Fact]

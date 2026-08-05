@@ -108,27 +108,35 @@ public static class FoundryAgentContract
         Do not upsell, assemble an unsupported product bundle, or recommend a product only
         because its name appears in retrieved knowledge.
 
-        Return up to two contextual pop-up cards when analysisWindow explicitly
-        mentions a term or topic for which a plain-language definition or concise
-        explanatory hint would help the CSA immediately. Cards are private presenter
-        support, but their content must be a client-ready explanation that the CSA can
-        state proactively. Never phrase a card as a question, an instruction to ask,
+        Return contextual pop-up cards only as Definition or Hint cards when
+        analysisWindow explicitly mentions a term or topic for which a plain-language
+        client explanation would help immediately. A Definition explains a
+        transcript-grounded technology term for the client. A Hint adds a concrete
+        mechanism, example, prerequisite, distinction, consequence, or limitation
+        about an explicitly grounded term. Cards are private presenter support, but
+        their content must be a client-ready explanation that the CSA can state
+        proactively. Never produce recommendations, action items, sales guidance,
+        presenter coaching, next-best actions, or questions for the client inside
+        contextualCards. Never phrase a card as a question, an instruction to ask,
         clarify, confirm, explain, tell, validate, or verify something, any other
-        presenter-directed action, or a task for the client.
+        presenter-directed action, or a task for the client. File search or reviewed
+        knowledge alone is never sufficient; transcript grounding in analysisWindow
+        is mandatory.
         During a presentation, demo, workshop, or training discussion that introduces
         a concrete Microsoft technical term, return at least one useful card unless
         that term is already present in existingContextualCards. If the speaker already
         explained the definition, return a declarative hint about a useful distinction,
-        consequence, limitation, or validation implication. Foundational cloud and Azure
-        concepts such as service models, shared responsibility, regions, availability
-        zones, management scopes, identity, and authorization merit cards when their
-        explanation would help a client follow the presentation. Copy the card title as an
-        exact term or short phrase from one cited analysisWindow segment and cite that
-        segment's ID. A definition must be grounded with file search and explain the
-        term in no more than two short sentences. Do not create a card for a term
-        already present in existingContextualCards. Do not infer pricing, licensing,
-        compliance, legal conclusions, availability, customer intent, or product
-        selection. Return no card when the value would be generic or speculative.
+        consequence, limitation, prerequisite, mechanism, or validation implication.
+        Foundational cloud and Azure concepts such as service models, shared
+        responsibility, regions, availability zones, management scopes, identity, and
+        authorization merit cards when their explanation would help a client follow
+        the presentation. Copy the card title as an exact term or short phrase from
+        one cited analysisWindow segment and cite that segment's ID. A definition must
+        be grounded with file search and explain the term in no more than two short
+        sentences. Do not create a card for a term already present in
+        existingContextualCards. Do not infer pricing, licensing, compliance, legal
+        conclusions, availability, customer intent, or product selection. Return no
+        card when the value would be generic or speculative.
 
         Do not generate generic administrative follow-up work. Do not repeat a
         recommendation already proposed, accepted, completed, or dismissed, or a

@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Channels;
 using CsaMeetingCoach.Contracts;
 using Microsoft.Extensions.Logging;
@@ -9,10 +11,25 @@ public sealed class MeetingSessionCoordinator : IDisposable
 {
     public const double AutoCompletionThreshold = 0.82;
     private const double ContextualCardThreshold = 0.75;
-    private const int MaximumContextualCardsPerAnalysis = 2;
+    private const int MaximumContextualCardsPerAnalysis = 1;
     private const int MaximumRetainedContextualCards = 12;
     private const string AnalysisUnavailableWarning =
         "AI coaching is temporarily unavailable. Transcript and local checklist processing continued.";
+    private static readonly TimeSpan DefinitionToHintCooldown = TimeSpan.FromMinutes(3);
+    private static readonly TimeSpan HintRepeatCooldown = TimeSpan.FromMinutes(15);
+    private static readonly string[] SalesOrRecommendationPatterns =
+    [
+        "recommend",
+        "should consider",
+        "you should",
+        "next step",
+        "action item",
+        "reach out",
+        "follow up",
+        "ask the client",
+        "ask the customer",
+        "sales motion"
+    ];
 
     private readonly IMeetingSessionStore _store;
     private readonly IMeetingChecklistPlanner _checklistPlanner;
@@ -168,16 +185,15 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 FilterClientReadyCards(transcriptUpdate.ContextualCards));
             var deterministicDecision = await _deterministicAgent.AnalyzeAsync(
                 context, segment, cancellationToken);
-            var fastLaneDecision = _aiAgent is null
+            var fastLaneDecision = (_aiAgent is null
                 ? deterministicDecision
-                : deterministicDecision with
-                {
-                    RecommendedTasks = [],
-                    ContextualCards = PresentationCoachingPolicy.SelectContextualCards(
-                        context,
-                        [],
-                        analysisWindow)
-                };
+                : deterministicDecision with { RecommendedTasks = [] }) with
+            {
+                ContextualCards = PresentationCoachingPolicy.SelectContextualCards(
+                    context,
+                    deterministicDecision.ContextualCards,
+                    analysisWindow)
+            };
             var decision = CrossCuttingRecommendationPolicy.Apply(fastLaneDecision, segment);
 
             var warnings = transcriptUpdate.Warnings
@@ -207,8 +223,8 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 transcriptUpdate.Checklist,
                 transcriptUpdate.Purpose,
                 warnings);
-            var contextualCards = ApplyContextualCards(
-                transcriptUpdate.ContextualCards,
+            var contextualCardResult = ApplyContextualCards(
+                transcriptUpdate,
                 decision.ContextualCards,
                 analysisWindow);
             var analyzedAtUtc = DateTimeOffset.UtcNow;
@@ -223,7 +239,14 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 Transcript = analyzedTranscript,
                 Checklist = checklist,
                 RecommendedTasks = recommendations,
-                ContextualCards = contextualCards,
+                ContextualCards = contextualCardResult.Cards,
+                ShownDefinitionKeys = contextualCardResult.ShownDefinitionKeys,
+                ShownHintKeys = contextualCardResult.ShownHintKeys,
+                DefinitionCooldowns = contextualCardResult.DefinitionCooldowns,
+                HintCooldowns = contextualCardResult.HintCooldowns,
+                ContentFingerprints = contextualCardResult.ContentFingerprints,
+                LastEducationalCardSegmentIndex =
+                    contextualCardResult.LastEducationalCardSegmentIndex,
                 Warnings = NormalizeWarnings(warnings),
                 IsAnalyzing = _aiAgent is not null,
                 Revision = transcriptUpdate.Revision + 1,
@@ -484,8 +507,8 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 current.Checklist,
                 current.Purpose,
                 mergeWarnings);
-            var contextualCards = ApplyContextualCards(
-                current.ContextualCards,
+            var contextualCardResult = ApplyContextualCards(
+                current,
                 aiDecision.ContextualCards,
                 analysisWindow);
 
@@ -494,7 +517,14 @@ public sealed class MeetingSessionCoordinator : IDisposable
             {
                 Checklist = checklist,
                 RecommendedTasks = recommendations,
-                ContextualCards = contextualCards,
+                ContextualCards = contextualCardResult.Cards,
+                ShownDefinitionKeys = contextualCardResult.ShownDefinitionKeys,
+                ShownHintKeys = contextualCardResult.ShownHintKeys,
+                DefinitionCooldowns = contextualCardResult.DefinitionCooldowns,
+                HintCooldowns = contextualCardResult.HintCooldowns,
+                ContentFingerprints = contextualCardResult.ContentFingerprints,
+                LastEducationalCardSegmentIndex =
+                    contextualCardResult.LastEducationalCardSegmentIndex,
                 Warnings = NormalizeWarnings(mergeWarnings),
                 IsAnalyzing = state.IsAnalyzing,
                 Revision = current.Revision + 1,
@@ -949,39 +979,86 @@ public sealed class MeetingSessionCoordinator : IDisposable
         return result;
     }
 
-    private static IReadOnlyList<ContextualCardState> ApplyContextualCards(
-        IReadOnlyList<ContextualCardState> current,
+    private ContextualCardApplicationResult ApplyContextualCards(
+        MeetingSessionState session,
         IReadOnlyList<ContextualCardProposal> proposals,
         IReadOnlyList<TranscriptSegment> analysisWindow)
     {
         var analysisWindowById = analysisWindow.ToDictionary(segment => segment.Id);
-        var result = FilterClientReadyCards(current)
+        var result = FilterClientReadyCards(session.ContextualCards)
             .TakeLast(MaximumRetainedContextualCards)
             .ToList();
-        var knownTitles = result
-            .Select(card => HeuristicConversationCoachAgent.Normalize(card.Title))
-            .ToHashSet(StringComparer.Ordinal);
-        var acceptedCount = 0;
+        var shownDefinitionKeys = new HashSet<string>(
+            session.ShownDefinitionKeys,
+            StringComparer.Ordinal);
+        var shownHintKeys = new HashSet<string>(
+            session.ShownHintKeys,
+            StringComparer.Ordinal);
+        var definitionCooldowns = new Dictionary<string, DateTimeOffset>(
+            session.DefinitionCooldowns,
+            StringComparer.Ordinal);
+        var hintCooldowns = new Dictionary<string, DateTimeOffset>(
+            session.HintCooldowns,
+            StringComparer.Ordinal);
+        var contentFingerprints = new HashSet<string>(
+            session.ContentFingerprints,
+            StringComparer.Ordinal);
+        var diagnostics = new List<AlertDiagnostic>();
+        var latestFinalSegmentIndex = session.Transcript.Count(segment => segment.IsFinal) - 1;
+        var now = DateTimeOffset.UtcNow;
+        var candidates = new List<AlertCandidate>();
 
         foreach (var proposal in proposals)
         {
-            if (acceptedCount >= MaximumContextualCardsPerAnalysis)
+            if (proposal is null)
             {
-                break;
+                diagnostics.Add(new AlertDiagnostic(
+                    ContextualCardKind.Definition,
+                    string.Empty,
+                    AlertRejectionReason.MissingEvidence,
+                    "proposal was null"));
+                continue;
             }
 
-            if (proposal is null
-                || !Enum.IsDefined(proposal.Kind)
-                || string.IsNullOrWhiteSpace(proposal.Title)
+            if (!Enum.IsDefined(proposal.Kind))
+            {
+                diagnostics.Add(new AlertDiagnostic(
+                    proposal.Kind,
+                    proposal.ConceptKey ?? string.Empty,
+                    AlertRejectionReason.UnknownKind,
+                    "proposal kind was outside the supported definition and hint values"));
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(proposal.Title)
                 || proposal.Title.Trim().Length > 80
                 || string.IsNullOrWhiteSpace(proposal.Content)
                 || proposal.Content.Trim().Length > 320
+                || !double.IsFinite(proposal.Confidence)
+                || proposal.Confidence is < ContextualCardThreshold or > 1)
+            {
+                diagnostics.Add(new AlertDiagnostic(
+                    proposal.Kind,
+                    proposal.ConceptKey ?? string.Empty,
+                    AlertRejectionReason.MissingEvidence,
+                    "proposal title, content, or confidence was invalid"));
+                continue;
+            }
+
+            if (ContainsSalesOrRecommendationLanguage(proposal.Title, proposal.Content)
                 || !PresentationCoachingPolicy.IsClientReadyExplanation(
                     proposal.Title,
-                    proposal.Content)
-                || !double.IsFinite(proposal.Confidence)
-                || proposal.Confidence is < ContextualCardThreshold or > 1
-                || proposal.SourceTranscriptSegmentIds is not { Count: > 0 }
+                    proposal.Content))
+            {
+                diagnostics.Add(new AlertDiagnostic(
+                    proposal.Kind,
+                    proposal.ConceptKey ?? string.Empty,
+                    AlertRejectionReason.SalesOrRecommendationContent,
+                    "proposal content included recommendation, action, or presenter-directed language"));
+                continue;
+            }
+
+            if (proposal.SourceTranscriptSegmentIds is not { Count: > 0 }
                 || proposal.SourceTranscriptSegmentIds.Any(
                     id => !analysisWindowById.ContainsKey(id))
                 || !PresentationCoachingPolicy.IsTitleGrounded(
@@ -989,27 +1066,149 @@ public sealed class MeetingSessionCoordinator : IDisposable
                     proposal.SourceTranscriptSegmentIds,
                     analysisWindow))
             {
+                diagnostics.Add(new AlertDiagnostic(
+                    proposal.Kind,
+                    proposal.ConceptKey ?? string.Empty,
+                    AlertRejectionReason.MissingEvidence,
+                    "proposal title or evidence sources were not grounded in the final transcript window"));
                 continue;
             }
 
-            var normalizedTitle = HeuristicConversationCoachAgent.Normalize(proposal.Title);
-            if (normalizedTitle.Length == 0 || !knownTitles.Add(normalizedTitle))
+            if (!PresentationCoachingPolicy.TryResolveEducationalProposal(
+                    proposal,
+                    analysisWindow,
+                    session.Purpose,
+                    out var concept,
+                    out var reason,
+                    out var details))
             {
+                diagnostics.Add(new AlertDiagnostic(
+                    proposal.Kind,
+                    proposal.ConceptKey ?? proposal.Title,
+                    reason == AlertRejectionReason.None
+                        ? AlertRejectionReason.MentionNotFound
+                        : reason,
+                    string.IsNullOrWhiteSpace(details)
+                        ? "proposal could not be mapped to a grounded educational concept"
+                        : details));
                 continue;
             }
 
-            result.Add(new ContextualCardState(
-                Guid.NewGuid(),
+            var conceptKey = concept!.ConceptKey;
+            var fingerprint = CreateContentFingerprint(
+                proposal.Title,
+                proposal.Content,
+                proposal.Kind);
+            if (contentFingerprints.Contains(fingerprint))
+            {
+                diagnostics.Add(new AlertDiagnostic(
+                    proposal.Kind,
+                    conceptKey,
+                    AlertRejectionReason.ContentFingerprint,
+                    "proposal matched previously shown alert wording"));
+                continue;
+            }
+
+            if (!TryValidateLifecycle(
+                    proposal.Kind,
+                    conceptKey,
+                    latestFinalSegmentIndex,
+                    session.LastEducationalCardSegmentIndex,
+                    now,
+                    shownDefinitionKeys,
+                    definitionCooldowns,
+                    hintCooldowns,
+                    out reason,
+                    out details))
+            {
+                diagnostics.Add(new AlertDiagnostic(
+                    proposal.Kind,
+                    conceptKey,
+                    reason,
+                    details));
+                continue;
+            }
+
+            candidates.Add(new AlertCandidate(
+                conceptKey,
                 proposal.Kind,
                 proposal.Title.Trim(),
                 proposal.Content.Trim(),
                 proposal.Confidence,
                 proposal.SourceTranscriptSegmentIds.Distinct().ToArray(),
-                DateTimeOffset.UtcNow));
-            acceptedCount++;
+                proposal.SourceTranscriptSegmentIds
+                    .Select(id => analysisWindow
+                        .Select((segment, index) => (segment.Id, Index: index))
+                        .First(item => item.Id == id).Index)
+                    .DefaultIfEmpty(0)
+                    .Max(),
+                concept.Category,
+                concept.RequiresAzureVendorScope,
+                "proposal"));
         }
 
-        return result.TakeLast(MaximumRetainedContextualCards).ToArray();
+        var ranked = AlertRanker.Rank(
+            candidates,
+            result,
+            shownDefinitionKeys,
+            shownHintKeys);
+        foreach (var rejected in ranked.Skip(MaximumContextualCardsPerAnalysis))
+        {
+            diagnostics.Add(new AlertDiagnostic(
+                rejected.Candidate.Kind,
+                rejected.Candidate.ConceptKey,
+                AlertRejectionReason.InsufficientRanking,
+                "another eligible educational alert ranked higher for this transcript update"));
+        }
+
+        var winner = ranked.FirstOrDefault();
+        if (winner is not null)
+        {
+            var fingerprint = CreateContentFingerprint(
+                winner.Candidate.Title,
+                winner.Candidate.Content,
+                winner.Candidate.Kind);
+            result.Add(new ContextualCardState(
+                Guid.NewGuid(),
+                winner.Candidate.Kind,
+                winner.Candidate.Title,
+                winner.Candidate.Content,
+                winner.Candidate.Confidence,
+                winner.Candidate.SourceTranscriptSegmentIds,
+                now)
+            {
+                ConceptKey = winner.Candidate.ConceptKey
+            });
+
+            if (winner.Candidate.Kind == ContextualCardKind.Definition)
+            {
+                shownDefinitionKeys.Add(winner.Candidate.ConceptKey);
+                definitionCooldowns[winner.Candidate.ConceptKey] = now;
+            }
+            else
+            {
+                shownHintKeys.Add(winner.Candidate.ConceptKey);
+                hintCooldowns[winner.Candidate.ConceptKey] = now;
+            }
+
+            contentFingerprints.Add(fingerprint);
+            diagnostics.Add(new AlertDiagnostic(
+                winner.Candidate.Kind,
+                winner.Candidate.ConceptKey,
+                AlertRejectionReason.None,
+                "educational alert accepted"));
+            session = session with { LastEducationalCardSegmentIndex = latestFinalSegmentIndex };
+        }
+
+        LogAlertDiagnostics(session.Id, diagnostics);
+        return new ContextualCardApplicationResult(
+            result.TakeLast(MaximumRetainedContextualCards).ToArray(),
+            shownDefinitionKeys,
+            shownHintKeys,
+            definitionCooldowns,
+            hintCooldowns,
+            contentFingerprints,
+            session.LastEducationalCardSegmentIndex);
     }
 
     private static IReadOnlyList<ContextualCardState> FilterClientReadyCards(
@@ -1020,6 +1219,106 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 card.Title,
                 card.Content))
             .ToArray();
+    }
+
+    private static bool TryValidateLifecycle(
+        ContextualCardKind kind,
+        string conceptKey,
+        int latestFinalSegmentIndex,
+        int? lastEducationalCardSegmentIndex,
+        DateTimeOffset now,
+        IReadOnlySet<string> shownDefinitionKeys,
+        IReadOnlyDictionary<string, DateTimeOffset> definitionCooldowns,
+        IReadOnlyDictionary<string, DateTimeOffset> hintCooldowns,
+        out AlertRejectionReason reason,
+        out string details)
+    {
+        if (lastEducationalCardSegmentIndex == latestFinalSegmentIndex)
+        {
+            reason = AlertRejectionReason.CooldownActive;
+            details = "an educational alert was already shown for this final transcript segment";
+            return false;
+        }
+
+        if (kind == ContextualCardKind.Definition)
+        {
+            if (shownDefinitionKeys.Contains(conceptKey))
+            {
+                reason = AlertRejectionReason.CooldownActive;
+                details = "definition cards are shown once per concept per session";
+                return false;
+            }
+
+            reason = AlertRejectionReason.None;
+            details = string.Empty;
+            return true;
+        }
+
+        if (!shownDefinitionKeys.Contains(conceptKey))
+        {
+            reason = AlertRejectionReason.CooldownActive;
+            details = "hint cards require a previously shown definition for the same concept";
+            return false;
+        }
+
+        if (definitionCooldowns.TryGetValue(conceptKey, out var definitionShownAt)
+            && now - definitionShownAt < DefinitionToHintCooldown)
+        {
+            reason = AlertRejectionReason.CooldownActive;
+            details = "the definition-to-hint cooldown is still active";
+            return false;
+        }
+
+        if (hintCooldowns.TryGetValue(conceptKey, out var hintShownAt)
+            && now - hintShownAt < HintRepeatCooldown)
+        {
+            reason = AlertRejectionReason.CooldownActive;
+            details = "the hint repeat cooldown is still active";
+            return false;
+        }
+
+        reason = AlertRejectionReason.None;
+        details = string.Empty;
+        return true;
+    }
+
+    private static bool ContainsSalesOrRecommendationLanguage(
+        string title,
+        string content)
+    {
+        var normalized = HeuristicConversationCoachAgent.Normalize(
+            $"{title} {content}");
+        return SalesOrRecommendationPatterns.Any(pattern =>
+            normalized.Contains(
+                HeuristicConversationCoachAgent.Normalize(pattern),
+                StringComparison.Ordinal));
+    }
+
+    private static string CreateContentFingerprint(
+        string title,
+        string content,
+        ContextualCardKind kind)
+    {
+        var normalized = HeuristicConversationCoachAgent.Normalize(
+            $"{kind} {title} {content}");
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
+        return Convert.ToHexString(hash);
+    }
+
+    private void LogAlertDiagnostics(
+        Guid sessionId,
+        IEnumerable<AlertDiagnostic> diagnostics)
+    {
+        foreach (var diagnostic in diagnostics)
+        {
+            _logger?.LogDebug(
+                "Educational alert diagnostic for session {SessionId}: Kind={Kind} ConceptKey={ConceptKey} Reason={Reason} Details={Details}",
+                sessionId,
+                diagnostic.Kind,
+                diagnostic.ConceptKey,
+                diagnostic.Reason,
+                diagnostic.Details);
+        }
     }
 
     private static IReadOnlyList<string> NormalizeWarnings(IEnumerable<string> warnings)
@@ -1225,6 +1524,15 @@ public sealed class MeetingSessionCoordinator : IDisposable
         return _analysisStates.TryGetValue(sessionId, out var state)
             && state.IsAnalyzing;
     }
+
+    private sealed record ContextualCardApplicationResult(
+        IReadOnlyList<ContextualCardState> Cards,
+        HashSet<string> ShownDefinitionKeys,
+        HashSet<string> ShownHintKeys,
+        Dictionary<string, DateTimeOffset> DefinitionCooldowns,
+        Dictionary<string, DateTimeOffset> HintCooldowns,
+        HashSet<string> ContentFingerprints,
+        int? LastEducationalCardSegmentIndex);
 
     private sealed class SessionAnalysisState : IDisposable
     {
