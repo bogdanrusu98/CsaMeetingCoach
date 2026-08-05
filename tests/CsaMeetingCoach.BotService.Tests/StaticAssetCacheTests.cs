@@ -18,8 +18,8 @@ public sealed class StaticAssetCacheTests
         indexResponse.EnsureSuccessStatusCode();
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
-        Assert.Contains("styles.css?v=20260804b", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260804b", html, StringComparison.Ordinal);
+        Assert.Contains("styles.css?v=20260805a", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260805a", html, StringComparison.Ordinal);
         Assert.Contains("data-theme", html, StringComparison.Ordinal);
         Assert.Contains("id=\"microphone-toggle\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"include-system-audio\"", html, StringComparison.Ordinal);
@@ -37,7 +37,7 @@ public sealed class StaticAssetCacheTests
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260804b");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260805a");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
@@ -77,7 +77,7 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("renderContextualCards", script, StringComparison.Ordinal);
         Assert.Contains("data-contextual-card-dismiss", script, StringComparison.Ordinal);
 
-        using var styleResponse = await client.GetAsync("/styles.css?v=20260804b");
+        using var styleResponse = await client.GetAsync("/styles.css?v=20260805a");
         styleResponse.EnsureSuccessStatusCode();
         AssertNoStore(styleResponse);
         var styles = await styleResponse.Content.ReadAsStringAsync();
