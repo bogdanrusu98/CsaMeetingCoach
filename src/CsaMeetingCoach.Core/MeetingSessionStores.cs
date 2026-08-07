@@ -25,6 +25,8 @@ public sealed class InMemoryMeetingSessionStore : IMeetingSessionStore
 
 public sealed class JsonMeetingSessionStore(string dataDirectory) : IMeetingSessionStore
 {
+    private const int CompletionEligibilityMigrationVersion = 3;
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true
@@ -51,8 +53,8 @@ public sealed class JsonMeetingSessionStore(string dataDirectory) : IMeetingSess
                 stream,
                 JsonOptions,
                 cancellationToken);
-            var isLegacyState = session is not null
-                && session.StateSchemaVersion < MeetingSessionState.CurrentSchemaVersion;
+            var requiresCompletionEligibilityMigration = session is not null
+                && session.StateSchemaVersion < CompletionEligibilityMigrationVersion;
             var finalTranscriptCount = session?.Transcript.Count(segment => segment.IsFinal) ?? 0;
             return session is null
                 ? null
@@ -70,7 +72,7 @@ public sealed class JsonMeetingSessionStore(string dataDirectory) : IMeetingSess
                         .Select(item => item with
                         {
                             CompletionEligibleFromTranscriptIndex =
-                                isLegacyState
+                                requiresCompletionEligibilityMigration
                                     && item.Status == ChecklistItemStatus.Pending
                                     && item.CompletionEligibleFromTranscriptIndex is null
                                         ? finalTranscriptCount

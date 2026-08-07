@@ -38,7 +38,8 @@ public sealed class CoachApiClient : ICoachApiClient
                 transcript.Text,
                 transcript.OccurredAtUtc,
                 IsFinal: true,
-                sourceSegmentId));
+                SourceSegmentId: sourceSegmentId,
+                IsSpeechRecognized: true));
 
         for (var attempt = 1; attempt <= options.MaxAttempts; attempt++)
         {

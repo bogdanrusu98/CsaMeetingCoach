@@ -38,6 +38,7 @@ public sealed class CoachApiClientTests
         Assert.All(handler.SourceIds, id => Assert.Equal(sourceId, id));
         Assert.All(handler.ApiKeys, key => Assert.Equal(new string('k', 32), key));
         Assert.All(handler.Speakers, speaker => Assert.Equal("Meeting participant", speaker));
+        Assert.All(handler.SpeechRecognitionMarkers, Assert.True);
     }
 
     [Fact]
@@ -101,6 +102,7 @@ public sealed class CoachApiClientTests
         public List<Guid> SourceIds { get; } = [];
         public List<string> ApiKeys { get; } = [];
         public List<string> Speakers { get; } = [];
+        public List<bool> SpeechRecognitionMarkers { get; } = [];
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -116,6 +118,10 @@ public sealed class CoachApiClientTests
                 .GetProperty("segment")
                 .GetProperty("speaker")
                 .GetString()!);
+            SpeechRecognitionMarkers.Add(document.RootElement
+                .GetProperty("segment")
+                .GetProperty("isSpeechRecognized")
+                .GetBoolean());
             ApiKeys.Add(request.Headers.GetValues("X-Transcript-Adapter-Key").Single());
             return new HttpResponseMessage(
                 fixedStatus

@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.DataProtection;
+using CsaMeetingCoach.Core;
 
 namespace CsaMeetingCoach.Api;
 
@@ -172,7 +173,10 @@ public sealed record BrowserSpeechTokenResponse(
     string Token,
     string Region,
     string Language,
-    DateTimeOffset ExpiresAtUtc);
+    DateTimeOffset ExpiresAtUtc)
+{
+    public IReadOnlyList<string> Phrases { get; init; } = [];
+}
 
 public interface IBrowserSpeechTokenService
 {
@@ -233,6 +237,9 @@ internal sealed class AzureBrowserSpeechTokenService(
             token,
             options.Region,
             options.Language,
-            timeProvider.GetUtcNow().AddMinutes(9));
+            timeProvider.GetUtcNow().AddMinutes(9))
+        {
+            Phrases = EducationalConceptCatalog.BuildSpeechPhraseVocabulary()
+        };
     }
 }

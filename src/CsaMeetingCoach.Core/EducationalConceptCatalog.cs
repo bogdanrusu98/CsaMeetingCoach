@@ -25,6 +25,21 @@ public sealed record EducationalConcept(
 
 public static class EducationalConceptCatalog
 {
+    private static readonly HashSet<string> SafeAcronyms = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "AKS", "NSG", "VMSS", "ARO", "PIM", "RBAC", "IaaS", "PaaS", "SaaS", "MFA", "CDN",
+        "NFS", "SMB", "GRS", "LRS", "ZRS"
+    };
+
+    private static readonly HashSet<string> UnsafeSingleTokens = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "cloud", "hybrid", "batch", "arc", "vpn", "monitor", "alerts", "budget",
+        "subnet", "subnets", "tags", "tagging", "locks", "migrate", "databricks",
+        "synapse", "sentinel", "lighthouse", "kusto", "finops", "rehost", "refactor",
+        "vm", "vms", "arm", "gateway", "functions", "search", "redis", "blob", "blobs",
+        "advisor", "blueprints", "reservations", "sla", "rto", "rpo", "tco", "roi"
+    };
+
     public static IReadOnlyList<EducationalConcept> All { get; } =
         new List<EducationalConcept>
         {
@@ -1056,5 +1071,55 @@ public static class EducationalConceptCatalog
 
         concept = null!;
         return false;
+    }
+
+    public static IReadOnlyList<string> BuildSpeechPhraseVocabulary()
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var phrases = new List<string>(capacity: 500)
+        {
+            "Azure"
+        };
+        seen.Add("Azure");
+
+        foreach (var concept in All)
+        {
+            TryAddPhrase(concept.CanonicalTitle, seen, phrases);
+
+            foreach (var alias in concept.Aliases)
+            {
+                TryAddPhrase(alias, seen, phrases);
+            }
+
+            if (phrases.Count >= 500)
+            {
+                break;
+            }
+        }
+
+        return phrases.AsReadOnly();
+
+        static void TryAddPhrase(string phrase, HashSet<string> seen, List<string> phrases)
+        {
+            if (phrases.Count >= 500 || string.IsNullOrWhiteSpace(phrase))
+            {
+                return;
+            }
+
+            var hasSpace = phrase.Contains(' ');
+            var isSafeSingleToken = SafeAcronyms.Contains(phrase)
+                || (!UnsafeSingleTokens.Contains(phrase) && phrase.Length >= 5);
+            if (!hasSpace && !isSafeSingleToken)
+            {
+                return;
+            }
+
+            if (!seen.Add(phrase))
+            {
+                return;
+            }
+
+            phrases.Add(phrase);
+        }
     }
 }

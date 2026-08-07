@@ -1595,6 +1595,103 @@ public sealed class MeetingSessionCoordinatorTests
             task => Assert.Equal(RecommendationStatus.Proposed, task.Status));
     }
 
+    [Fact]
+    public async Task AddTranscript_SpeechSegmentWithEcosystemAnchor_CorrectsAsiaToAzure()
+    {
+        var coordinator = CreateCoordinator(new HeuristicConversationCoachAgent());
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "CSA",
+                "We deployed to Asia Key Vault.",
+                IsSpeechRecognized: true),
+            CancellationToken.None);
+
+        var segment = Assert.Single(updated.Transcript);
+        Assert.Equal("We deployed to Azure Key Vault.", segment.Text);
+        Assert.Equal("We deployed to Asia Key Vault.", segment.RecognizedText);
+        Assert.NotNull(segment.CorrectionReason);
+        Assert.Contains("AsiaToAzure", segment.CorrectionReason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AddTranscript_NonSpeechSegmentWithAsia_DoesNotCorrect()
+    {
+        var coordinator = CreateCoordinator(new HeuristicConversationCoachAgent());
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        const string text = "We deployed to Asia Key Vault.";
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("CSA", text, IsSpeechRecognized: false),
+            CancellationToken.None);
+
+        var segment = Assert.Single(updated.Transcript);
+        Assert.Equal(text, segment.Text);
+        Assert.Null(segment.RecognizedText);
+        Assert.Null(segment.CorrectionReason);
+    }
+
+    [Fact]
+    public async Task AddTranscript_CorrectedSpeechSegment_TriggersEducationalCardForAzureConcept()
+    {
+        var coordinator = CreateCoordinator(new HeuristicConversationCoachAgent());
+        var purpose = TestData.CreatePurpose() with
+        {
+            MeetingType = "Azure workshop",
+            Objective = "Explain Azure services."
+        };
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(purpose),
+            CancellationToken.None);
+
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "CSA",
+                "We store secrets in Asia Key Vault.",
+                IsSpeechRecognized: true),
+            CancellationToken.None);
+
+        var segment = Assert.Single(updated.Transcript);
+        Assert.Equal("We store secrets in Azure Key Vault.", segment.Text);
+        Assert.NotNull(segment.RecognizedText);
+        Assert.Contains(
+            updated.ContextualCards,
+            card => card.ConceptKey != null
+                && card.ConceptKey.Contains("key-vault", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task AddTranscript_InterimSpeechSegment_NeverCorrected()
+    {
+        var coordinator = CreateCoordinator(new HeuristicConversationCoachAgent());
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+
+        const string text = "Asia Key Vault";
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "CSA",
+                text,
+                IsFinal: false,
+                IsSpeechRecognized: true),
+            CancellationToken.None);
+
+        var segment = Assert.Single(updated.Transcript);
+        Assert.False(segment.IsFinal);
+        Assert.Equal(text, segment.Text);
+        Assert.Null(segment.RecognizedText);
+    }
+
     private sealed class BlockingAgent : IConversationCoachAgent
     {
         private readonly TaskCompletionSource _tcs = new();

@@ -148,13 +148,32 @@ public sealed class MeetingSessionCoordinator : IDisposable
             }
             else
             {
+                var trimmedText = request.Text.Trim();
+                var normalizeResult = SpeechNormalizer.Normalize(
+                    trimmedText,
+                    request.IsSpeechRecognized && request.IsFinal,
+                    session.Purpose);
+
                 segment = new TranscriptSegment(
                     Guid.NewGuid(),
                     request.Speaker.Trim(),
-                    request.Text.Trim(),
+                    normalizeResult.NormalizedText,
                     request.OccurredAtUtc ?? DateTimeOffset.UtcNow,
                     request.IsFinal,
-                    request.SourceSegmentId);
+                    request.SourceSegmentId)
+                {
+                    RecognizedText = normalizeResult.WasCorrected ? trimmedText : null,
+                    CorrectionReason = normalizeResult.CorrectionReason
+                };
+
+                if (normalizeResult.WasCorrected)
+                {
+                    _logger?.LogInformation(
+                        "Speech normalization applied to segment preparation. SessionId: {SessionId}, SegmentId: {SegmentId}, CorrectionReason: {CorrectionReason}",
+                        sessionId,
+                        segment.Id,
+                        normalizeResult.CorrectionReason);
+                }
 
                 transcript = session.Transcript.Append(segment).ToArray();
                 transcriptUpdate = session with

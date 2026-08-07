@@ -978,6 +978,17 @@ html[data-theme="contrast"] .compact-item.completed .item-indicator {
   color: var(--cp-accent);
 }
 
+.speech-normalized {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--cp-warning-soft);
+  color: var(--cp-warning);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .contextual-card-history-entry {
   display: grid;
   gap: 4px;

@@ -171,6 +171,101 @@ public sealed class MeetingSessionStoreTests : IDisposable
         Assert.Equal(MeetingSessionState.CurrentSchemaVersion, loaded.StateSchemaVersion);
     }
 
+    [Fact]
+    public async Task Get_SessionWithLegacyTranscriptSegmentMissingNewFields_LoadsSafely()
+    {
+        Directory.CreateDirectory(_directory);
+        var sessionId = Guid.NewGuid();
+        var segmentId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var json = $$"""
+            {
+              "id": "{{sessionId}}",
+              "purpose": {
+                "title": "Review",
+                "meetingType": "Customer",
+                "objective": "Review architecture",
+                "successCriteria": []
+              },
+              "status": 0,
+              "createdAtUtc": "{{now.AddHours(-1):O}}",
+              "updatedAtUtc": "{{now:O}}",
+              "revision": 1,
+              "checklist": [],
+              "transcript": [{
+                "id": "{{segmentId}}",
+                "speaker": "CSA",
+                "text": "Azure Kubernetes Service is recommended.",
+                "occurredAtUtc": "{{now.AddMinutes(-5):O}}",
+                "isFinal": true
+              }],
+              "recommendedTasks": [],
+              "warnings": []
+            }
+            """;
+        await File.WriteAllTextAsync(
+            Path.Combine(_directory, $"{sessionId:N}.json"),
+            json);
+
+        var loaded = await new JsonMeetingSessionStore(_directory).GetAsync(
+            sessionId,
+            CancellationToken.None);
+
+        var segment = Assert.Single(loaded!.Transcript);
+        Assert.Equal("Azure Kubernetes Service is recommended.", segment.Text);
+        Assert.Null(segment.RecognizedText);
+        Assert.Null(segment.CorrectionReason);
+        Assert.Equal(MeetingSessionState.CurrentSchemaVersion, loaded.StateSchemaVersion);
+    }
+
+    [Fact]
+    public async Task Get_VersionThreePendingChecklist_PreservesUnrestrictedEligibility()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var session = new MeetingSessionState(
+            Guid.NewGuid(),
+            TestData.CreatePurpose(),
+            MeetingSessionStatus.Active,
+            now,
+            now,
+            Revision: 1,
+            Checklist:
+            [
+                new ChecklistItemState(
+                    Guid.NewGuid(),
+                    "Confirm scope",
+                    "The scope is explicit.",
+                    ["scope"],
+                    ChecklistItemStatus.Pending,
+                    AutoCompleted: false,
+                    Confidence: null,
+                    CompletionReason: null,
+                    CompletedAtUtc: null,
+                    Evidence: [],
+                    CompletionEligibleFromTranscriptIndex: null)
+            ],
+            Transcript:
+            [
+                new TranscriptSegment(
+                    Guid.NewGuid(),
+                    "CSA",
+                    "The scope is explicit.",
+                    now,
+                    IsFinal: true)
+            ],
+            RecommendedTasks: [],
+            Warnings: [],
+            StateSchemaVersion: 3);
+        var store = new JsonMeetingSessionStore(_directory);
+        await store.SaveAsync(session, CancellationToken.None);
+
+        var loaded = await store.GetAsync(session.Id, CancellationToken.None);
+
+        Assert.NotNull(loaded);
+        Assert.Null(Assert.Single(loaded.Checklist).CompletionEligibleFromTranscriptIndex);
+        Assert.Equal(MeetingSessionState.CurrentSchemaVersion, loaded.StateSchemaVersion);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))

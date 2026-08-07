@@ -16,12 +16,15 @@ const state = {
   speechPublishQueue: Promise.resolve(),
   speechPublishAbortController: null,
   seenRecognitionIds: new Set(),
+  speechPhraseList: null,
   speechDiagnostics: {
     interim: 0,
     final: 0,
     queued: 0,
     published: 0,
     publishFailures: 0,
+    corrections: 0,
+    phraseVocabCount: 0,
     lastStage: "Waiting for microphone activity.",
     lastEventAt: null
   },
@@ -421,7 +424,9 @@ function render() {
       .map(segment => `
         <div class="transcript-entry">
           <strong>${escapeHtml(segment.speaker)}</strong>
-          <span>${escapeHtml(segment.text)}</span>
+          <span>${escapeHtml(segment.text)}</span>${segment.recognizedText
+            ? ` <span class="speech-normalized" title="Original Speech SDK recognition retained for traceability">Speech normalized</span>`
+            : ""}
         </div>`).join("");
   }
 
@@ -631,6 +636,17 @@ async function startMicrophone() {
       : window.SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
     recognizer = new window.SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
 
+    if (token.phrases && token.phrases.length > 0
+        && window.SpeechSDK.PhraseListGrammar) {
+      const phraseList = window.SpeechSDK.PhraseListGrammar.fromRecognizer(recognizer);
+      phraseList.addPhrases(token.phrases);
+      phraseList.setWeight(2.0);
+      state.speechPhraseList = phraseList;
+      state.speechDiagnostics.phraseVocabCount = token.phrases.length;
+      recordSpeechDiagnostic(
+        `Speech phrase vocabulary configured (${token.phrases.length} entries). Contextual correction enabled.`);
+    }
+
     recognizer.recognizing = (_, event) => {
       const text = event.result?.text?.trim();
       if (text) {
@@ -713,9 +729,11 @@ async function startMicrophone() {
     scheduleSpeechTokenRefresh(token, recognizer);
   } catch (error) {
     state.microphoneRecognizer = null;
+    state.speechPhraseList = null;
     state.microphoneAudioConfig = null;
     state.microphoneCapture = null;
     state.microphoneSourceLabel = "Presenter microphone";
+    state.speechDiagnostics.phraseVocabCount = 0;
     speechPublishAbortController.abort();
     if (state.speechPublishAbortController === speechPublishAbortController) {
       state.speechPublishAbortController = null;
@@ -749,6 +767,7 @@ async function stopMicrophone() {
   state.microphoneBusy = true;
   cancelMicrophoneTokenRequests();
   state.microphoneRecognizer = null;
+  state.speechPhraseList = null;
   state.microphoneAudioConfig = null;
   state.microphoneCapture = null;
   state.microphoneSourceLabel = "Presenter microphone";
@@ -864,6 +883,7 @@ function enqueueSpeechSegment(text, speaker = state.microphoneSourceLabel) {
     text,
     occurredAtUtc: new Date().toISOString(),
     isFinal: true,
+    isSpeechRecognized: true,
     sourceSegmentId: window.crypto.randomUUID()
   };
   recordSpeechDiagnostic("Final speech queued for the Coach API.", "queued");
@@ -879,7 +899,15 @@ function enqueueSpeechSegment(text, speaker = state.microphoneSourceLabel) {
         state.session = updated;
         render();
       }
-      recordSpeechDiagnostic("Coach API publish succeeded.", "published");
+      const latestSegment = updated?.transcript?.at(-1);
+      if (latestSegment?.recognizedText) {
+        state.speechDiagnostics.corrections = (state.speechDiagnostics.corrections || 0) + 1;
+        recordSpeechDiagnostic(
+          `Coach API publish succeeded. Speech normalization applied (count: ${state.speechDiagnostics.corrections}).`,
+          "published");
+      } else {
+        recordSpeechDiagnostic("Coach API publish succeeded.", "published");
+      }
       elements.microphonePreview.textContent =
         "Final phrase sent. Live coaching is updating.";
     })
@@ -898,6 +926,8 @@ function resetSpeechDiagnostics() {
     queued: 0,
     published: 0,
     publishFailures: 0,
+    corrections: 0,
+    phraseVocabCount: 0,
     lastStage: "Waiting for speech events.",
     lastEventAt: null
   };
@@ -922,10 +952,16 @@ function renderSpeechDiagnostics() {
         second: "2-digit"
       })
     : "not yet";
+  const phraseInfo = diagnostics.phraseVocabCount > 0
+    ? ` · Phrase vocab: ${diagnostics.phraseVocabCount}`
+    : "";
+  const correctionInfo = diagnostics.corrections > 0
+    ? ` · Speech corrections: ${diagnostics.corrections}`
+    : "";
   elements.speechDiagnostics.textContent =
     `Interim: ${diagnostics.interim} · Final: ${diagnostics.final} · `
     + `Queued: ${diagnostics.queued} · Published: ${diagnostics.published} · `
-    + `Publish failures: ${diagnostics.publishFailures}. `
+    + `Publish failures: ${diagnostics.publishFailures}${phraseInfo}${correctionInfo}. `
     + `Last stage: ${diagnostics.lastStage} (${time})`;
 }
 

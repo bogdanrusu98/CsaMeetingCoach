@@ -8,6 +8,20 @@ namespace CsaMeetingCoach.Tests;
 public sealed class BrowserSpeechTokenServiceTests
 {
     [Fact]
+    public void TokenResponse_PreservesFourArgumentConstructorCompatibility()
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        var response = new BrowserSpeechTokenResponse(
+            "token",
+            "westus2",
+            "en-US",
+            now);
+
+        Assert.Empty(response.Phrases);
+    }
+
+    [Fact]
     public async Task EnabledServiceIssuesShortLivedTokenWithoutRedirectingCredentials()
     {
         var handler = new RecordingHandler(
@@ -29,6 +43,24 @@ public sealed class BrowserSpeechTokenServiceTests
             handler.RequestUri);
         Assert.Equal("speech-key", handler.SubscriptionKey);
         Assert.Equal(HttpMethod.Post, handler.Method);
+    }
+
+    [Fact]
+    public async Task EnabledServiceIncludesSpeechPhraseVocabularyInToken()
+    {
+        var handler = new RecordingHandler(
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("test-token")
+            });
+        var service = CreateService(handler, EnabledOptions(), DateTimeOffset.UtcNow);
+
+        var result = await service.IssueTokenAsync(CancellationToken.None);
+
+        Assert.NotNull(result.Phrases);
+        Assert.NotEmpty(result.Phrases);
+        Assert.True(result.Phrases.Count <= 500);
+        Assert.Contains("Azure", result.Phrases, StringComparer.Ordinal);
     }
 
     [Fact]

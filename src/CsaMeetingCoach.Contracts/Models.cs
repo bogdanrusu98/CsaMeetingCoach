@@ -67,7 +67,8 @@ public sealed record AddTranscriptSegmentRequest(
     string Text,
     DateTimeOffset? OccurredAtUtc = null,
     bool IsFinal = true,
-    Guid? SourceSegmentId = null);
+    Guid? SourceSegmentId = null,
+    bool IsSpeechRecognized = false);
 
 public sealed record TranscriptSegment(
     Guid Id,
@@ -76,7 +77,14 @@ public sealed record TranscriptSegment(
     DateTimeOffset OccurredAtUtc,
     bool IsFinal,
     Guid? SourceSegmentId = null,
-    DateTimeOffset? AnalyzedAtUtc = null);
+    DateTimeOffset? AnalyzedAtUtc = null)
+{
+    /// <summary>Exact original recognized text, set only when a contextual correction occurred. Null otherwise.</summary>
+    public string? RecognizedText { get; init; }
+
+    /// <summary>Short reason code for the correction (e.g. "AsiaToAzure:EcosystemAnchor"). Null when no correction.</summary>
+    public string? CorrectionReason { get; init; }
+}
 
 public sealed record ChecklistEvidence(
     Guid TranscriptSegmentId,
@@ -139,7 +147,7 @@ public sealed record MeetingSessionState(
     bool IsAnalyzing = false,
     int StateSchemaVersion = 0)
 {
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
 
     public IReadOnlyList<ContextualCardState> ContextualCards { get; init; } = [];
     public HashSet<string> ShownDefinitionKeys { get; init; } =

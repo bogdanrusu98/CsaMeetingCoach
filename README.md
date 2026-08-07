@@ -42,6 +42,39 @@ optionally combine that microphone with meeting audio explicitly selected throug
 the browser's screen-sharing picker. This is an admin-free demo convenience, not
 a claim of native Teams participant capture or speaker attribution.
 
+## Accented-speech resilience
+
+Azure Speech sometimes returns homophones for accented speakers (for example,
+"Asia" instead of "Azure" for a Romanian-accented presenter). The system addresses
+this with two complementary mechanisms:
+
+### Phrase vocabulary (primary)
+The speech-token endpoint now includes a bounded, deduplicated list of canonical
+Azure service names and safe aliases sourced from the educational concept catalog.
+The browser configures an Azure Speech SDK `PhraseListGrammar` with these phrases
+and weight 2.0 before continuous recognition starts, improving recognition of Azure
+terminology before results are final. Phrase vocabulary is privacy-safe (no spoken
+content is logged).
+
+### Contextual speech normalizer (fallback)
+For segments explicitly marked as speech-recognized (`IsSpeechRecognized: true`),
+a conservative context-aware normalizer corrects whole-word `Asia` → `Azure` in
+final segments only when the same segment contains a strong Azure ecosystem anchor
+(e.g., AKS, Key Vault, resource group, Defender for Cloud) or the meeting purpose
+is explicitly Azure-focused and a distinctive technical anchor is present.
+
+Geographic constructions are never corrected: "Southeast Asia", "Asia Pacific",
+"customers in Asia", "travel to Asia", "AWS region in Asia", etc. remain unchanged.
+Manual transcript simulator and API adapter transcripts are not affected unless
+they explicitly set `IsSpeechRecognized: true`.
+
+When a correction occurs, the original recognized text is retained in
+`TranscriptSegment.RecognizedText` for traceability, and a reason code is stored
+in `TranscriptSegment.CorrectionReason`. The corrected text drives coaching and
+appears in the transcript. The diagnostics panel shows a "Speech normalized"
+indicator next to corrected segments, including the original phrase on hover.
+Server logs record only the correction reason code and segment ID — never transcript content.
+
 By default, session files are stored in
 `%LOCALAPPDATA%\CsaMeetingCoach\data` on Windows.
 
