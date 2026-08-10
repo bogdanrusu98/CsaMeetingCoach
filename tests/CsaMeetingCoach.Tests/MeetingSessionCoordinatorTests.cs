@@ -758,6 +758,37 @@ public sealed class MeetingSessionCoordinatorTests
         blocking.Release();
     }
 
+    [Theory]
+    [InlineData(
+        "Azure Managed Redis is part of the Azure architecture.",
+        "Azure Managed Redis")]
+    [InlineData(
+        "Microsoft Entra ID Governance is part of the Azure architecture.",
+        "Microsoft Entra ID Governance")]
+    public async Task AddTranscript_PrefersSpecificOverlappingEducationalCard(
+        string transcript,
+        string expectedTitle)
+    {
+        using var coordinator = CreateCoordinator(new HeuristicConversationCoachAgent());
+        var purpose = TestData.CreatePurpose() with
+        {
+            MeetingType = "Azure workshop",
+            Objective = "Explain Azure services and design decisions."
+        };
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(purpose),
+            CancellationToken.None);
+
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("Presenter", transcript),
+            CancellationToken.None);
+
+        var card = Assert.Single(updated.ContextualCards);
+        Assert.Equal(ContextualCardKind.Definition, card.Kind);
+        Assert.Equal(expectedTitle, card.Title);
+    }
+
     [Fact]
     public async Task AddTranscript_DeterministicFastLane_CompletesChecklistWithoutAi()
     {

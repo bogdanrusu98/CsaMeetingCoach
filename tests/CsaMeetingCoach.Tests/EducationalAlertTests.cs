@@ -326,7 +326,9 @@ public sealed class EducationalAlertTests
             new AddTranscriptSegmentRequest("Presenter", "Azure Policy evaluates resources against rules."),
             CancellationToken.None);
 
-        Assert.Empty(updated.ContextualCards);
+        Assert.DoesNotContain(
+            updated.ContextualCards,
+            card => string.Equals(card.Content, content, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -345,7 +347,10 @@ public sealed class EducationalAlertTests
             CancellationToken.None);
 
         Assert.Single(updated.RecommendedTasks);
-        Assert.Empty(updated.ContextualCards);
+        var safeAlert = Assert.Single(updated.ContextualCards);
+        Assert.Equal(ContextualCardKind.Definition, safeAlert.Kind);
+        Assert.Equal("Azure Policy", safeAlert.Title);
+        Assert.DoesNotContain("recommend", safeAlert.Content, StringComparison.OrdinalIgnoreCase);
     }
 
     public static TheoryData<EducationalConcept> PositiveConcepts =>
@@ -396,6 +401,26 @@ public sealed class EducationalAlertTests
         var titles = EducationalConceptCatalog.All.Select(c => c.CanonicalTitle).ToList();
         var distinct = titles.Distinct(StringComparer.OrdinalIgnoreCase).Count();
         Assert.Equal(titles.Count, distinct);
+    }
+
+    [Fact]
+    public void ConceptCatalog_AllDefinitionsAndHintsAreClientReady()
+    {
+        var invalid = EducationalConceptCatalog.All
+            .SelectMany(concept => new[]
+            {
+                (concept.ConceptKey, concept.CanonicalTitle, Kind: "definition", Text: concept.DefinitionText),
+                (concept.ConceptKey, concept.CanonicalTitle, Kind: "hint", Text: concept.HintText)
+            })
+            .Where(entry => !PresentationCoachingPolicy.IsClientReadyExplanation(
+                entry.CanonicalTitle,
+                entry.Text))
+            .Select(entry => $"{entry.ConceptKey}:{entry.Kind}")
+            .ToArray();
+
+        Assert.True(
+            invalid.Length == 0,
+            $"Client-ready validation failed for: {string.Join(", ", invalid)}");
     }
 
     [Fact]
