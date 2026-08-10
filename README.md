@@ -142,9 +142,12 @@ The GitHub deployment enables this path only when the repository variable
 `MEDIA_BOT_SPEECH_LANGUAGE`, so browser transcription can be enabled while
 `MEDIA_BOT_ENABLED` remains `false`. Store a separate random value of at least
 32 characters in the `BROWSER_SPEECH_ACCESS_KEY` repository secret and enter
-that value in the side panel for an authorized demo. It is retained only in
-page memory. The Teams manifest requests the `media` device permission; tenant
-policy can still block custom app or microphone access.
+that value in the side panel for an authorized demo. The plaintext value is
+retained only in page memory and cleared after a successful exchange. The
+server then grants that browser a protected, HttpOnly authorization cookie for
+up to 30 days; rotating the configured access code revokes existing browser
+authorization. The Teams manifest requests the `media` device permission;
+tenant policy can still block custom app or microphone access.
 
 The Windows media-bot service is in `src/CsaMeetingCoach.BotService`. Graph is
 disabled by default, so `/api/sessions/{id}/transcript` and the UI simulator

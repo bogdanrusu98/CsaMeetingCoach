@@ -148,6 +148,7 @@ public sealed class BrowserSpeechTokenServiceTests
         Assert.Contains("httponly", setCookie, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("secure", setCookie, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("samesite=none", setCookie, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("max-age=2592000", setCookie, StringComparison.OrdinalIgnoreCase);
         var persistedContext = CreateContextWithCookie(setCookie);
         Assert.True(authorizer.HasPersistentAccess(persistedContext));
         Assert.False(authorizer.Authorize(persistedContext));

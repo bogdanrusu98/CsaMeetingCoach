@@ -18,8 +18,8 @@ public sealed class StaticAssetCacheTests
         indexResponse.EnsureSuccessStatusCode();
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
-        Assert.Contains("styles.css?v=20260807a", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260807a", html, StringComparison.Ordinal);
+        Assert.Contains("styles.css?v=20260810a", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260810a", html, StringComparison.Ordinal);
         Assert.Contains("data-theme", html, StringComparison.Ordinal);
         Assert.Contains("id=\"microphone-toggle\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"include-system-audio\"", html, StringComparison.Ordinal);
@@ -37,7 +37,7 @@ public sealed class StaticAssetCacheTests
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260807a");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260810a");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
@@ -96,8 +96,9 @@ public sealed class StaticAssetCacheTests
             "Original Speech SDK recognition retained for traceability",
             script,
             StringComparison.Ordinal);
+        Assert.Contains("protected access lasts up to 30 days", script, StringComparison.Ordinal);
 
-        using var styleResponse = await client.GetAsync("/styles.css?v=20260807a");
+        using var styleResponse = await client.GetAsync("/styles.css?v=20260810a");
         styleResponse.EnsureSuccessStatusCode();
         AssertNoStore(styleResponse);
         var styles = await styleResponse.Content.ReadAsStringAsync();

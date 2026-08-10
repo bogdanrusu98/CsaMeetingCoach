@@ -57,7 +57,7 @@ public sealed class BrowserSpeechAuthorizer
 {
     public const string ApiKeyHeaderName = "X-Browser-Speech-Key";
     private const string AccessCookieName = "CsaMeetingCoach.BrowserSpeechAccess";
-    private static readonly TimeSpan AccessLifetime = TimeSpan.FromDays(7);
+    private static readonly TimeSpan AccessLifetime = TimeSpan.FromDays(30);
     private readonly BrowserSpeechOptions options;
     private readonly IDataProtector protector;
     private readonly TimeProvider timeProvider;

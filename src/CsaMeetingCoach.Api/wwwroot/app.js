@@ -1197,7 +1197,7 @@ function renderMicrophoneControls() {
     || sessionCompleted
     || state.browserSpeechAuthorized;
   elements.microphoneAccessStatus.textContent = state.browserSpeechAuthorized
-    ? "Device authorized. The code is not stored or copied; protected access lasts up to seven days."
+    ? "Device authorized. The code is not stored or copied; protected access lasts up to 30 days."
     : "Enter once per browser; the code is exchanged for protected access and is not copied to the clipboard.";
   elements.microphoneStatus.textContent = state.microphoneBusy
     ? "Starting"
