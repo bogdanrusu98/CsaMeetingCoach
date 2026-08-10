@@ -33,6 +33,7 @@ env:
   FOUNDRY_VECTOR_STORE_IDS: ${{ vars.FOUNDRY_VECTOR_STORE_IDS }}
   BROWSER_SPEECH_ENABLED: ${{ vars.BROWSER_SPEECH_ENABLED || 'false' }}
   BROWSER_SPEECH_ACCESS_KEY: ${{ secrets.BROWSER_SPEECH_ACCESS_KEY }}
+  BROWSER_SPEECH_ENDPOINT_ID: ${{ vars.BROWSER_SPEECH_ENDPOINT_ID }}
   TRANSCRIPT_ADAPTER_AUTH_MODE: ${{ vars.TRANSCRIPT_ADAPTER_AUTH_MODE || 'Disabled' }}
   TRANSCRIPT_ADAPTER_API_KEY: ${{ secrets.TRANSCRIPT_ADAPTER_API_KEY }}
   TRANSCRIPT_ADAPTER_ENTRA_TENANT_ID: ${{ vars.TRANSCRIPT_ADAPTER_ENTRA_TENANT_ID }}
@@ -192,6 +193,7 @@ jobs:
             BrowserSpeechAccessKey = $env:BROWSER_SPEECH_ACCESS_KEY
             BrowserSpeechRegion = $env:MEDIA_BOT_SPEECH_REGION
             BrowserSpeechLanguage = $env:MEDIA_BOT_SPEECH_LANGUAGE
+            BrowserSpeechEndpointId = $env:BROWSER_SPEECH_ENDPOINT_ID
             TranscriptAdapterAuthenticationMode = $env:TRANSCRIPT_ADAPTER_AUTH_MODE
             TranscriptAdapterDevelopmentApiKey = $env:TRANSCRIPT_ADAPTER_API_KEY
             TranscriptAdapterEntraTenantId = $env:TRANSCRIPT_ADAPTER_ENTRA_TENANT_ID

@@ -19,6 +19,7 @@ public sealed class BrowserSpeechTokenServiceTests
             now);
 
         Assert.Empty(response.Phrases);
+        Assert.Null(response.EndpointId);
     }
 
     [Fact]
@@ -61,6 +62,25 @@ public sealed class BrowserSpeechTokenServiceTests
         Assert.NotEmpty(result.Phrases);
         Assert.True(result.Phrases.Count <= 500);
         Assert.Contains("Azure", result.Phrases, StringComparer.Ordinal);
+        Assert.Null(result.EndpointId);
+    }
+
+    [Fact]
+    public async Task ConfiguredCustomEndpointIsIncludedInTokenResponse()
+    {
+        const string endpointId = "6d58cb46-9d80-4d6b-8b8c-32a16742e018";
+        var handler = new RecordingHandler(
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("test-token")
+            });
+        var options = EnabledOptions(endpointId: endpointId);
+        options.Validate();
+        var service = CreateService(handler, options, DateTimeOffset.UtcNow);
+
+        var result = await service.IssueTokenAsync(CancellationToken.None);
+
+        Assert.Equal(endpointId, result.EndpointId);
     }
 
     [Fact]
@@ -116,6 +136,29 @@ public sealed class BrowserSpeechTokenServiceTests
         };
 
         Assert.Throws<InvalidOperationException>(options.Validate);
+    }
+
+    [Theory]
+    [InlineData("not-a-guid")]
+    [InlineData("6D58CB46-9D80-4D6B-8B8C-32A16742E018")]
+    [InlineData("{6d58cb46-9d80-4d6b-8b8c-32a16742e018}")]
+    [InlineData(" 6d58cb46-9d80-4d6b-8b8c-32a16742e018")]
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    public void EnabledOptionsRejectNonCanonicalEndpointIds(string endpointId)
+    {
+        var options = EnabledOptions(endpointId: endpointId);
+
+        var exception = Assert.Throws<InvalidOperationException>(options.Validate);
+
+        Assert.Contains("canonical GUID", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EnabledOptionsAllowEmptyEndpointId()
+    {
+        var options = EnabledOptions(endpointId: string.Empty);
+
+        options.Validate();
     }
 
     [Fact]
@@ -219,14 +262,16 @@ public sealed class BrowserSpeechTokenServiceTests
             new FixedTimeProvider(now));
 
     private static BrowserSpeechOptions EnabledOptions(
-        string accessKey = "browser-speech-access-key-00000001") =>
+        string accessKey = "browser-speech-access-key-00000001",
+        string endpointId = "") =>
         new()
         {
             Enabled = true,
             SubscriptionKey = "speech-key",
             AccessKey = accessKey,
             Region = "westus2",
-            Language = "en-US"
+            Language = "en-US",
+            EndpointId = endpointId
         };
 
     private static DefaultHttpContext CreateContextWithCookie(string setCookie)

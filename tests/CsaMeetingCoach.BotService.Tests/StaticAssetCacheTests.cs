@@ -18,8 +18,8 @@ public sealed class StaticAssetCacheTests
         indexResponse.EnsureSuccessStatusCode();
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
-        Assert.Contains("styles.css?v=20260810a", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260810a", html, StringComparison.Ordinal);
+        Assert.Contains("styles.css?v=20260810b", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260810b", html, StringComparison.Ordinal);
         Assert.Contains("data-theme", html, StringComparison.Ordinal);
         Assert.Contains("id=\"microphone-toggle\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"include-system-audio\"", html, StringComparison.Ordinal);
@@ -37,7 +37,7 @@ public sealed class StaticAssetCacheTests
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260810a");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260810b");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
@@ -79,17 +79,31 @@ public sealed class StaticAssetCacheTests
         var recognizerIndex = script.IndexOf(
             "new window.SpeechSDK.SpeechRecognizer",
             StringComparison.Ordinal);
+        var speechConfigIndex = script.IndexOf(
+            "window.SpeechSDK.SpeechConfig.fromAuthorizationToken",
+            StringComparison.Ordinal);
+        var endpointIndex = script.IndexOf(
+            "speechConfig.endpointId = token.endpointId",
+            StringComparison.Ordinal);
         var phraseListIndex = script.IndexOf(
             "window.SpeechSDK.PhraseListGrammar.fromRecognizer(recognizer)",
             StringComparison.Ordinal);
         var recognitionStartIndex = script.IndexOf(
             "await startContinuousRecognition(recognizer)",
             StringComparison.Ordinal);
+        Assert.True(speechConfigIndex >= 0);
+        Assert.True(endpointIndex > speechConfigIndex);
+        Assert.True(recognizerIndex > endpointIndex);
         Assert.True(recognizerIndex >= 0);
         Assert.True(phraseListIndex > recognizerIndex);
         Assert.True(recognitionStartIndex > phraseListIndex);
         Assert.Contains("phraseList.addPhrases(token.phrases)", script, StringComparison.Ordinal);
         Assert.Contains("phraseList.setWeight(2.0)", script, StringComparison.Ordinal);
+        Assert.Contains("Custom Speech language model active.", script, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Custom Speech endpoint ${token.endpointId}",
+            script,
+            StringComparison.Ordinal);
         Assert.Contains("isSpeechRecognized: true", script, StringComparison.Ordinal);
         Assert.DoesNotContain("Original recognition: ${", script, StringComparison.Ordinal);
         Assert.Contains(
@@ -98,7 +112,7 @@ public sealed class StaticAssetCacheTests
             StringComparison.Ordinal);
         Assert.Contains("protected access lasts up to 30 days", script, StringComparison.Ordinal);
 
-        using var styleResponse = await client.GetAsync("/styles.css?v=20260810a");
+        using var styleResponse = await client.GetAsync("/styles.css?v=20260810b");
         styleResponse.EnsureSuccessStatusCode();
         AssertNoStore(styleResponse);
         var styles = await styleResponse.Content.ReadAsStringAsync();

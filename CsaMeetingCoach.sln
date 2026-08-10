@@ -23,6 +23,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{F27E9C9D
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CsaMeetingCoach.KnowledgeIndexer", "tools\CsaMeetingCoach.KnowledgeIndexer\CsaMeetingCoach.KnowledgeIndexer.csproj", "{DD24536B-A2F0-4397-B26B-E48E649A7E41}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CsaMeetingCoach.SpeechDatasetBuilder", "tools\CsaMeetingCoach.SpeechDatasetBuilder\CsaMeetingCoach.SpeechDatasetBuilder.csproj", "{11DF9968-95D1-48F3-B53A-4DFFA6F375DA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -60,6 +62,10 @@ Global
 		{DD24536B-A2F0-4397-B26B-E48E649A7E41}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DD24536B-A2F0-4397-B26B-E48E649A7E41}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DD24536B-A2F0-4397-B26B-E48E649A7E41}.Release|Any CPU.Build.0 = Release|Any CPU
+		{11DF9968-95D1-48F3-B53A-4DFFA6F375DA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{11DF9968-95D1-48F3-B53A-4DFFA6F375DA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{11DF9968-95D1-48F3-B53A-4DFFA6F375DA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{11DF9968-95D1-48F3-B53A-4DFFA6F375DA}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{316FE1B0-AB5A-402F-BEEC-F7B1BA4D9664} = {992442FB-C9C1-40F2-94F3-53634B51BBEF}
@@ -69,5 +75,6 @@ Global
 		{EC756F72-0E47-4B72-9CDC-1C772135BB27} = {992442FB-C9C1-40F2-94F3-53634B51BBEF}
 		{856D2E6A-81F4-4DD6-8444-BF14DC08396D} = {9AD8DD39-EFAF-4935-AFAC-7386209A4455}
 		{DD24536B-A2F0-4397-B26B-E48E649A7E41} = {F27E9C9D-FBD8-4E59-A91C-6AFB757F91F3}
+		{11DF9968-95D1-48F3-B53A-4DFFA6F375DA} = {F27E9C9D-FBD8-4E59-A91C-6AFB757F91F3}
 	EndGlobalSection
 EndGlobal

@@ -15,6 +15,7 @@ public sealed class BrowserSpeechOptions
     public string AccessKey { get; init; } = string.Empty;
     public string Region { get; init; } = string.Empty;
     public string Language { get; init; } = "en-US";
+    public string EndpointId { get; init; } = string.Empty;
 
     public void Validate()
     {
@@ -49,6 +50,18 @@ public sealed class BrowserSpeechOptions
         {
             throw new InvalidOperationException(
                 "BrowserSpeech:Language must be a valid speech locale such as en-US.");
+        }
+
+        if (!string.IsNullOrEmpty(EndpointId)
+            && (!Guid.TryParseExact(EndpointId, "D", out var endpointId)
+                || endpointId == Guid.Empty
+                || !string.Equals(
+                    endpointId.ToString("D"),
+                    EndpointId,
+                    StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                "BrowserSpeech:EndpointId must be empty or a canonical GUID.");
         }
     }
 }
@@ -176,6 +189,7 @@ public sealed record BrowserSpeechTokenResponse(
     DateTimeOffset ExpiresAtUtc)
 {
     public IReadOnlyList<string> Phrases { get; init; } = [];
+    public string? EndpointId { get; init; }
 }
 
 public interface IBrowserSpeechTokenService
@@ -239,7 +253,10 @@ internal sealed class AzureBrowserSpeechTokenService(
             options.Language,
             timeProvider.GetUtcNow().AddMinutes(9))
         {
-            Phrases = EducationalConceptCatalog.BuildSpeechPhraseVocabulary()
+            Phrases = EducationalConceptCatalog.BuildSpeechPhraseVocabulary(),
+            EndpointId = string.IsNullOrEmpty(options.EndpointId)
+                ? null
+                : options.EndpointId
         };
     }
 }

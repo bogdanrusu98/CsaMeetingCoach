@@ -31,6 +31,8 @@ param(
 
     [string] $BrowserSpeechLanguage = "en-US",
 
+    [string] $BrowserSpeechEndpointId = "",
+
     [ValidateSet("Disabled", "DevelopmentApiKey", "Entra")]
     [string] $TranscriptAdapterAuthenticationMode = "Disabled",
 
@@ -463,6 +465,17 @@ if ($BrowserSpeechEnabled) {
         $BrowserSpeechLanguage -notmatch "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})+$") {
         throw "Browser speech requires a key, Azure region, and valid speech locale."
     }
+    if (-not [string]::IsNullOrEmpty($BrowserSpeechEndpointId)) {
+        $parsedEndpointId = [Guid]::Empty
+        if (-not [Guid]::TryParseExact(
+                $BrowserSpeechEndpointId,
+                "D",
+                [ref] $parsedEndpointId) -or
+            $parsedEndpointId -eq [Guid]::Empty -or
+            $parsedEndpointId.ToString("D") -cne $BrowserSpeechEndpointId) {
+            throw "Browser speech endpoint ID must be empty or a canonical GUID."
+        }
+    }
 }
 
 if ($TranscriptAdapterAuthenticationMode -eq "DevelopmentApiKey" -and
@@ -581,6 +594,7 @@ try {
             "BrowserSpeech__AccessKey=$BrowserSpeechAccessKey",
             "BrowserSpeech__Region=$BrowserSpeechRegion",
             "BrowserSpeech__Language=$BrowserSpeechLanguage",
+            "BrowserSpeech__EndpointId=$BrowserSpeechEndpointId",
             "TranscriptAdapter__AuthenticationMode=$TranscriptAdapterAuthenticationMode",
             "TranscriptAdapter__DevelopmentApiKey=$TranscriptAdapterDevelopmentApiKey",
             "TranscriptAdapter__Entra__TenantId=$TranscriptAdapterEntraTenantId",

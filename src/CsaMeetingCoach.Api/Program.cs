@@ -70,7 +70,8 @@ var browserSpeechOptions = new BrowserSpeechOptions
     SubscriptionKey = builder.Configuration["BrowserSpeech:SubscriptionKey"] ?? string.Empty,
     AccessKey = builder.Configuration["BrowserSpeech:AccessKey"] ?? string.Empty,
     Region = builder.Configuration["BrowserSpeech:Region"] ?? string.Empty,
-    Language = builder.Configuration["BrowserSpeech:Language"] ?? "en-US"
+    Language = builder.Configuration["BrowserSpeech:Language"] ?? "en-US",
+    EndpointId = builder.Configuration["BrowserSpeech:EndpointId"] ?? string.Empty
 };
 browserSpeechOptions.Validate();
 builder.Services.AddSingleton(browserSpeechOptions);
@@ -245,7 +246,12 @@ app.MapGet("/api/health", () => Results.Ok(new
         ? "Browser microphone/Simulator/API adapter"
         : "Simulator/API adapter",
     transcriptAdapterAuthentication = adapterAuthMode.ToString(),
-    browserMicrophoneTranscription = browserSpeechOptions.Enabled ? "ready" : "disabled"
+    browserMicrophoneTranscription = browserSpeechOptions.Enabled ? "ready" : "disabled",
+    browserSpeechModel = !browserSpeechOptions.Enabled
+        ? "disabled"
+        : string.IsNullOrEmpty(browserSpeechOptions.EndpointId)
+            ? "base"
+            : "custom"
 }));
 
 app.MapGet(

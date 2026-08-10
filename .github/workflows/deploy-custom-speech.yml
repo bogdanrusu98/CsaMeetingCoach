@@ -1,0 +1,119 @@
+name: Deploy Custom Speech
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: csa-meeting-coach-custom-speech
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+  SPEECH_KEY: ${{ secrets.MEDIA_BOT_SPEECH_KEY }}
+  SPEECH_REGION: ${{ vars.MEDIA_BOT_SPEECH_REGION }}
+  SPEECH_LANGUAGE: ${{ vars.MEDIA_BOT_SPEECH_LANGUAGE || 'en-US' }}
+  CONFIGURED_ENDPOINT_ID: ${{ vars.BROWSER_SPEECH_ENDPOINT_ID }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  train-and-deploy:
+    runs-on:
+      - self-hosted
+      - Windows
+      - X64
+      - csa-demo
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 8.0.423
+
+      - name: Validate required configuration
+        shell: powershell
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SPEECH_KEY)) {
+            throw "MEDIA_BOT_SPEECH_KEY is required."
+          }
+          if ($env:SPEECH_REGION -notmatch "^[a-z0-9-]+$") {
+            throw "MEDIA_BOT_SPEECH_REGION is required and must be valid."
+          }
+
+      - name: Restore and build dataset builder
+        shell: powershell
+        run: |
+          dotnet restore .\tools\CsaMeetingCoach.SpeechDatasetBuilder\CsaMeetingCoach.SpeechDatasetBuilder.csproj
+          dotnet build .\tools\CsaMeetingCoach.SpeechDatasetBuilder\CsaMeetingCoach.SpeechDatasetBuilder.csproj -c Release --no-restore
+
+      - name: Generate privacy-safe language dataset
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path .\artifacts -Force | Out-Null
+          dotnet run `
+            --project .\tools\CsaMeetingCoach.SpeechDatasetBuilder `
+            -c Release `
+            --no-build `
+            --no-restore `
+            -- `
+            .\artifacts\custom-speech-language.txt
+
+      - name: Train and deploy Custom Speech
+        shell: powershell
+        run: |
+          .\deploy\Deploy-CustomSpeech.ps1 `
+            -SubscriptionKey $env:SPEECH_KEY `
+            -Region $env:SPEECH_REGION `
+            -Locale $env:SPEECH_LANGUAGE `
+            -LanguageDatasetPath .\artifacts\custom-speech-language.txt `
+            -ExpectedEndpointId $env:CONFIGURED_ENDPOINT_ID `
+            -ResultPath .\artifacts\custom-speech-result.json `
+            -TimeoutSeconds 6600
+
+      - name: Upload private deployment result
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: custom-speech-result
+          path: artifacts/custom-speech-result.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Verify browser endpoint and deploy application
+        shell: powershell
+        run: |
+          $result = Get-Content .\artifacts\custom-speech-result.json -Raw |
+            ConvertFrom-Json
+          $endpointId = [string] $result.endpointId
+          $parsedEndpointId = [Guid]::Empty
+          if (-not [Guid]::TryParseExact($endpointId, "D", [ref] $parsedEndpointId) -or
+              $parsedEndpointId -eq [Guid]::Empty) {
+            throw "Custom Speech result did not contain a valid endpoint ID."
+          }
+          Write-Output "::add-mask::$endpointId"
+          "Custom Speech deployment succeeded with endpoint logging disabled." >> $env:GITHUB_STEP_SUMMARY
+          if ([string]::IsNullOrWhiteSpace($env:CONFIGURED_ENDPOINT_ID)) {
+            "First activation requires an operator to copy the endpoint ID from the private result artifact into the BROWSER_SPEECH_ENDPOINT_ID repository variable, then run Deploy demo VM." >> $env:GITHUB_STEP_SUMMARY
+            return
+          }
+          $configuredEndpointId = [Guid]::Empty
+          if (-not [Guid]::TryParseExact(
+                  $env:CONFIGURED_ENDPOINT_ID,
+                  "D",
+                  [ref] $configuredEndpointId) -or
+              $configuredEndpointId -eq [Guid]::Empty -or
+              $configuredEndpointId.ToString("D") -cne $env:CONFIGURED_ENDPOINT_ID) {
+            throw "BROWSER_SPEECH_ENDPOINT_ID must contain a non-empty canonical GUID."
+          }
+          if ($configuredEndpointId.ToString("D") -cne $endpointId) {
+            throw "The deployed endpoint does not match BROWSER_SPEECH_ENDPOINT_ID. Update the repository variable from the private result artifact."
+          }
+          "The configured browser endpoint was verified and the application deployment was requested." >> $env:GITHUB_STEP_SUMMARY
+          gh workflow run deploy-demo-vm.yml -f operation=deploy

@@ -25,6 +25,7 @@ const state = {
     publishFailures: 0,
     corrections: 0,
     phraseVocabCount: 0,
+    customSpeechActive: false,
     lastStage: "Waiting for microphone activity.",
     lastEventAt: null
   },
@@ -618,6 +619,11 @@ async function startMicrophone() {
     const speechConfig = window.SpeechSDK.SpeechConfig.fromAuthorizationToken(
       token.token,
       token.region);
+    state.speechDiagnostics.customSpeechActive = Boolean(token.endpointId);
+    if (token.endpointId) {
+      speechConfig.endpointId = token.endpointId;
+      recordSpeechDiagnostic("Custom Speech language model active.");
+    }
     speechConfig.speechRecognitionLanguage = token.language;
     speechConfig.setProperty(
       window.SpeechSDK.PropertyId.Speech_SegmentationSilenceTimeoutMs,
@@ -928,6 +934,7 @@ function resetSpeechDiagnostics() {
     publishFailures: 0,
     corrections: 0,
     phraseVocabCount: 0,
+    customSpeechActive: false,
     lastStage: "Waiting for speech events.",
     lastEventAt: null
   };
@@ -958,10 +965,13 @@ function renderSpeechDiagnostics() {
   const correctionInfo = diagnostics.corrections > 0
     ? ` · Speech corrections: ${diagnostics.corrections}`
     : "";
+  const modelInfo = diagnostics.customSpeechActive
+    ? " · Speech model: custom"
+    : " · Speech model: base";
   elements.speechDiagnostics.textContent =
     `Interim: ${diagnostics.interim} · Final: ${diagnostics.final} · `
     + `Queued: ${diagnostics.queued} · Published: ${diagnostics.published} · `
-    + `Publish failures: ${diagnostics.publishFailures}${phraseInfo}${correctionInfo}. `
+    + `Publish failures: ${diagnostics.publishFailures}${phraseInfo}${correctionInfo}${modelInfo}. `
     + `Last stage: ${diagnostics.lastStage} (${time})`;
 }
 

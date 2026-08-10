@@ -45,16 +45,29 @@ a claim of native Teams participant capture or speaker attribution.
 ## Accented-speech resilience
 
 Azure Speech sometimes returns homophones for accented speakers (for example,
-"Asia" instead of "Azure" for a Romanian-accented presenter). The system addresses
-this with two complementary mechanisms:
+"Asia" instead of "Azure" for a Romanian-accented presenter). The system
+addresses this with a hybrid Custom Speech language model, phrase vocabulary,
+and a conservative final-text fallback:
 
-### Phrase vocabulary (primary)
+### Custom Speech language model
+The optional Custom Speech endpoint is trained only from deterministic public
+catalog text: all educational concepts, definitions, hints, the same 500 safe
+phrase-list expressions, and generated meeting-context utterances. It improves
+product vocabulary and language context, but text-only training does not adapt
+acoustics or guarantee recognition of a particular accent. No meeting audio,
+transcript, customer data, or user data is included in the training dataset.
+
+### Phrase vocabulary
 The speech-token endpoint now includes a bounded, deduplicated list of canonical
 Azure service names and safe aliases sourced from the educational concept catalog.
 The browser configures an Azure Speech SDK `PhraseListGrammar` with these phrases
 and weight 2.0 before continuous recognition starts, improving recognition of Azure
 terminology before results are final. Phrase vocabulary is privacy-safe (no spoken
 content is logged).
+
+The browser uses both adaptations together: it selects the configured Custom
+Speech endpoint and still applies the exact 500-entry phrase list at weight 2.0
+before constructing recognition evidence.
 
 ### Contextual speech normalizer (fallback)
 For segments explicitly marked as speech-recognized (`IsSpeechRecognized: true`),
@@ -134,7 +147,12 @@ $env:BrowserSpeech__SubscriptionKey = "FROM-SECRET-STORE"
 $env:BrowserSpeech__AccessKey = "RANDOM-VALUE-OF-AT-LEAST-32-CHARACTERS"
 $env:BrowserSpeech__Region = "westus2"
 $env:BrowserSpeech__Language = "en-US"
+$env:BrowserSpeech__EndpointId = "11111111-1111-4111-8111-111111111111"
 ```
+
+`BrowserSpeech__EndpointId` is optional. When present it must be a canonical
+Custom Speech endpoint GUID, never a URL. Health and browser diagnostics report
+only `custom` versus `base`; they do not expose the endpoint ID.
 
 The GitHub deployment enables this path only when the repository variable
 `BROWSER_SPEECH_ENABLED` is `true`. It reuses
@@ -148,6 +166,29 @@ server then grants that browser a protected, HttpOnly authorization cookie for
 up to 30 days; rotating the configured access code revokes existing browser
 authorization. The Teams manifest requests the `media` device permission;
 tenant policy can still block custom app or microphone access.
+
+### Custom Speech lifecycle and cost
+
+The **Deploy Custom Speech** GitHub Actions workflow is manual-only because
+training and hosting a Custom Speech endpoint can incur Azure cost. Dispatch it
+from **Actions > Deploy Custom Speech > Run workflow**. It generates the public
+text corpus, creates a new timestamped language dataset and model, creates or
+updates the exact-name endpoint, and retains a private seven-day result artifact.
+On first activation, an operator copies the endpoint ID from that artifact into
+the `BROWSER_SPEECH_ENDPOINT_ID` repository variable and runs **Deploy demo VM**.
+Later retraining runs verify that the reused endpoint has the same ID and request
+the normal demo deployment automatically. This avoids granting an Actions token
+broad repository-administration access. The workflow uses
+`MEDIA_BOT_SPEECH_KEY`, `MEDIA_BOT_SPEECH_REGION`, and
+`MEDIA_BOT_SPEECH_LANGUAGE`; it requires no Azure CLI, Blob Storage, or public
+dataset URL.
+
+The endpoint is created and verified with content/audio logging disabled. The
+application uploads live audio directly to Speech recognition but does not
+retain it, and the automation never uploads meeting audio. Custom models expire
+according to the Azure Speech lifecycle, so rerun the manual workflow before
+expiration or whenever the public catalog changes. Delete unused models,
+datasets, and hosted endpoints in Azure to control cost.
 
 The Windows media-bot service is in `src/CsaMeetingCoach.BotService`. Graph is
 disabled by default, so `/api/sessions/{id}/transcript` and the UI simulator
@@ -280,7 +321,7 @@ The live view intentionally keeps only the meeting bar, microphone, next
 coaching action, and compact progress visible. Consent and the access-code field
 are shown during microphone activation. After successful authorization the
 plaintext code is cleared and is never copied to the clipboard or browser
-storage; an HttpOnly protected cookie authorizes Speech access for up to seven
+storage; an HttpOnly protected cookie authorizes Speech access for up to 30
 days. Transcript simulation, evidence, and safety warnings are kept in a single
 diagnostics dialog.
 Up to three contextual cards can be visible at once above the normal status
