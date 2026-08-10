@@ -264,7 +264,8 @@ $projectReference = @{
 }
 
 $endpoint = $null
-if ($null -ne $expectedEndpointId) {
+$endpointSelectedById = $null -ne $expectedEndpointId
+if ($endpointSelectedById) {
     $endpoint = Invoke-SpeechRequest `
         -Method GET `
         -Uri "$apiRoot/endpoints/$expectedEndpointId`?api-version=$apiVersion" `
@@ -284,11 +285,13 @@ else {
     $endpoint = $namedEndpoints | Select-Object -First 1
 }
 if ($null -ne $endpoint) {
-    $reusableEndpointDisplayName = [string] (Get-ResourcePropertyValue `
-        -Resource $endpoint `
-        -PropertyName "displayName")
-    if ($reusableEndpointDisplayName -cne $EndpointDisplayName) {
-        throw "The reusable Custom Speech endpoint has an unexpected display name."
+    if ($endpointSelectedById) {
+        $reusableEndpointDisplayName = [string] (Get-ResourcePropertyValue `
+            -Resource $endpoint `
+            -PropertyName "displayName")
+        if ($reusableEndpointDisplayName -cne $EndpointDisplayName) {
+            throw "The reusable Custom Speech endpoint has an unexpected display name."
+        }
     }
     $reusableEndpointLocale = [string] (Get-ResourcePropertyValue `
         -Resource $endpoint `

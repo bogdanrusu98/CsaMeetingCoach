@@ -31,6 +31,10 @@ public sealed class CustomSpeechDeploymentConfigurationTests
             "Custom Speech project and endpoint state validated.",
             script,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "if ($endpointSelectedById)",
+            script,
+            StringComparison.Ordinal);
         Assert.Contains("byte order mark", script, StringComparison.Ordinal);
         Assert.DoesNotContain("contentUrl", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("az storage", script, StringComparison.OrdinalIgnoreCase);
