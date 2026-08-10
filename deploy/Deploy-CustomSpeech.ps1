@@ -102,6 +102,22 @@ function Get-ResourceId {
     return $candidate
 }
 
+function Get-ResourcePropertyValue {
+    param(
+        [AllowNull()][object] $Resource,
+        [Parameter(Mandatory)][string] $PropertyName
+    )
+
+    if ($null -eq $Resource) {
+        return $null
+    }
+    $property = $Resource.PSObject.Properties[$PropertyName]
+    if ($null -eq $property) {
+        return $null
+    }
+    return $property.Value
+}
+
 function ConvertTo-CanonicalResourceId {
     param(
         [Parameter(Mandatory)][string] $ResourceId,
@@ -210,15 +226,24 @@ $timestamp = [DateTime]::UtcNow.ToString("yyyyMMdd-HHmmss")
 $projects = Get-Collection -ResourceType "projects" -Operation "list projects"
 $namedProjects = @($projects |
     Where-Object {
-        $_.PSObject.Properties["displayName"] -and
-        [string] $_.displayName -ceq $ProjectDisplayName
+        [string] (Get-ResourcePropertyValue `
+            -Resource $_ `
+            -PropertyName "displayName") -ceq $ProjectDisplayName
     })
 if ($namedProjects.Count -gt 1) {
     throw "Multiple exact-name Custom Speech projects exist."
 }
 $project = $namedProjects | Select-Object -First 1
-if ($null -ne $project -and [string] $project.locale -cne $Locale) {
-    throw "The exact-name Custom Speech project uses a different locale."
+if ($null -ne $project) {
+    $projectLocale = [string] (Get-ResourcePropertyValue `
+        -Resource $project `
+        -PropertyName "locale")
+    if ([string]::IsNullOrWhiteSpace($projectLocale)) {
+        throw "The exact-name Custom Speech project locale could not be verified."
+    }
+    if ($projectLocale -cne $Locale) {
+        throw "The exact-name Custom Speech project uses a different locale."
+    }
 }
 if ($null -eq $project) {
     $project = Invoke-SpeechRequest `
@@ -237,6 +262,59 @@ $projectId = ConvertTo-CanonicalResourceId `
 $projectReference = @{
     self = "${apiRoot}/projects/${projectId}?api-version=$apiVersion"
 }
+
+$endpoint = $null
+if ($null -ne $expectedEndpointId) {
+    $endpoint = Invoke-SpeechRequest `
+        -Method GET `
+        -Uri "$apiRoot/endpoints/$expectedEndpointId`?api-version=$apiVersion" `
+        -Operation "get expected endpoint"
+}
+else {
+    $endpoints = Get-Collection -ResourceType "endpoints" -Operation "list endpoints"
+    $namedEndpoints = @($endpoints |
+        Where-Object {
+            [string] (Get-ResourcePropertyValue `
+                -Resource $_ `
+                -PropertyName "displayName") -ceq $EndpointDisplayName
+        })
+    if ($namedEndpoints.Count -gt 1) {
+        throw "Multiple exact-name Custom Speech endpoints exist."
+    }
+    $endpoint = $namedEndpoints | Select-Object -First 1
+}
+if ($null -ne $endpoint) {
+    $reusableEndpointDisplayName = [string] (Get-ResourcePropertyValue `
+        -Resource $endpoint `
+        -PropertyName "displayName")
+    if ($reusableEndpointDisplayName -cne $EndpointDisplayName) {
+        throw "The reusable Custom Speech endpoint has an unexpected display name."
+    }
+    $reusableEndpointLocale = [string] (Get-ResourcePropertyValue `
+        -Resource $endpoint `
+        -PropertyName "locale")
+    if ([string]::IsNullOrWhiteSpace($reusableEndpointLocale)) {
+        throw "The reusable Custom Speech endpoint locale could not be verified."
+    }
+    if ($reusableEndpointLocale -cne $Locale) {
+        throw "The reusable Custom Speech endpoint uses a different locale."
+    }
+    $endpointProject = Get-ResourcePropertyValue `
+        -Resource $endpoint `
+        -PropertyName "project"
+    if ($null -eq $endpointProject) {
+        throw "The reusable Custom Speech endpoint project could not be verified."
+    }
+    $endpointProjectId = ConvertTo-CanonicalResourceId `
+        -ResourceId (Get-ResourceId `
+            -Resource $endpointProject `
+            -ResourceType "endpoint project") `
+        -ResourceType "endpoint project"
+    if ($endpointProjectId -cne $projectId) {
+        throw "The reusable Custom Speech endpoint belongs to a different project."
+    }
+}
+Write-Output "Custom Speech project and endpoint state validated."
 
 $dataset = Invoke-SpeechRequest `
     -Method POST `
@@ -291,6 +369,7 @@ $dataset = Wait-SpeechResource `
     -ResourceId $datasetId `
     -Operation "process language dataset" `
     -Deadline $deadline
+Write-Output "Custom Speech language dataset processed."
 
 $model = Invoke-SpeechRequest `
     -Method POST `
@@ -319,48 +398,11 @@ if ($model.PSObject.Properties["properties"] -and
     $model.properties.features.supportsEndpoints -ne $true) {
     throw "The trained Custom Speech model does not support real-time endpoints."
 }
+Write-Output "Custom Speech model trained."
 $modelReference = @{
     self = "${apiRoot}/models/${modelId}?api-version=$apiVersion"
 }
 
-$endpoint = $null
-if ($null -ne $expectedEndpointId) {
-    $endpoint = Invoke-SpeechRequest `
-        -Method GET `
-        -Uri "$apiRoot/endpoints/$expectedEndpointId`?api-version=$apiVersion" `
-        -Operation "get expected endpoint"
-}
-else {
-    $endpoints = Get-Collection -ResourceType "endpoints" -Operation "list endpoints"
-    $namedEndpoints = @($endpoints |
-        Where-Object {
-            $_.PSObject.Properties["displayName"] -and
-            [string] $_.displayName -ceq $EndpointDisplayName
-        })
-    if ($namedEndpoints.Count -gt 1) {
-        throw "Multiple exact-name Custom Speech endpoints exist."
-    }
-    $endpoint = $namedEndpoints | Select-Object -First 1
-}
-if ($null -ne $endpoint) {
-    if ([string] $endpoint.displayName -cne $EndpointDisplayName) {
-        throw "The reusable Custom Speech endpoint has an unexpected display name."
-    }
-    if ([string] $endpoint.locale -cne $Locale) {
-        throw "The reusable Custom Speech endpoint uses a different locale."
-    }
-    if (-not $endpoint.PSObject.Properties["project"]) {
-        throw "The reusable Custom Speech endpoint project could not be verified."
-    }
-    $endpointProjectId = ConvertTo-CanonicalResourceId `
-        -ResourceId (Get-ResourceId `
-            -Resource $endpoint.project `
-            -ResourceType "endpoint project") `
-        -ResourceType "endpoint project"
-    if ($endpointProjectId -cne $projectId) {
-        throw "The reusable Custom Speech endpoint belongs to a different project."
-    }
-}
 $endpointId = $null
 if ($null -eq $endpoint) {
     $endpoint = Invoke-SpeechRequest `

@@ -24,7 +24,11 @@ public sealed class CustomSpeechDeploymentConfigurationTests
         Assert.Contains("ExpectedEndpointId", script, StringComparison.Ordinal);
         Assert.Contains("belongs to a different project", script, StringComparison.Ordinal);
         Assert.Contains(
-            "PSObject.Properties[\"displayName\"]",
+            "Get-ResourcePropertyValue",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Custom Speech project and endpoint state validated.",
             script,
             StringComparison.Ordinal);
         Assert.Contains("byte order mark", script, StringComparison.Ordinal);
