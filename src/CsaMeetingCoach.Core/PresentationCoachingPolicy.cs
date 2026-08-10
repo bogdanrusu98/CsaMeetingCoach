@@ -308,6 +308,9 @@ internal static partial class PresentationCoachingPolicy
         IReadOnlyList<TranscriptSegment> analysisWindow)
     {
         var analysisWindowById = analysisWindow.ToDictionary(segment => segment.Id);
+        var analysisWindowIndexById = analysisWindow
+            .Select((segment, index) => (segment.Id, Index: index))
+            .ToDictionary(item => item.Id, item => item.Index);
         var validPrimaryCards = primaryCards
             .Where(card => card is not null
                 && Enum.IsDefined(card.Kind)
@@ -375,16 +378,32 @@ internal static partial class PresentationCoachingPolicy
             }
         }
 
-        foreach (var concept in EducationalConceptCatalog.All)
+        var educationalMatches = EducationalConceptCatalog.All
+            .Select(concept => (
+                Concept: concept,
+                Mention: TryFindEducationalMention(
+                    analysisWindow,
+                    concept,
+                    HasAzureMeetingContext(context.Purpose),
+                    out _,
+                    out _)))
+            .Where(match => match.Mention is not null)
+            .OrderByDescending(match => match.Mention!.SourceTranscriptSegmentIds
+                .Select(id => analysisWindowIndexById[id])
+                .Max())
+            .ThenByDescending(match => SignificantTerms(match.Mention!.Title).Count)
+            .ThenByDescending(match => HeuristicConversationCoachAgent.Normalize(
+                match.Mention!.Title).Length)
+            .ThenBy(match => match.Concept.ConceptKey, StringComparer.Ordinal);
+        foreach (var match in educationalMatches)
         {
             AddEducationalConceptCard(
                 result,
                 knownConceptKinds,
                 knownTitles,
-                analysisWindow,
                 context.ContextualCards ?? [],
-                concept,
-                HasAzureMeetingContext(context.Purpose));
+                match.Concept,
+                match.Mention!);
         }
 
         return result.Take(2).ToArray();
@@ -518,27 +537,26 @@ internal static partial class PresentationCoachingPolicy
             .Where(term => term.Length >= 2 && !ComparisonStopWords.Contains(term))
             .ToHashSet(StringComparer.Ordinal);
 
+    private static bool IsLessSpecificOverlap(
+        string candidateTitle,
+        string selectedTitle)
+    {
+        var candidateTerms = SignificantTerms(candidateTitle);
+        var selectedTerms = SignificantTerms(selectedTitle);
+        return candidateTerms.Count > 0
+            && candidateTerms.Count < selectedTerms.Count
+            && candidateTerms.IsSubsetOf(selectedTerms);
+    }
+
     private static void AddEducationalConceptCard(
         ICollection<ContextualCardProposal> cards,
         ISet<string> knownConceptKinds,
         ISet<string> knownTitles,
-        IReadOnlyList<TranscriptSegment> analysisWindow,
         IReadOnlyList<ContextualCardState> existingCards,
         EducationalConcept concept,
-        bool hasAzureMeetingContext)
+        ContextualMention mention)
     {
         if (cards.Count >= 2)
-        {
-            return;
-        }
-
-        var mention = TryFindEducationalMention(
-            analysisWindow,
-            concept,
-            hasAzureMeetingContext,
-            out _,
-            out _);
-        if (mention is null)
         {
             return;
         }
@@ -547,7 +565,8 @@ internal static partial class PresentationCoachingPolicy
             mention.Title);
         if (knownTitles.Any(title => HasSubstantialOverlap(
                 normalizedTitle,
-                title)))
+                title)
+            || IsLessSpecificOverlap(normalizedTitle, title)))
         {
             return;
         }

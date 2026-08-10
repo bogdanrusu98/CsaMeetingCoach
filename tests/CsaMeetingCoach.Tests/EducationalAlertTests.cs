@@ -32,6 +32,36 @@ public sealed class EducationalAlertTests
     }
 
     [Theory]
+    [InlineData(
+        "Azure Managed Redis is part of the Azure architecture.",
+        "azure-managed-redis",
+        "azure-cache-for-redis")]
+    [InlineData(
+        "Microsoft Entra ID Governance is part of the Azure architecture.",
+        "microsoft-entra-id-governance",
+        "microsoft-entra-id")]
+    public void SelectContextualCards_PrefersMostSpecificOverlappingConcept(
+        string text,
+        string expectedConceptKey,
+        string broaderConceptKey)
+    {
+        var latest = CreateFinalSegment(text);
+        var purpose = TestData.CreatePurpose() with
+        {
+            MeetingType = "Azure workshop",
+            Objective = "Explain Azure services and design decisions."
+        };
+
+        var cards = PresentationCoachingPolicy.SelectContextualCards(
+            new CoachAgentContext(purpose, [], [latest]),
+            [],
+            [latest]);
+
+        Assert.Contains(cards, card => card.ConceptKey == expectedConceptKey);
+        Assert.DoesNotContain(cards, card => card.ConceptKey == broaderConceptKey);
+    }
+
+    [Theory]
     [MemberData(nameof(NegatedConcepts))]
     public void SelectContextualCards_RejectsNegatedMentions(
         EducationalConcept concept)
