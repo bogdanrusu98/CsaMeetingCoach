@@ -13,6 +13,14 @@ public sealed class CustomSpeechDeploymentConfigurationTests
         Assert.Contains("application/octet-stream", script, StringComparison.Ordinal);
         Assert.Contains("loggingEnabled = $false", script, StringComparison.Ordinal);
         Assert.Contains("contentLoggingEnabled = $false", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "ConvertTo-Json -InputObject $Value",
+            script,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "$Value | ConvertTo-Json",
+            script,
+            StringComparison.Ordinal);
         Assert.Contains("ExpectedEndpointId", script, StringComparison.Ordinal);
         Assert.Contains("belongs to a different project", script, StringComparison.Ordinal);
         Assert.Contains("byte order mark", script, StringComparison.Ordinal);

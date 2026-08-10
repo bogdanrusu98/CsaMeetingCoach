@@ -201,7 +201,7 @@ function Wait-SpeechResource {
 
 function ConvertTo-JsonBody {
     param([Parameter(Mandatory)][object] $Value)
-    return $Value | ConvertTo-Json -Depth 10 -Compress
+    return ConvertTo-Json -InputObject $Value -Depth 10 -Compress
 }
 
 $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
