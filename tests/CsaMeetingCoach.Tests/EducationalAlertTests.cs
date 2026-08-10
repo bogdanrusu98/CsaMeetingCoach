@@ -85,6 +85,22 @@ public sealed class EducationalAlertTests
     }
 
     [Fact]
+    public void SelectContextualCards_DoesNotTreatSoftwareRefactoringAsCloudMigration()
+    {
+        var latest = CreateFinalSegment(
+            "We are refactoring the parser, rearchitecting the test harness, and rehosting the website.");
+
+        var cards = PresentationCoachingPolicy.SelectContextualCards(
+            new CoachAgentContext(TestData.CreatePurpose(), [], [latest]),
+            [],
+            [latest]);
+
+        Assert.DoesNotContain(
+            cards,
+            card => card.ConceptKey is "refactor" or "rehost");
+    }
+
+    [Fact]
     public void SelectContextualCards_DetectsFragmentedMentionAcrossSegments()
     {
         var first = CreateFinalSegment("We will explain Availability");
@@ -303,40 +319,137 @@ public sealed class EducationalAlertTests
     }
 
     public static TheoryData<EducationalConcept> PositiveConcepts =>
-        BuildConceptData(EducationalConceptCatalog.All.Take(50));
+        BuildConceptData(EducationalConceptCatalog.All);
 
     public static TheoryData<EducationalConcept> NegatedConcepts =>
-        BuildConceptData(EducationalConceptCatalog.All.Take(30));
+        BuildConceptData(EducationalConceptCatalog.All);
 
     public static TheoryData<EducationalConcept, string> VendorMismatchConcepts
     {
         get
         {
             var data = new TheoryData<EducationalConcept, string>();
-            var conceptKeys = new[]
+            // Exclude concepts whose non-branded alias is itself in AzureContextTerms (e.g. "arm template" is
+            // listed as an Azure context term in PresentationCoachingPolicy, so it is correctly detected even
+            // when AWS is in the same sentence — vendor mismatch suppression does not apply).
+            var alwaysAzureByDesign = new HashSet<string>(StringComparer.Ordinal) { "arm-template" };
+
+            foreach (var concept in EducationalConceptCatalog.All.Where(c => c.RequiresAzureVendorScope))
             {
-                "availability-zone",
-                "management-group",
-                "resource-group",
-                "azure-rbac",
-                "network-security-group",
-                "azure-load-balancer",
-                "application-gateway",
-                "private-link",
-                "vpn-gateway",
-                "azure-kubernetes-service",
-                "azure-container-apps",
-                "azure-cache-for-redis"
-            };
-            foreach (var conceptKey in conceptKeys)
-            {
-                var concept = EducationalConceptCatalog.All.Single(item => item.ConceptKey == conceptKey);
-                var alias = concept.Aliases
-                    .First(candidate => !candidate.Contains("azure", StringComparison.OrdinalIgnoreCase));
-                data.Add(concept, alias);
+                if (alwaysAzureByDesign.Contains(concept.ConceptKey))
+                    continue;
+
+                var nonBrandedAlias = concept.Aliases.FirstOrDefault(a =>
+                    !a.Contains("azure", StringComparison.OrdinalIgnoreCase) &&
+                    !a.Contains("microsoft", StringComparison.OrdinalIgnoreCase) &&
+                    !a.Contains("entra", StringComparison.OrdinalIgnoreCase));
+
+                if (nonBrandedAlias != null)
+                    data.Add(concept, nonBrandedAlias);
             }
 
             return data;
+        }
+    }
+
+    [Fact]
+    public void ConceptCatalog_AllConceptsHaveUniqueKeys()
+    {
+        var keys = EducationalConceptCatalog.All.Select(c => c.ConceptKey).ToList();
+        var distinct = keys.Distinct(StringComparer.Ordinal).Count();
+        Assert.Equal(keys.Count, distinct);
+    }
+
+    [Fact]
+    public void ConceptCatalog_AllConceptsHaveUniqueCanonicalTitles()
+    {
+        var titles = EducationalConceptCatalog.All.Select(c => c.CanonicalTitle).ToList();
+        var distinct = titles.Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        Assert.Equal(titles.Count, distinct);
+    }
+
+    [Fact]
+    public void ConceptCatalog_NormalizedAliasesDoNotConflictAcrossConcepts()
+    {
+        var seen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var conflicts = new List<string>();
+
+        foreach (var concept in EducationalConceptCatalog.All)
+        {
+            foreach (var alias in concept.Aliases.Append(concept.CanonicalTitle))
+            {
+                var normalized = HeuristicConversationCoachAgent.Normalize(alias);
+
+                if (seen.TryGetValue(normalized, out var existingKey))
+                {
+                    if (!string.Equals(existingKey, concept.ConceptKey, StringComparison.Ordinal))
+                        conflicts.Add($"'{alias}' ({concept.ConceptKey}) conflicts with ({existingKey})");
+                }
+                else
+                {
+                    seen[normalized] = concept.ConceptKey;
+                }
+            }
+        }
+
+        Assert.Empty(conflicts);
+    }
+
+    [Fact]
+    public void ConceptCatalog_EveryConceptHasAtLeastOneSafeSpeechPhrase()
+    {
+        var vocab = new HashSet<string>(
+            EducationalConceptCatalog.BuildSpeechPhraseVocabulary(),
+            StringComparer.OrdinalIgnoreCase);
+
+        var missing = EducationalConceptCatalog.All
+            .Where(c => !c.Aliases.Append(c.CanonicalTitle).Any(vocab.Contains))
+            .Select(c => c.ConceptKey)
+            .ToList();
+
+        Assert.Empty(missing);
+    }
+
+    [Fact]
+    public void ConceptCatalog_CoversEveryCategory()
+    {
+        var presentCategories = EducationalConceptCatalog.All
+            .Select(c => c.Category)
+            .Distinct()
+            .ToHashSet();
+
+        foreach (ConceptCategory category in Enum.GetValues(typeof(ConceptCategory)))
+        {
+            Assert.Contains(category, presentCategories);
+        }
+    }
+
+    [Fact]
+    public void ConceptCatalog_RepresentativeNewConceptsPresent()
+    {
+        var keys = EducationalConceptCatalog.All.Select(c => c.ConceptKey).ToHashSet(StringComparer.Ordinal);
+        string[] expected =
+        [
+            "microsoft-fabric",
+            "microsoft-foundry",
+            "azure-managed-redis",
+            "azure-container-registry",
+            "azure-virtual-desktop",
+            "azure-virtual-wan",
+            "azure-web-application-firewall",
+            "microsoft-entra-id-governance",
+            "microsoft-entra-global-secure-access",
+            "microsoft-purview",
+            "azure-chaos-studio",
+            "azure-monitor-agent",
+            "data-collection-rule",
+            "service-level-objective",
+            "azure-developer-cli",
+        ];
+
+        foreach (var key in expected)
+        {
+            Assert.Contains(key, keys);
         }
     }
 

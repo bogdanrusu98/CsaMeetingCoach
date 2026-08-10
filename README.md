@@ -301,7 +301,7 @@ Client alerts never contain CSA recommendations, sales guidance, presenter
 coaching, questions for the client, next-best actions, or recommended tasks.
 Recommended tasks remain in the separate CSA panel.
 
-The educational catalog now contains 100+ concepts across these categories:
+The educational catalog now contains 183 concepts across these categories:
 
 - FoundationalCloud
 - ManagementGovernance

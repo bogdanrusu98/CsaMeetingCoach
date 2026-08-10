@@ -23,12 +23,14 @@ public sealed record EducationalConcept(
     bool RequiresAzureVendorScope,
     string LearnUrl);
 
-public static class EducationalConceptCatalog
+public static partial class EducationalConceptCatalog
 {
     private static readonly HashSet<string> SafeAcronyms = new(StringComparer.OrdinalIgnoreCase)
     {
         "AKS", "NSG", "VMSS", "ARO", "PIM", "RBAC", "IaaS", "PaaS", "SaaS", "MFA", "CDN",
-        "NFS", "SMB", "GRS", "LRS", "ZRS"
+        "NFS", "SMB", "GRS", "LRS", "ZRS",
+        // Extended acronyms for new catalog entries
+        "ACR", "AVD", "AVS", "WAF", "KEDA", "azd", "RAG", "SLO", "DCR", "AMA"
     };
 
     private static readonly HashSet<string> UnsafeSingleTokens = new(StringComparer.OrdinalIgnoreCase)
@@ -40,8 +42,19 @@ public static class EducationalConceptCatalog
         "advisor", "blueprints", "reservations", "sla", "rto", "rpo", "tco", "roi"
     };
 
-    public static IReadOnlyList<EducationalConcept> All { get; } =
-        new List<EducationalConcept>
+    public static IReadOnlyList<EducationalConcept> All { get; } = BuildAll();
+
+    private static List<EducationalConcept> BuildAll()
+    {
+        var list = new List<EducationalConcept>();
+        list.AddRange(CoreConcepts());
+        list.AddRange(ExtendedConcepts());
+        return list;
+    }
+
+    private static IEnumerable<EducationalConcept> CoreConcepts()
+    {
+        return new List<EducationalConcept>
         {
             new(
                 "cloud-computing",
@@ -391,7 +404,7 @@ public static class EducationalConceptCatalog
             new(
                 "subnet",
                 "Subnet",
-                ["subnet", "subnets"],
+                ["subnet", "subnets", "Azure subnet", "virtual network subnet"],
                 "A subnet is a segmented IP range inside a virtual network that groups resources for routing, policy, and security controls.",
                 "Subnet boundaries matter because many Azure services inherit security and private-connectivity behavior from the subnet design.",
                 ConceptCategory.Networking,
@@ -573,8 +586,8 @@ public static class EducationalConceptCatalog
                 "azure-spring-apps",
                 "Azure Spring Apps",
                 ["Azure Spring Apps", "Spring Apps", "spring apps"],
-                "Azure Spring Apps is a managed platform for running Spring Boot applications with integrated operations features.",
-                "It reduces platform work for Java teams, but dependency versions, networking, and backing services still matter.",
+                "Azure Spring Apps is a managed Spring Boot platform that entered retirement in March 2025 and is scheduled to retire on March 31, 2028.",
+                "Support continues until retirement; the published lifecycle and migration options affect planning for existing workloads.",
                 ConceptCategory.ComputeContainersAppPlatforms,
                 true,
                 "https://learn.microsoft.com/azure/spring-apps/overview"),
@@ -664,8 +677,8 @@ public static class EducationalConceptCatalog
                 "azure-cache-for-redis",
                 "Azure Cache for Redis",
                 ["Azure Cache for Redis", "Cache for Redis", "redis"],
-                "Azure Cache for Redis is an in-memory data store commonly used for caching, sessions, and low-latency lookups.",
-                "A cache speeds reads, but applications still need expiry, invalidation, and fallback behavior when entries are missing.",
+                "Azure Cache for Redis is a managed in-memory data store whose Enterprise tiers retire on March 31, 2027 and remaining tiers on September 30, 2028.",
+                "Azure Managed Redis is the successor service; expiry, invalidation, migration timing, and fallback behavior remain application design constraints.",
                 ConceptCategory.StorageDatabases,
                 true,
                 "https://learn.microsoft.com/azure/azure-cache-for-redis/cache-overview"),
@@ -990,7 +1003,7 @@ public static class EducationalConceptCatalog
             new(
                 "finops",
                 "FinOps",
-                ["FinOps", "finops"],
+                ["FinOps", "finops", "Azure FinOps", "FinOps practice"],
                 "FinOps is an operating discipline that helps engineering, finance, and product teams make informed cloud cost decisions together.",
                 "FinOps depends on timely usage data, ownership metadata, and recurring review habits rather than one dashboard alone.",
                 ConceptCategory.MigrationDevOpsFinOps,
@@ -999,7 +1012,7 @@ public static class EducationalConceptCatalog
             new(
                 "rehost",
                 "Rehost migration",
-                ["rehost", "rehosting", "lift and shift"],
+                ["rehost migration", "cloud rehosting", "lift and shift"],
                 "Rehosting moves an application to cloud infrastructure with minimal code change compared with deeper modernization approaches.",
                 "Rehosting can accelerate initial movement, but it may preserve legacy operating costs or technical constraints.",
                 ConceptCategory.MigrationDevOpsFinOps,
@@ -1008,7 +1021,7 @@ public static class EducationalConceptCatalog
             new(
                 "refactor",
                 "Refactor migration",
-                ["refactor", "refactoring", "rearchitect", "rearchitecting"],
+                ["refactor migration", "refactoring for migration", "cloud refactoring", "cloud rearchitecture"],
                 "Refactoring changes parts of an application so it can use more managed cloud capabilities.",
                 "Refactoring can reduce long-term operations, but it usually needs more code change and testing than a pure rehost.",
                 ConceptCategory.MigrationDevOpsFinOps,
@@ -1033,6 +1046,7 @@ public static class EducationalConceptCatalog
                 false,
                 "https://learn.microsoft.com/azure/cloud-adoption-framework/strategy/business-outcomes/"),
         };
+    }
 
     private static readonly IReadOnlyDictionary<string, EducationalConcept> ByConceptKey =
         All.ToDictionary(
@@ -1076,50 +1090,221 @@ public static class EducationalConceptCatalog
     public static IReadOnlyList<string> BuildSpeechPhraseVocabulary()
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var phrases = new List<string>(capacity: 500)
-        {
-            "Azure"
-        };
+        var phrases = new List<string>(capacity: 500);
+
+        // Azure always first
+        phrases.Add("Azure");
         seen.Add("Azure");
 
+        // Phase 1: one primary safe phrase per concept in catalog order
+        // (canonical title preferred; fall back to aliases in declaration order)
         foreach (var concept in All)
         {
-            TryAddPhrase(concept.CanonicalTitle, seen, phrases);
+            if (phrases.Count >= 500)
+                break;
+
+            if (!TryAddPhrase(concept.CanonicalTitle, seen, phrases))
+            {
+                foreach (var alias in concept.Aliases)
+                {
+                    if (TryAddPhrase(alias, seen, phrases))
+                        break;
+                }
+            }
+        }
+
+        // Phase 2: remaining aliases for every concept, in catalog order
+        var capacityReached = false;
+        foreach (var concept in All)
+        {
+            if (capacityReached)
+                break;
 
             foreach (var alias in concept.Aliases)
             {
+                if (phrases.Count >= 500)
+                {
+                    capacityReached = true;
+                    break;
+                }
+
                 TryAddPhrase(alias, seen, phrases);
             }
+        }
 
+        // Phase 3: deterministic supplemental phrases to fill remaining slots to 500
+        foreach (var phrase in SupplementalSpeechPhrases)
+        {
             if (phrases.Count >= 500)
-            {
                 break;
-            }
+
+            TryAddPhrase(phrase, seen, phrases);
         }
 
         return phrases.AsReadOnly();
+    }
 
-        static void TryAddPhrase(string phrase, HashSet<string> seen, List<string> phrases)
-        {
-            if (phrases.Count >= 500 || string.IsNullOrWhiteSpace(phrase))
-            {
-                return;
-            }
+    // Curated supplemental phrases: qualified official Azure product/service variants
+    // added in deterministic order to fill vocabulary to 500 when catalog alone falls short.
+    private static readonly IReadOnlyList<string> SupplementalSpeechPhrases = new string[]
+    {
+        "Azure IoT Operations",
+        "Azure Stack Edge GPU",
+        "Azure AI Foundry project",
+        "Microsoft Fabric OneLake",
+        "Azure Managed Prometheus",
+        "Azure Traffic Manager",
+        "Azure DNS Private Resolver",
+        "Azure Savings Plan",
+        "Microsoft Entra Verified ID",
+        "Azure Compute Gallery",
+        "Azure Container Registry task",
+        "Azure API Center governance",
+        "Microsoft Defender for Servers",
+        "Azure Monitor Agent",
+        "AMA",
+        "Azure Monitor Workbooks",
+        "Azure Monitor Logs",
+        "Azure Monitor Metrics",
+        "Azure Monitor Workspace",
+        "Log Analytics workspace",
+        "Azure Managed Prometheus",
+        "Microsoft Defender for Servers",
+        "Microsoft Defender for Containers",
+        "Microsoft Defender for Databases",
+        "Microsoft Defender CSPM",
+        "Microsoft Secure Score",
+        "Microsoft Defender for Endpoint",
+        "Microsoft Defender for Identity",
+        "Microsoft Defender for Cloud Apps",
+        "Microsoft Defender for Office 365",
+        "Azure Key Vault secrets",
+        "Azure Key Vault certificates",
+        "Azure Disk Encryption",
+        "Azure Storage encryption",
+        "Azure DevOps Pipelines",
+        "Azure DevOps Boards",
+        "Azure DevOps Repos",
+        "Azure DevOps Artifacts",
+        "GitHub Advanced Security",
+        "AKS node pool",
+        "AKS cluster autoscaler",
+        "Container Apps environment",
+        "Container Apps job",
+        "Azure Functions Premium plan",
+        "Azure Functions Flex Consumption",
+        "App Service Environment",
+        "App Service Plan",
+        "Azure OpenAI model deployment",
+        "Azure AI model catalog",
+        "Azure Machine Learning pipeline",
+        "Azure Machine Learning registry",
+        "Azure Databricks Unity Catalog",
+        "Azure Databricks workspace",
+        "Azure Synapse Link",
+        "Azure Synapse Spark pool",
+        "Azure Data Factory pipeline",
+        "Azure Data Factory integration runtime",
+        "Azure Event Hubs Kafka",
+        "Azure Event Hubs capture",
+        "Azure Service Bus topic",
+        "Azure Service Bus session",
+        "Azure API Management policy",
+        "Azure API Management developer portal",
+        "Azure Stream Analytics window",
+        "Azure Data Lake Storage Gen2",
+        "Azure Blob lifecycle management",
+        "Azure Storage Account",
+        "Azure Storage firewall",
+        "Azure File Sync",
+        "Azure Backup vault",
+        "Azure Recovery Services vault",
+        "Azure SQL Hyperscale",
+        "Azure SQL serverless",
+        "Azure SQL Business Critical",
+        "Azure Database Migration Service",
+        "Azure Cosmos DB serverless",
+        "Azure Cosmos DB for MongoDB",
+        "Azure Policy Initiative",
+        "Azure Policy compliance",
+        "Azure Policy assignment",
+        "Azure Resource Graph",
+        "Azure Hybrid Benefit",
+        "Azure Savings Plan",
+        "Azure Spot Instance",
+        "Azure Pricing Calculator",
+        "ExpressRoute circuit",
+        "ExpressRoute Global Reach",
+        "Azure Traffic Manager",
+        "Azure DNS Private Resolver",
+        "Azure Front Door Standard",
+        "Azure Front Door Premium",
+        "Azure Firewall Premium",
+        "Azure Firewall Policy",
+        "Azure DDoS rapid response",
+        "Azure Security Benchmark",
+        "Microsoft Cloud Security Benchmark",
+        "Azure Subscription vending",
+        "Azure Landing Zone accelerator",
+        "Azure Enterprise Scale",
+        "Microsoft Entra B2B collaboration",
+        "Microsoft Entra SSPR",
+        "Microsoft Entra passwordless",
+        "Microsoft Entra Verified ID",
+        "Microsoft Entra Connect",
+        "Azure Compute Gallery",
+        "Azure Image Builder",
+        "Azure Marketplace image",
+        "Azure Virtual Machine extension",
+        "Azure Batch pool",
+        "Azure Logic Apps Standard",
+        "Durable Functions orchestration",
+        "Azure Container Registry task",
+        "Azure Kubernetes Fleet cluster",
+        "Azure Red Hat OpenShift cluster",
+        "Windows 365 Cloud PC",
+        "Azure Local cluster",
+        "Azure Stack Edge GPU",
+        "Azure IoT Operations",
+        "Azure IoT Hub device twin",
+        "Azure Digital Twins model",
+        "Azure Event Grid topic",
+        "Azure SignalR Service",
+        "Azure Web PubSub",
+        "Azure Notification Hubs",
+        "Azure Communication Services voice",
+        "Azure API Center governance",
+        "Azure App Configuration feature flag",
+        "Microsoft Fabric lakehouse",
+        "Microsoft Fabric OneLake",
+        "Microsoft Fabric capacity",
+        "Azure AI Foundry project",
+        "Azure OpenAI fine-tuning",
+        "Azure Machine Learning compute cluster",
+        "RAG grounding",
+        "DCR pipeline",
+        "SLO target",
+        "Azure Monitor action group",
+        "Azure Chaos Studio experiment",
+        "Azure Update Manager patch",
+        "Azure Managed Grafana dashboard",
+    };
 
-            var hasSpace = phrase.Contains(' ');
-            var isSafeSingleToken = SafeAcronyms.Contains(phrase)
-                || (!UnsafeSingleTokens.Contains(phrase) && phrase.Length >= 5);
-            if (!hasSpace && !isSafeSingleToken)
-            {
-                return;
-            }
+    private static bool TryAddPhrase(string phrase, HashSet<string> seen, List<string> phrases)
+    {
+        if (phrases.Count >= 500 || string.IsNullOrWhiteSpace(phrase))
+            return false;
 
-            if (!seen.Add(phrase))
-            {
-                return;
-            }
+        var hasSpace = phrase.Contains(' ');
+        var isSafeSingleToken = SafeAcronyms.Contains(phrase)
+            || (!UnsafeSingleTokens.Contains(phrase) && phrase.Length >= 5);
+        if (!hasSpace && !isSafeSingleToken)
+            return false;
 
-            phrases.Add(phrase);
-        }
+        if (!seen.Add(phrase))
+            return false;
+
+        phrases.Add(phrase);
+        return true;
     }
 }
