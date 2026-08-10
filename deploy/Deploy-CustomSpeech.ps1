@@ -209,7 +209,10 @@ $timestamp = [DateTime]::UtcNow.ToString("yyyyMMdd-HHmmss")
 
 $projects = Get-Collection -ResourceType "projects" -Operation "list projects"
 $namedProjects = @($projects |
-    Where-Object { $_.displayName -ceq $ProjectDisplayName })
+    Where-Object {
+        $_.PSObject.Properties["displayName"] -and
+        [string] $_.displayName -ceq $ProjectDisplayName
+    })
 if ($namedProjects.Count -gt 1) {
     throw "Multiple exact-name Custom Speech projects exist."
 }
@@ -330,7 +333,10 @@ if ($null -ne $expectedEndpointId) {
 else {
     $endpoints = Get-Collection -ResourceType "endpoints" -Operation "list endpoints"
     $namedEndpoints = @($endpoints |
-        Where-Object { $_.displayName -ceq $EndpointDisplayName })
+        Where-Object {
+            $_.PSObject.Properties["displayName"] -and
+            [string] $_.displayName -ceq $EndpointDisplayName
+        })
     if ($namedEndpoints.Count -gt 1) {
         throw "Multiple exact-name Custom Speech endpoints exist."
     }

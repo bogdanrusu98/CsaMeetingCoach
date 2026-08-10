@@ -23,6 +23,10 @@ public sealed class CustomSpeechDeploymentConfigurationTests
             StringComparison.Ordinal);
         Assert.Contains("ExpectedEndpointId", script, StringComparison.Ordinal);
         Assert.Contains("belongs to a different project", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "PSObject.Properties[\"displayName\"]",
+            script,
+            StringComparison.Ordinal);
         Assert.Contains("byte order mark", script, StringComparison.Ordinal);
         Assert.DoesNotContain("contentUrl", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("az storage", script, StringComparison.OrdinalIgnoreCase);
