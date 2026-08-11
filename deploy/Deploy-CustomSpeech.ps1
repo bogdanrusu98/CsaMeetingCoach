@@ -670,9 +670,10 @@ if ($CleanupOnly) {
     $cleanupResult = Remove-ObsoleteSpeechResources `
         -ExpectedProjectId $projectId `
         -ActiveEndpoint $endpoint
-    Write-Output (
+    Write-Output ((
         "Custom Speech cleanup completed: {0} model(s) and {1} dataset(s) " +
-        "deleted; {2} endpoint-referenced model(s) and {3} dataset(s) protected." -f
+        "deleted; {2} endpoint-referenced model(s) and {3} dataset(s) protected."
+    ) -f
         $cleanupResult.DeletedModels,
         $cleanupResult.DeletedDatasets,
         $cleanupResult.ProtectedModels,

@@ -83,6 +83,10 @@ public sealed class CustomSpeechDeploymentConfigurationTests
             script,
             StringComparison.Ordinal);
         Assert.Contains(
+            ") -f\n        $cleanupResult.DeletedModels,",
+            script.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
+        Assert.Contains(
             "Complete every read and protection check before issuing the first DELETE.",
             script,
             StringComparison.Ordinal);
