@@ -35,6 +35,14 @@ public sealed class CustomSpeechDeploymentConfigurationTests
             "if ($endpointSelectedById)",
             script,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "$normalizedExpectedEndpointId = $null",
+            script,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "$expectedEndpointId = $null",
+            script,
+            StringComparison.Ordinal);
         Assert.Contains("byte order mark", script, StringComparison.Ordinal);
         Assert.DoesNotContain("contentUrl", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("az storage", script, StringComparison.OrdinalIgnoreCase);

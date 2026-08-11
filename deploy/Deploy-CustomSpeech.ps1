@@ -132,12 +132,12 @@ function ConvertTo-CanonicalResourceId {
     return $parsedId.ToString("D")
 }
 
-$expectedEndpointId = $null
+$normalizedExpectedEndpointId = $null
 if (-not [string]::IsNullOrEmpty($ExpectedEndpointId)) {
-    $expectedEndpointId = ConvertTo-CanonicalResourceId `
+    $normalizedExpectedEndpointId = ConvertTo-CanonicalResourceId `
         -ResourceId $ExpectedEndpointId `
         -ResourceType "expected endpoint"
-    if ($expectedEndpointId -cne $ExpectedEndpointId) {
+    if ($normalizedExpectedEndpointId -cne $ExpectedEndpointId) {
         throw "The expected endpoint ID must be a canonical GUID."
     }
 }
@@ -264,11 +264,11 @@ $projectReference = @{
 }
 
 $endpoint = $null
-$endpointSelectedById = $null -ne $expectedEndpointId
+$endpointSelectedById = $null -ne $normalizedExpectedEndpointId
 if ($endpointSelectedById) {
     $endpoint = Invoke-SpeechRequest `
         -Method GET `
-        -Uri "$apiRoot/endpoints/$expectedEndpointId`?api-version=$apiVersion" `
+        -Uri "$apiRoot/endpoints/$normalizedExpectedEndpointId`?api-version=$apiVersion" `
         -Operation "get expected endpoint"
 }
 else {
@@ -424,8 +424,8 @@ else {
     $endpointId = ConvertTo-CanonicalResourceId `
         -ResourceId (Get-ResourceId -Resource $endpoint -ResourceType "endpoint") `
         -ResourceType "endpoint"
-    if ($null -ne $expectedEndpointId -and
-        $endpointId -cne $expectedEndpointId) {
+    if ($null -ne $normalizedExpectedEndpointId -and
+        $endpointId -cne $normalizedExpectedEndpointId) {
         throw "The reusable Custom Speech endpoint ID does not match the expected ID."
     }
     Invoke-SpeechRequest `
