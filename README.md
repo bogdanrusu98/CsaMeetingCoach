@@ -170,15 +170,21 @@ tenant policy can still block custom app or microphone access.
 ### Custom Speech lifecycle and cost
 
 The **Deploy Custom Speech** GitHub Actions workflow is manual-only because
-training and hosting a Custom Speech endpoint can incur Azure cost. Dispatch it
-from **Actions > Deploy Custom Speech > Run workflow**. It generates the public
-text corpus, creates a new timestamped language dataset and model, creates or
-updates the exact-name endpoint, and retains a private seven-day result artifact.
+training and hosting a Custom Speech endpoint can incur Azure cost. Dispatch the
+default `train-and-deploy` operation from **Actions > Deploy Custom Speech > Run
+workflow**. It generates the public text corpus, creates a new timestamped
+language dataset and model, creates or updates the exact-name endpoint, and
+retains a private seven-day result artifact.
 On first activation, an operator copies the endpoint ID from that artifact into
 the `BROWSER_SPEECH_ENDPOINT_ID` repository variable and runs **Deploy demo VM**.
 Later retraining runs verify that the reused endpoint has the same ID and request
-the normal demo deployment automatically. This avoids granting an Actions token
-broad repository-administration access. The workflow uses
+the normal demo deployment automatically. After that request, the workflow
+removes only obsolete timestamped models and datasets that match the exact
+project and locale; it protects every custom model referenced by any endpoint
+and all datasets used by those protected custom models. Base models are outside
+the managed cleanup scope. The `cleanup-obsolete` operation runs the same
+fail-closed cleanup without training a new model. This avoids granting an
+Actions token broad repository-administration access. The workflow uses
 `MEDIA_BOT_SPEECH_KEY`, `MEDIA_BOT_SPEECH_REGION`, and
 `MEDIA_BOT_SPEECH_LANGUAGE`; it requires no Azure CLI, Blob Storage, or public
 dataset URL.
@@ -187,8 +193,9 @@ The endpoint is created and verified with content/audio logging disabled. The
 application uploads live audio directly to Speech recognition but does not
 retain it, and the automation never uploads meeting audio. Custom models expire
 according to the Azure Speech lifecycle, so rerun the manual workflow before
-expiration or whenever the public catalog changes. Delete unused models,
-datasets, and hosted endpoints in Azure to control cost.
+expiration or whenever the public catalog changes. The automated cleanup is
+locale-scoped and never deletes endpoints. Remove unused hosted endpoints or
+resources from other locales separately in Azure to control cost.
 
 The Windows media-bot service is in `src/CsaMeetingCoach.BotService`. Graph is
 disabled by default, so `/api/sessions/{id}/transcript` and the UI simulator

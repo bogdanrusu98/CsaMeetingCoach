@@ -46,6 +46,62 @@ public sealed class CustomSpeechDeploymentConfigurationTests
         Assert.Contains("byte order mark", script, StringComparison.Ordinal);
         Assert.DoesNotContain("contentUrl", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("az storage", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "[switch] $CleanupOnly",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Cleanup mode requires a canonical expected endpoint ID.",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "[Regex]::Escape(\"$ProjectDisplayName $ResourceKind \")",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "\"\\A\" +",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "\"[0-9]{8}-[0-9]{6}\\z\"",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "[AllowEmptyCollection()]",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Get-CustomEndpointModelId",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "\"/speechtotext/models/base/$modelId\"",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "The active custom model did not expose its dataset references.",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Complete every read and protection check before issuing the first DELETE.",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$protectedModelIds",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$protectedDatasetIds",
+            script,
+            StringComparison.Ordinal);
+        var deleteModelIndex = script.IndexOf(
+            "-Operation \"delete obsolete managed model\"",
+            StringComparison.Ordinal);
+        var deleteDatasetIndex = script.IndexOf(
+            "-Operation \"delete obsolete managed dataset\"",
+            StringComparison.Ordinal);
+        Assert.True(deleteModelIndex >= 0);
+        Assert.True(deleteDatasetIndex > deleteModelIndex);
     }
 
     [Fact]
@@ -67,6 +123,24 @@ public sealed class CustomSpeechDeploymentConfigurationTests
         Assert.Contains("actions/upload-artifact@", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("gh variable set", workflow, StringComparison.Ordinal);
         Assert.Contains("gh workflow run deploy-demo-vm.yml", workflow, StringComparison.Ordinal);
+        Assert.Contains("default: train-and-deploy", workflow, StringComparison.Ordinal);
+        Assert.Contains("- cleanup-obsolete", workflow, StringComparison.Ordinal);
+        Assert.Contains(
+            "-CleanupOnly",
+            workflow,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Cleanup requires BROWSER_SPEECH_ENDPOINT_ID or a valid deployment result.",
+            workflow,
+            StringComparison.Ordinal);
+        var applicationDeployIndex = workflow.IndexOf(
+            "gh workflow run deploy-demo-vm.yml",
+            StringComparison.Ordinal);
+        var cleanupIndex = workflow.IndexOf(
+            "- name: Remove obsolete managed models and datasets",
+            StringComparison.Ordinal);
+        Assert.True(applicationDeployIndex >= 0);
+        Assert.True(cleanupIndex > applicationDeployIndex);
         Assert.Contains(
             "BrowserSpeechEndpointId = $env:BROWSER_SPEECH_ENDPOINT_ID",
             demoWorkflow,

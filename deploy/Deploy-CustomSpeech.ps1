@@ -1,4 +1,4 @@
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = "Deploy")]
 param(
     [Parameter(Mandatory)]
     [string] $SubscriptionKey,
@@ -7,7 +7,7 @@ param(
     [ValidatePattern("^[a-z0-9-]+$")]
     [string] $Region,
 
-    [Parameter(Mandatory)]
+    [Parameter(Mandatory, ParameterSetName = "Deploy")]
     [ValidateScript({ Test-Path $_ -PathType Leaf })]
     [string] $LanguageDatasetPath,
 
@@ -25,7 +25,10 @@ param(
     [string] $ResultPath = ".\custom-speech-result.json",
 
     [ValidateRange(60, 7200)]
-    [int] $TimeoutSeconds = 3600
+    [int] $TimeoutSeconds = 3600,
+
+    [Parameter(Mandatory, ParameterSetName = "Cleanup")]
+    [switch] $CleanupOnly
 )
 
 Set-StrictMode -Version Latest
@@ -47,7 +50,7 @@ if ([string]::IsNullOrWhiteSpace($ProjectDisplayName) -or
 
 function Invoke-SpeechRequest {
     param(
-        [Parameter(Mandatory)][ValidateSet("GET", "POST", "PUT", "PATCH")]
+        [Parameter(Mandatory)][ValidateSet("GET", "POST", "PUT", "PATCH", "DELETE")]
         [string] $Method,
         [Parameter(Mandatory)][string] $Uri,
         [Parameter(Mandatory)][string] $Operation,
@@ -132,6 +135,75 @@ function ConvertTo-CanonicalResourceId {
     return $parsedId.ToString("D")
 }
 
+function Get-OptionalCanonicalResourceId {
+    param([AllowNull()][object] $Resource)
+
+    if ($null -eq $Resource) {
+        return $null
+    }
+    $candidate = $null
+    $self = [string] (Get-ResourcePropertyValue `
+        -Resource $Resource `
+        -PropertyName "self")
+    if (-not [string]::IsNullOrWhiteSpace($self)) {
+        $resourceUri = $null
+        if (-not [Uri]::TryCreate(
+                $self,
+                [UriKind]::Absolute,
+                [ref] $resourceUri)) {
+            return $null
+        }
+        $resourcePath = $resourceUri.AbsolutePath.Trim("/")
+        $candidate = $resourcePath.Substring($resourcePath.LastIndexOf("/") + 1)
+    }
+    else {
+        $candidate = [string] (Get-ResourcePropertyValue `
+            -Resource $Resource `
+            -PropertyName "id")
+    }
+    $parsedId = [Guid]::Empty
+    if ([string]::IsNullOrWhiteSpace($candidate) -or
+        -not [Guid]::TryParseExact($candidate, "D", [ref] $parsedId) -or
+        $parsedId -eq [Guid]::Empty) {
+        return $null
+    }
+    return $parsedId.ToString("D")
+}
+
+function Get-CustomEndpointModelId {
+    param(
+        [Parameter(Mandatory)][object] $ModelReference,
+        [Parameter(Mandatory)][string] $ReferenceType
+    )
+
+    $modelId = ConvertTo-CanonicalResourceId `
+        -ResourceId (Get-ResourceId `
+            -Resource $ModelReference `
+            -ResourceType $ReferenceType) `
+        -ResourceType $ReferenceType
+    $self = [string] (Get-ResourcePropertyValue `
+        -Resource $ModelReference `
+        -PropertyName "self")
+    $modelUri = $null
+    if ([string]::IsNullOrWhiteSpace($self) -or
+        -not [Uri]::TryCreate(
+            $self,
+            [UriKind]::Absolute,
+            [ref] $modelUri) -or
+        $modelUri.Scheme -ne [Uri]::UriSchemeHttps -or
+        $modelUri.Host -cne "$Region.api.cognitive.microsoft.com") {
+        throw "Custom Speech returned an invalid $ReferenceType reference."
+    }
+    $referencePath = $modelUri.AbsolutePath.TrimEnd("/")
+    if ($referencePath -ceq "/speechtotext/models/$modelId") {
+        return $modelId
+    }
+    if ($referencePath -ceq "/speechtotext/models/base/$modelId") {
+        return $null
+    }
+    throw "Custom Speech returned an unexpected $ReferenceType path."
+}
+
 $normalizedExpectedEndpointId = $null
 if (-not [string]::IsNullOrEmpty($ExpectedEndpointId)) {
     $normalizedExpectedEndpointId = ConvertTo-CanonicalResourceId `
@@ -140,6 +212,9 @@ if (-not [string]::IsNullOrEmpty($ExpectedEndpointId)) {
     if ($normalizedExpectedEndpointId -cne $ExpectedEndpointId) {
         throw "The expected endpoint ID must be a canonical GUID."
     }
+}
+if ($CleanupOnly -and $null -eq $normalizedExpectedEndpointId) {
+    throw "Cleanup mode requires a canonical expected endpoint ID."
 }
 
 function Get-Collection {
@@ -220,6 +295,272 @@ function ConvertTo-JsonBody {
     return ConvertTo-Json -InputObject $Value -Depth 10 -Compress
 }
 
+function Get-DetailedCollection {
+    param(
+        [Parameter(Mandatory)][ValidateSet("endpoints", "models", "datasets")]
+        [string] $ResourceType,
+        [Parameter(Mandatory)][string] $Operation
+    )
+
+    $summaries = Get-Collection `
+        -ResourceType $ResourceType `
+        -Operation $Operation
+    $details = [Collections.Generic.List[object]]::new()
+    foreach ($summary in $summaries) {
+        $resourceId = Get-OptionalCanonicalResourceId -Resource $summary
+        if ([string]::IsNullOrWhiteSpace($resourceId)) {
+            throw "Custom Speech returned an invalid $ResourceType inventory identifier."
+        }
+        $detail = Invoke-SpeechRequest `
+            -Method GET `
+            -Uri "$apiRoot/$ResourceType/$resourceId`?api-version=$apiVersion" `
+            -Operation "get $ResourceType inventory detail"
+        if ($null -eq $detail) {
+            throw "Custom Speech returned an empty $ResourceType inventory detail."
+        }
+        $details.Add($detail)
+    }
+    return @($details)
+}
+
+function Test-ResourceBelongsToProject {
+    param(
+        [Parameter(Mandatory)][object] $Resource,
+        [Parameter(Mandatory)][string] $ExpectedProjectId
+    )
+
+    $project = Get-ResourcePropertyValue `
+        -Resource $Resource `
+        -PropertyName "project"
+    $resourceProjectId = Get-OptionalCanonicalResourceId -Resource $project
+    return $null -ne $resourceProjectId -and
+        $resourceProjectId -ceq $ExpectedProjectId
+}
+
+function Test-IsManagedTimestampedResource {
+    param(
+        [Parameter(Mandatory)][object] $Resource,
+        [Parameter(Mandatory)][ValidateSet("language", "model")]
+        [string] $ResourceKind,
+        [Parameter(Mandatory)][string] $ExpectedProjectId
+    )
+
+    $displayName = [string] (Get-ResourcePropertyValue `
+        -Resource $Resource `
+        -PropertyName "displayName")
+    $namePattern = "\A" +
+        [Regex]::Escape("$ProjectDisplayName $ResourceKind ") +
+        "[0-9]{8}-[0-9]{6}\z"
+    if ([string]::IsNullOrWhiteSpace($displayName) -or
+        -not [Regex]::IsMatch(
+            $displayName,
+            $namePattern,
+            [Text.RegularExpressions.RegexOptions]::CultureInvariant)) {
+        return $false
+    }
+    if (-not (Test-ResourceBelongsToProject `
+            -Resource $Resource `
+            -ExpectedProjectId $ExpectedProjectId)) {
+        return $false
+    }
+    $resourceLocale = [string] (Get-ResourcePropertyValue `
+        -Resource $Resource `
+        -PropertyName "locale")
+    return $resourceLocale -ceq $Locale
+}
+
+function Add-ProtectedDatasetReferences {
+    param(
+        [Parameter(Mandatory)][object] $Model,
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [Collections.Generic.HashSet[string]] $ProtectedDatasetIds
+    )
+
+    $datasetReferences = Get-ResourcePropertyValue `
+        -Resource $Model `
+        -PropertyName "datasets"
+    $datasetReferences = @($datasetReferences)
+    if ($datasetReferences.Count -eq 0) {
+        return 0
+    }
+    $referenceCount = 0
+    foreach ($datasetReference in $datasetReferences) {
+        $datasetId = ConvertTo-CanonicalResourceId `
+            -ResourceId (Get-ResourceId `
+                -Resource $datasetReference `
+                -ResourceType "protected model dataset") `
+            -ResourceType "protected model dataset"
+        $ProtectedDatasetIds.Add($datasetId) | Out-Null
+        $referenceCount++
+    }
+    return $referenceCount
+}
+
+function Remove-ObsoleteSpeechResources {
+    param(
+        [Parameter(Mandatory)][string] $ExpectedProjectId,
+        [Parameter(Mandatory)][object] $ActiveEndpoint
+    )
+
+    $activeModelReference = Get-ResourcePropertyValue `
+        -Resource $ActiveEndpoint `
+        -PropertyName "model"
+    if ($null -eq $activeModelReference) {
+        throw "The active endpoint model could not be verified before cleanup."
+    }
+    $activeModelId = Get-CustomEndpointModelId `
+        -ModelReference $activeModelReference `
+        -ReferenceType "active endpoint model"
+    if ($null -eq $activeModelId) {
+        throw "The active endpoint does not reference a custom model."
+    }
+
+    # Complete every read and protection check before issuing the first DELETE.
+    $endpointDetails = Get-DetailedCollection `
+        -ResourceType "endpoints" `
+        -Operation "inventory endpoints for cleanup"
+    $modelDetails = Get-DetailedCollection `
+        -ResourceType "models" `
+        -Operation "inventory models for cleanup"
+    $datasetDetails = Get-DetailedCollection `
+        -ResourceType "datasets" `
+        -Operation "inventory datasets for cleanup"
+
+    $protectedModelIds =
+        [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $protectedModelIds.Add($activeModelId) | Out-Null
+    foreach ($endpointDetail in $endpointDetails) {
+        $modelReference = Get-ResourcePropertyValue `
+            -Resource $endpointDetail `
+            -PropertyName "model"
+        if ($null -eq $modelReference) {
+            continue
+        }
+        $referencedModelId = Get-CustomEndpointModelId `
+            -ModelReference $modelReference `
+            -ReferenceType "endpoint model"
+        if ($null -eq $referencedModelId) {
+            continue
+        }
+        $protectedModelIds.Add($referencedModelId) | Out-Null
+    }
+
+    $modelsById = @{}
+    $managedModels = [Collections.Generic.List[object]]::new()
+    foreach ($modelDetail in $modelDetails) {
+        $modelId = Get-OptionalCanonicalResourceId -Resource $modelDetail
+        if ([string]::IsNullOrWhiteSpace($modelId)) {
+            throw "Custom Speech returned an invalid model inventory detail."
+        }
+        $modelsById[$modelId] = $modelDetail
+        if (Test-IsManagedTimestampedResource `
+                -Resource $modelDetail `
+                -ResourceKind "model" `
+                -ExpectedProjectId $ExpectedProjectId) {
+            $managedModels.Add([pscustomobject]@{
+                Id = $modelId
+                Resource = $modelDetail
+            })
+        }
+    }
+
+    if (-not $modelsById.ContainsKey($activeModelId)) {
+        $activeModel = Invoke-SpeechRequest `
+            -Method GET `
+            -Uri "$apiRoot/models/$activeModelId`?api-version=$apiVersion" `
+            -Operation "get active model for cleanup"
+        if ($null -eq $activeModel) {
+            throw "The active endpoint model detail could not be verified."
+        }
+        $modelsById[$activeModelId] = $activeModel
+    }
+    $activeModelDetail = $modelsById[$activeModelId]
+    if (-not (Test-ResourceBelongsToProject `
+            -Resource $activeModelDetail `
+            -ExpectedProjectId $ExpectedProjectId)) {
+        throw "The active endpoint model belongs to a different project."
+    }
+    $activeModelLocale = [string] (Get-ResourcePropertyValue `
+        -Resource $activeModelDetail `
+        -PropertyName "locale")
+    if ($activeModelLocale -cne $Locale) {
+        throw "The active endpoint model uses a different locale."
+    }
+
+    $protectedDatasetIds =
+        [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($protectedModelId in $protectedModelIds) {
+        if (-not $modelsById.ContainsKey($protectedModelId)) {
+            $protectedModel = Invoke-SpeechRequest `
+                -Method GET `
+                -Uri "$apiRoot/models/$protectedModelId`?api-version=$apiVersion" `
+                -Operation "get protected endpoint model for cleanup"
+            if ($null -eq $protectedModel) {
+                throw "A protected endpoint model detail could not be verified."
+            }
+            $modelsById[$protectedModelId] = $protectedModel
+        }
+        $protectedModelDetail = $modelsById[$protectedModelId]
+        $protectedReferenceCount = Add-ProtectedDatasetReferences `
+            -Model $protectedModelDetail `
+            -ProtectedDatasetIds $protectedDatasetIds
+        if ($protectedModelId -ceq $activeModelId -and
+            $protectedReferenceCount -eq 0) {
+            throw "The active custom model did not expose its dataset references."
+        }
+    }
+
+    $managedDatasets = [Collections.Generic.List[object]]::new()
+    foreach ($datasetDetail in $datasetDetails) {
+        $datasetId = Get-OptionalCanonicalResourceId -Resource $datasetDetail
+        if ([string]::IsNullOrWhiteSpace($datasetId)) {
+            throw "Custom Speech returned an invalid dataset inventory detail."
+        }
+        if (Test-IsManagedTimestampedResource `
+                -Resource $datasetDetail `
+                -ResourceKind "language" `
+                -ExpectedProjectId $ExpectedProjectId) {
+            $managedDatasets.Add([pscustomobject]@{
+                Id = $datasetId
+                Resource = $datasetDetail
+            })
+        }
+    }
+
+    $obsoleteModels = @($managedModels |
+        Where-Object { -not $protectedModelIds.Contains($_.Id) })
+    $obsoleteDatasets = @($managedDatasets |
+        Where-Object { -not $protectedDatasetIds.Contains($_.Id) })
+    if (@($obsoleteModels | Where-Object { $_.Id -ceq $activeModelId }).Count -gt 0) {
+        throw "Cleanup attempted to classify the active endpoint model as obsolete."
+    }
+    if (@($obsoleteDatasets |
+            Where-Object { $protectedDatasetIds.Contains($_.Id) }).Count -gt 0) {
+        throw "Cleanup attempted to classify a protected dataset as obsolete."
+    }
+
+    foreach ($obsoleteModel in $obsoleteModels) {
+        Invoke-SpeechRequest `
+            -Method DELETE `
+            -Uri "$apiRoot/models/$($obsoleteModel.Id)`?api-version=$apiVersion" `
+            -Operation "delete obsolete managed model" | Out-Null
+    }
+    foreach ($obsoleteDataset in $obsoleteDatasets) {
+        Invoke-SpeechRequest `
+            -Method DELETE `
+            -Uri "$apiRoot/datasets/$($obsoleteDataset.Id)`?api-version=$apiVersion" `
+            -Operation "delete obsolete managed dataset" | Out-Null
+    }
+
+    return [pscustomobject]@{
+        ProtectedModels = $protectedModelIds.Count
+        ProtectedDatasets = $protectedDatasetIds.Count
+        DeletedModels = $obsoleteModels.Count
+        DeletedDatasets = $obsoleteDatasets.Count
+    }
+}
+
 $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
 $timestamp = [DateTime]::UtcNow.ToString("yyyyMMdd-HHmmss")
 
@@ -244,6 +585,9 @@ if ($null -ne $project) {
     if ($projectLocale -cne $Locale) {
         throw "The exact-name Custom Speech project uses a different locale."
     }
+}
+if ($null -eq $project -and $CleanupOnly) {
+    throw "Cleanup mode requires the existing exact-name Custom Speech project."
 }
 if ($null -eq $project) {
     $project = Invoke-SpeechRequest `
@@ -317,7 +661,24 @@ if ($null -ne $endpoint) {
         throw "The reusable Custom Speech endpoint belongs to a different project."
     }
 }
+if ($CleanupOnly -and $null -eq $endpoint) {
+    throw "The expected Custom Speech endpoint could not be verified for cleanup."
+}
 Write-Output "Custom Speech project and endpoint state validated."
+
+if ($CleanupOnly) {
+    $cleanupResult = Remove-ObsoleteSpeechResources `
+        -ExpectedProjectId $projectId `
+        -ActiveEndpoint $endpoint
+    Write-Output (
+        "Custom Speech cleanup completed: {0} model(s) and {1} dataset(s) " +
+        "deleted; {2} endpoint-referenced model(s) and {3} dataset(s) protected." -f
+        $cleanupResult.DeletedModels,
+        $cleanupResult.DeletedDatasets,
+        $cleanupResult.ProtectedModels,
+        $cleanupResult.ProtectedDatasets)
+    return
+}
 
 $dataset = Invoke-SpeechRequest `
     -Method POST `

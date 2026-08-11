@@ -2,6 +2,15 @@ name: Deploy Custom Speech
 
 on:
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Train and deploy, or only remove obsolete managed resources
+        required: true
+        default: train-and-deploy
+        type: choice
+        options:
+          - train-and-deploy
+          - cleanup-obsolete
 
 permissions:
   contents: read
@@ -22,6 +31,7 @@ env:
 
 jobs:
   train-and-deploy:
+    name: Manage Custom Speech
     runs-on:
       - self-hosted
       - Windows
@@ -34,6 +44,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Install .NET SDK
+        if: ${{ inputs.operation == 'train-and-deploy' }}
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: 8.0.423
@@ -49,12 +60,14 @@ jobs:
           }
 
       - name: Restore and build dataset builder
+        if: ${{ inputs.operation == 'train-and-deploy' }}
         shell: powershell
         run: |
           dotnet restore .\tools\CsaMeetingCoach.SpeechDatasetBuilder\CsaMeetingCoach.SpeechDatasetBuilder.csproj
           dotnet build .\tools\CsaMeetingCoach.SpeechDatasetBuilder\CsaMeetingCoach.SpeechDatasetBuilder.csproj -c Release --no-restore
 
       - name: Generate privacy-safe language dataset
+        if: ${{ inputs.operation == 'train-and-deploy' }}
         shell: powershell
         run: |
           New-Item -ItemType Directory -Path .\artifacts -Force | Out-Null
@@ -67,6 +80,7 @@ jobs:
             .\artifacts\custom-speech-language.txt
 
       - name: Train and deploy Custom Speech
+        if: ${{ inputs.operation == 'train-and-deploy' }}
         shell: powershell
         run: |
           .\deploy\Deploy-CustomSpeech.ps1 `
@@ -79,6 +93,7 @@ jobs:
             -TimeoutSeconds 6600
 
       - name: Upload private deployment result
+        if: ${{ inputs.operation == 'train-and-deploy' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: custom-speech-result
@@ -87,6 +102,7 @@ jobs:
           retention-days: 7
 
       - name: Verify browser endpoint and deploy application
+        if: ${{ inputs.operation == 'train-and-deploy' }}
         shell: powershell
         run: |
           $result = Get-Content .\artifacts\custom-speech-result.json -Raw |
@@ -117,3 +133,26 @@ jobs:
           }
           "The configured browser endpoint was verified and the application deployment was requested." >> $env:GITHUB_STEP_SUMMARY
           gh workflow run deploy-demo-vm.yml -f operation=deploy
+
+      - name: Remove obsolete managed models and datasets
+        shell: powershell
+        run: |
+          $endpointId = $env:CONFIGURED_ENDPOINT_ID
+          if ("${{ inputs.operation }}" -eq "train-and-deploy") {
+            $result = Get-Content .\artifacts\custom-speech-result.json -Raw |
+              ConvertFrom-Json
+            $endpointId = [string] $result.endpointId
+          }
+          $parsedEndpointId = [Guid]::Empty
+          if (-not [Guid]::TryParseExact($endpointId, "D", [ref] $parsedEndpointId) -or
+              $parsedEndpointId -eq [Guid]::Empty -or
+              $parsedEndpointId.ToString("D") -cne $endpointId) {
+            throw "Cleanup requires BROWSER_SPEECH_ENDPOINT_ID or a valid deployment result."
+          }
+          Write-Output "::add-mask::$endpointId"
+          .\deploy\Deploy-CustomSpeech.ps1 `
+            -SubscriptionKey $env:SPEECH_KEY `
+            -Region $env:SPEECH_REGION `
+            -Locale $env:SPEECH_LANGUAGE `
+            -ExpectedEndpointId $endpointId `
+            -CleanupOnly
