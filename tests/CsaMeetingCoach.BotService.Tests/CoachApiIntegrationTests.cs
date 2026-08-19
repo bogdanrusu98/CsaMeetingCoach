@@ -339,6 +339,24 @@ public sealed class CoachApiFactory : WebApplicationFactory<ApiEntryPoint>
             services.RemoveAll<IMeetingSessionStore>();
             services.AddSingleton<IMeetingSessionStore>(
                 new JsonMeetingSessionStore(dataDirectory));
+            services.RemoveAll<ISessionJoinCodeStore>();
+            services.AddSingleton<ISessionJoinCodeStore>(
+                new JsonSessionJoinCodeStore(dataDirectory));
+            services.RemoveAll<IKnowledgeMalwareScanner>();
+            services.AddSingleton<IKnowledgeMalwareScanner, AlwaysCleanKnowledgeScanner>();
+            services.RemoveAll<ISessionKnowledgeStore>();
+            services.RemoveAll<ISessionKnowledgeReader>();
+            services.RemoveAll<ISessionArtifactCleaner>();
+            services.AddSingleton<ISessionKnowledgeStore>(serviceProvider =>
+                new LocalSessionKnowledgeStore(
+                    Path.Combine(testRoot, "knowledge"),
+                    serviceProvider.GetRequiredService<IKnowledgeMalwareScanner>()));
+            services.AddSingleton<ISessionKnowledgeReader>(
+                serviceProvider =>
+                    serviceProvider.GetRequiredService<ISessionKnowledgeStore>());
+            services.AddSingleton<ISessionArtifactCleaner>(
+                serviceProvider =>
+                    serviceProvider.GetRequiredService<ISessionKnowledgeStore>());
             services.RemoveAll<TranscriptAdapterAuthOptions>();
             services.AddSingleton(new TranscriptAdapterAuthOptions(
                 TranscriptAdapterAuthMode.DevelopmentApiKey,
@@ -350,6 +368,12 @@ public sealed class CoachApiFactory : WebApplicationFactory<ApiEntryPoint>
         });
     }
 
+    protected override void ConfigureClient(HttpClient client)
+    {
+        base.ConfigureClient(client);
+        client.DefaultRequestHeaders.Add("X-Session-Request", "1");
+    }
+
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
@@ -357,5 +381,13 @@ public sealed class CoachApiFactory : WebApplicationFactory<ApiEntryPoint>
         {
             Directory.Delete(testRoot, recursive: true);
         }
+    }
+
+    private sealed class AlwaysCleanKnowledgeScanner : IKnowledgeMalwareScanner
+    {
+        public Task<KnowledgeMalwareScanResult> ScanAsync(
+            string path,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(KnowledgeMalwareScanResult.Clean);
     }
 }

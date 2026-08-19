@@ -60,4 +60,26 @@ public sealed class MeetingChecklistPlannerTests
 
         Assert.Contains("completion criteria", exception.Message);
     }
+
+    [Theory]
+    [InlineData(SessionTemplateKind.Presentation, "audience")]
+    [InlineData(SessionTemplateKind.Workshop, "workshop")]
+    [InlineData(SessionTemplateKind.Training, "learning")]
+    [InlineData(SessionTemplateKind.Custom, "session objective")]
+    public void CreateChecklist_UsesTemplateSpecificPlan(
+        SessionTemplateKind template,
+        string expectedTitle)
+    {
+        var checklist = new MeetingChecklistPlanner().CreateChecklist(
+            TestData.CreatePurpose(),
+            requestedChecklist: null,
+            template);
+
+        Assert.Contains(
+            checklist,
+            item => item.Title.Contains(expectedTitle, StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(
+            checklist,
+            item => item.Title.Contains("business value", StringComparison.OrdinalIgnoreCase));
+    }
 }

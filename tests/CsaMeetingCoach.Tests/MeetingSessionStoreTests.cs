@@ -266,6 +266,46 @@ public sealed class MeetingSessionStoreTests : IDisposable
         Assert.Equal(MeetingSessionState.CurrentSchemaVersion, loaded.StateSchemaVersion);
     }
 
+    [Fact]
+    public async Task ListAndDelete_RecoversCrashLeftTemporarySessionFile()
+    {
+        var store = new JsonMeetingSessionStore(_directory);
+        var now = DateTimeOffset.UtcNow;
+        var session = new MeetingSessionState(
+            Guid.NewGuid(),
+            TestData.CreatePurpose(),
+            MeetingSessionStatus.Active,
+            now,
+            now,
+            Revision: 1,
+            Checklist: [],
+            Transcript: [],
+            RecommendedTasks: [],
+            Warnings: [])
+        {
+            ExpiresAtUtc = now + SessionLifecycle.Lifetime
+        };
+        await store.SaveAsync(session, CancellationToken.None);
+        var canonicalPath = Path.Combine(_directory, $"{session.Id:N}.json");
+        var temporaryPath = string.Concat(
+            canonicalPath,
+            ".",
+            Guid.NewGuid().ToString("N"),
+            ".tmp");
+        File.Copy(canonicalPath, temporaryPath);
+        File.Delete(canonicalPath);
+
+        var listed = new List<MeetingSessionState>();
+        await foreach (var item in store.ListAsync(CancellationToken.None))
+        {
+            listed.Add(item);
+        }
+
+        Assert.Equal(session.Id, Assert.Single(listed).Id);
+        await store.DeleteAsync(session.Id, CancellationToken.None);
+        Assert.False(File.Exists(temporaryPath));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))

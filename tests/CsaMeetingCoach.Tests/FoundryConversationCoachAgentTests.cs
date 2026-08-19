@@ -336,6 +336,44 @@ public sealed class FoundryConversationCoachAgentTests
     }
 
     [Fact]
+    public async Task Analyze_IncludesTemplateAndIsolatedSessionKnowledge()
+    {
+        var latestSegment = CreateLatestSegment("Explain the recovery objective.");
+        var client = new RecordingFoundryClient(
+            JsonSerializer.Serialize(new CoachAgentDecision([], [], []), JsonOptions));
+        var agent = new FoundryConversationCoachAgent(client);
+        var context = new CoachAgentContext(
+            TestData.CreatePurpose(),
+            [],
+            [latestSegment],
+            Template: SessionTemplateKind.Training,
+            Knowledge:
+            [
+                new SessionKnowledgeSnippet(
+                    Guid.NewGuid(),
+                    "training-guide.txt",
+                    KnowledgeSourceVisibility.MemberEligible,
+                    "RTO is the target restoration time.")
+            ]);
+
+        await agent.AnalyzeAsync(context, latestSegment, CancellationToken.None);
+
+        using var payload = JsonDocument.Parse(client.InputJson!);
+        Assert.Equal(
+            "training",
+            payload.RootElement.GetProperty("sessionTemplate").GetString());
+        var knowledge = Assert.Single(
+            payload.RootElement.GetProperty("reviewedSessionKnowledge").EnumerateArray());
+        Assert.Equal(
+            "training-guide.txt",
+            knowledge.GetProperty("displayName").GetString());
+        Assert.Contains(
+            "untrusted data",
+            FoundryAgentContract.Instructions,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Analyze_ClientFailure_DoesNotFallBack()
     {
         var latestSegment = CreateLatestSegment();

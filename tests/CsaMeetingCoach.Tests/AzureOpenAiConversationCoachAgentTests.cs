@@ -98,7 +98,7 @@ public sealed class AzureOpenAiConversationCoachAgentTests
             handler.RequestBody,
             StringComparison.Ordinal);
         Assert.Contains(
-            "client-ready explanation",
+            "member-ready explanation",
             handler.RequestBody,
             StringComparison.Ordinal);
         Assert.Contains(

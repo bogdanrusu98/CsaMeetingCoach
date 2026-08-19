@@ -13,6 +13,7 @@ public sealed class AzureFoundryAgentClientTests
 
         Assert.Null(options.TextOptions);
         Assert.Equal(2_000, options.MaxOutputTokenCount);
+        Assert.False(options.StoredOutputEnabled);
         Assert.Single(options.InputItems);
 #pragma warning restore OPENAI001
     }
@@ -53,7 +54,7 @@ public sealed class AzureFoundryAgentClientTests
             FoundryAgentContract.ResponseJsonSchema,
             StringComparison.Ordinal);
         Assert.Contains(
-            "what the CSA should discuss",
+            "what the host should discuss",
             normalizedInstructions,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -109,7 +110,7 @@ public sealed class AzureFoundryAgentClientTests
             normalizedInstructions,
             StringComparison.Ordinal);
         Assert.Contains(
-            "up to two complementary Microsoft dependencies",
+            "up to two complementary dependencies",
             normalizedInstructions,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -125,7 +126,7 @@ public sealed class AzureFoundryAgentClientTests
             normalizedInstructions,
             StringComparison.Ordinal);
         Assert.Contains(
-            "client-ready explanation that the CSA can state proactively",
+            "Contextual cards are member-facing learning alerts",
             normalizedInstructions,
             StringComparison.Ordinal);
         Assert.Contains(

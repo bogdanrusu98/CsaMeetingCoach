@@ -12,7 +12,7 @@ public sealed class SessionEventBroker : ISessionUpdatePublisher
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private readonly ConcurrentDictionary<
         Guid,
-        ConcurrentDictionary<Guid, Channel<string>>> _subscriptions = new();
+        ConcurrentDictionary<Guid, SessionEventRegistration>> _subscriptions = new();
 
     private static JsonSerializerOptions CreateJsonOptions()
     {
@@ -21,7 +21,7 @@ public sealed class SessionEventBroker : ISessionUpdatePublisher
         return options;
     }
 
-    public SessionSubscription Subscribe(Guid sessionId)
+    public SessionSubscription Subscribe(Guid sessionId, SessionRole role)
     {
         var subscriptionId = Guid.NewGuid();
         var channel = Channel.CreateBounded<string>(new BoundedChannelOptions(10)
@@ -32,8 +32,8 @@ public sealed class SessionEventBroker : ISessionUpdatePublisher
         });
         var sessionSubscriptions = _subscriptions.GetOrAdd(
             sessionId,
-            static _ => new ConcurrentDictionary<Guid, Channel<string>>());
-        sessionSubscriptions[subscriptionId] = channel;
+            static _ => new ConcurrentDictionary<Guid, SessionEventRegistration>());
+        sessionSubscriptions[subscriptionId] = new SessionEventRegistration(role, channel);
 
         return new SessionSubscription(
             channel.Reader,
@@ -48,18 +48,38 @@ public sealed class SessionEventBroker : ISessionUpdatePublisher
             return Task.CompletedTask;
         }
 
-        var payload = SerializeSession(session);
-        foreach (var channel in subscribers.Values)
+        string? hostPayload = null;
+        string? memberPayload = null;
+        foreach (var subscriber in subscribers.Values)
         {
-            channel.Writer.TryWrite(payload);
+            var payload = subscriber.Role == SessionRole.Host
+                ? hostPayload ??= SerializeSession(session, SessionRole.Host)
+                : memberPayload ??= SerializeSession(session, SessionRole.Member);
+            subscriber.Channel.Writer.TryWrite(payload);
         }
 
         return Task.CompletedTask;
     }
 
-    public string SerializeSession(MeetingSessionState session)
+    public string SerializeSession(MeetingSessionState session, SessionRole role)
     {
-        return JsonSerializer.Serialize(session, JsonOptions);
+        var view = role == SessionRole.Host
+            ? (object)session
+            : SessionViewProjector.ForMember(session);
+        return JsonSerializer.Serialize(view, JsonOptions);
+    }
+
+    public void CloseSession(Guid sessionId)
+    {
+        if (!_subscriptions.TryRemove(sessionId, out var subscribers))
+        {
+            return;
+        }
+
+        foreach (var subscriber in subscribers.Values)
+        {
+            subscriber.Channel.Writer.TryComplete();
+        }
     }
 
     private void Remove(Guid sessionId, Guid subscriptionId)
@@ -69,11 +89,15 @@ public sealed class SessionEventBroker : ISessionUpdatePublisher
             return;
         }
 
-        if (subscribers.TryRemove(subscriptionId, out var channel))
+        if (subscribers.TryRemove(subscriptionId, out var registration))
         {
-            channel.Writer.TryComplete();
+            registration.Channel.Writer.TryComplete();
         }
     }
+
+    private sealed record SessionEventRegistration(
+        SessionRole Role,
+        Channel<string> Channel);
 }
 
 public sealed class SessionSubscription(

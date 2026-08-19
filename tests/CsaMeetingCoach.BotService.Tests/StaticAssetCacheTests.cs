@@ -18,16 +18,20 @@ public sealed class StaticAssetCacheTests
         indexResponse.EnsureSuccessStatusCode();
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
-        Assert.Contains("styles.css?v=20260810b", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260810b", html, StringComparison.Ordinal);
+        Assert.Contains("styles.css?v=20260819a", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260819a", html, StringComparison.Ordinal);
         Assert.Contains("data-theme", html, StringComparison.Ordinal);
         Assert.Contains("id=\"microphone-toggle\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"include-system-audio\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"microphone-access-status\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"recommendations\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"live-plan\"", html, StringComparison.Ordinal);
-        Assert.Contains("Next up", html, StringComparison.Ordinal);
-        Assert.Contains("Meeting progress", html, StringComparison.Ordinal);
+        Assert.Contains("Host a session", html, StringComparison.Ordinal);
+        Assert.Contains("Join as member", html, StringComparison.Ordinal);
+        Assert.Contains("Session knowledge", html, StringComparison.Ordinal);
+        Assert.Contains("Host guidance", html, StringComparison.Ordinal);
+        Assert.Contains("Evidence-backed plan", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"member-session-view\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"diagnostics-dialog\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"speech-diagnostics\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"contextual-cards\"", html, StringComparison.Ordinal);
@@ -37,7 +41,7 @@ public sealed class StaticAssetCacheTests
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260810b");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260819a");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
@@ -75,6 +79,17 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("createMediaStreamDestination", script, StringComparison.Ordinal);
         Assert.Contains("Share system audio", script, StringComparison.Ordinal);
         Assert.Contains("renderContextualCards", script, StringComparison.Ordinal);
+        Assert.Contains("/api/sessions/host", script, StringComparison.Ordinal);
+        Assert.Contains("/api/sessions/join", script, StringComparison.Ordinal);
+        Assert.Contains("/knowledge/files", script, StringComparison.Ordinal);
+        Assert.Contains("X-Session-Request", script, StringComparison.Ordinal);
+        Assert.Contains("function scheduleSessionExpiry", script, StringComparison.Ordinal);
+        Assert.Contains("async function handleSessionExpired", script, StringComparison.Ordinal);
+        Assert.Contains("sessionExpiryTimer", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "addEventListener(\"expired\"",
+            script,
+            StringComparison.Ordinal);
         Assert.Contains("data-contextual-card-dismiss", script, StringComparison.Ordinal);
         var recognizerIndex = script.IndexOf(
             "new window.SpeechSDK.SpeechRecognizer",
@@ -112,12 +127,15 @@ public sealed class StaticAssetCacheTests
             StringComparison.Ordinal);
         Assert.Contains("protected access lasts up to 30 days", script, StringComparison.Ordinal);
 
-        using var styleResponse = await client.GetAsync("/styles.css?v=20260810b");
+        using var styleResponse = await client.GetAsync("/styles.css?v=20260819a");
         styleResponse.EnsureSuccessStatusCode();
         AssertNoStore(styleResponse);
         var styles = await styleResponse.Content.ReadAsStringAsync();
         Assert.Contains(".contextual-card-stack", styles, StringComparison.Ordinal);
         Assert.Contains(".contextual-card", styles, StringComparison.Ordinal);
+        Assert.Contains(".role-card", styles, StringComparison.Ordinal);
+        Assert.Contains(".host-layout", styles, StringComparison.Ordinal);
+        Assert.Contains(".member-alert-card", styles, StringComparison.Ordinal);
         Assert.Contains(".speech-diagnostics", styles, StringComparison.Ordinal);
 
         using var speechSdkResponse = await client.GetAsync(

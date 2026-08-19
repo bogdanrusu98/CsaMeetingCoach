@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using CsaMeetingCoach.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
 
@@ -8,6 +9,8 @@ namespace CsaMeetingCoach.BotService.Tests;
 
 public sealed class BrowserSpeechEndpointTests
 {
+    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+
     [Fact]
     public async Task DisabledSpeechFailsClosedForSessionOwner()
     {
@@ -63,9 +66,17 @@ public sealed class BrowserSpeechEndpointTests
                     "Microphone test",
                     "VBD",
                     "Validate explicit browser speech authorization.",
-                    ["Capture final consented speech segments"])));
+                    ["Capture final consented speech segments"])),
+            JsonOptions);
         response.EnsureSuccessStatusCode();
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
         return payload.GetProperty("id").GetGuid();
+    }
+
+    private static JsonSerializerOptions CreateJsonOptions()
+    {
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+        return options;
     }
 }

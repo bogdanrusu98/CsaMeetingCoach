@@ -48,8 +48,14 @@ internal static class CrossCuttingRecommendationPolicy
 
     public static CoachAgentDecision Apply(
         CoachAgentDecision decision,
-        TranscriptSegment latestSegment)
+        TranscriptSegment latestSegment,
+        SessionTemplateKind template = SessionTemplateKind.CsaVbd)
     {
+        if (template != SessionTemplateKind.CsaVbd)
+        {
+            return decision;
+        }
+
         var normalizedText = HeuristicConversationCoachAgent.Normalize(latestSegment.Text);
         var scenario = Scenarios.FirstOrDefault(item => item.Matches(normalizedText));
         if (scenario is null)

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CSA Meeting Coach</title>
+  <title>Session Copilot</title>
   <link rel="icon" href="data:,">
   <script>
     (() => {
@@ -13,234 +13,386 @@
       document.documentElement.setAttribute("data-theme", theme);
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=20260810b">
+  <link rel="stylesheet" href="styles.css?v=20260819a">
 </head>
 <body>
   <main class="app-shell">
-    <section id="setup-view" class="setup-view" aria-labelledby="setup-title">
-      <div class="brand-mark" aria-hidden="true">AI</div>
-      <div class="setup-heading">
-        <p class="eyebrow">Private meeting assistant</p>
-        <h1 id="setup-title">Start live coaching</h1>
-        <p>
-          Get evidence-backed talking points from what participants explicitly discuss.
-          The coach never evaluates emotion or tone.
-        </p>
+    <section id="setup-view" class="commercial-entry" aria-labelledby="entry-title">
+      <header class="entry-header">
+        <a class="product-brand" href="/" aria-label="Session Copilot home">
+          <span class="product-glyph" aria-hidden="true">S</span>
+          <span>Session Copilot</span>
+        </a>
+        <span class="privacy-chip">Ephemeral by design · 24 hours</span>
+      </header>
+
+      <div id="role-picker" class="entry-hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Live, role-aware assistance</p>
+          <h1 id="entry-title">Guide the room without becoming another chatbot.</h1>
+          <p>
+            Run a presentation, workshop, training, or customer conversation with
+            private host guidance and focused learning alerts for members.
+          </p>
+          <div class="trust-row" aria-label="Privacy features">
+            <span>No raw audio stored</span>
+            <span>Knowledge isolated per session</span>
+            <span>Automatic deletion after 24 hours</span>
+          </div>
+        </div>
+
+        <div class="role-grid" aria-label="Choose how to enter">
+          <button type="button" class="role-card host-card" data-role-choice="host">
+            <span class="role-icon" aria-hidden="true">H</span>
+            <span class="role-card-copy">
+              <strong>Host a session</strong>
+              <span>Create the plan, add trusted knowledge, and receive private guidance.</span>
+            </span>
+            <span class="role-arrow" aria-hidden="true">→</span>
+          </button>
+          <button type="button" class="role-card member-card" data-role-choice="member">
+            <span class="role-icon" aria-hidden="true">M</span>
+            <span class="role-card-copy">
+              <strong>Join as member</strong>
+              <span>Enter a session code and receive only approved learning alerts.</span>
+            </span>
+            <span class="role-arrow" aria-hidden="true">→</span>
+          </button>
+        </div>
       </div>
 
-      <form id="session-form" class="setup-form">
-        <label>
-          Meeting title
-          <input id="meeting-title" required value="Contoso cloud modernization VBD">
-        </label>
-        <div class="field-grid">
+      <section id="host-setup-panel" class="setup-panel hidden" aria-labelledby="host-setup-title">
+        <button type="button" class="back-link" data-back-to-roles>← Back</button>
+        <div class="panel-heading">
+          <p class="eyebrow">Host setup</p>
+          <h2 id="host-setup-title">Design the session</h2>
+          <p>The template shapes the checklist and AI behavior. You can add knowledge after creation.</p>
+        </div>
+        <form id="session-form" class="setup-form commercial-form">
+          <div class="field-grid commercial-fields">
+            <label>
+              Host display name
+              <input id="host-display-name" required maxlength="80" value="Host">
+            </label>
+            <label>
+              Session template
+              <select id="session-template">
+                <option value="presentation">Presentation</option>
+                <option value="workshop">Workshop</option>
+                <option value="training">Training</option>
+                <option value="custom">Custom</option>
+                <option value="csaVbd">CSA / VBD</option>
+              </select>
+            </label>
+          </div>
           <label>
-            Meeting type
-            <select id="meeting-type">
-              <option>VBD</option>
-              <option>Architecture review</option>
-              <option>Technical workshop</option>
-              <option>Customer follow-up</option>
-            </select>
+            Session title
+            <input id="meeting-title" required maxlength="120"
+                   value="Cloud modernization workshop">
           </label>
+          <div class="field-grid commercial-fields">
+            <label>
+              Session type
+              <input id="meeting-type" required maxlength="80" value="Workshop">
+            </label>
+            <label>
+              Member alert mode
+              <select id="member-alert-mode">
+                <option value="safeAutomatic">Safe automatic</option>
+                <option value="manual">Host approval</option>
+                <option value="automatic">Automatic</option>
+              </select>
+            </label>
+          </div>
           <label>
             Objective
-            <textarea id="meeting-objective" required>Align the modernization proposal to measurable customer business value.</textarea>
+            <textarea id="meeting-objective" required maxlength="600">Align participants on the target outcome, constraints, and next actions.</textarea>
           </label>
+          <label>
+            Success criteria <span class="field-hint">one per line</span>
+            <textarea id="success-criteria">Confirm the desired outcome
+Capture decisions and open questions
+Define owners and next actions</textarea>
+          </label>
+          <button type="submit" class="button primary full-width">Create secure session</button>
+        </form>
+      </section>
+
+      <section id="member-join-panel" class="setup-panel member-join-panel hidden"
+               aria-labelledby="member-join-title">
+        <button type="button" class="back-link" data-back-to-roles>← Back</button>
+        <div class="panel-heading">
+          <p class="eyebrow">Member access</p>
+          <h2 id="member-join-title">Join the live session</h2>
+          <p>The host shares an eight-character code. It expires when the session expires.</p>
         </div>
-        <label>
-          Success criteria <span class="field-hint">one per line</span>
-          <textarea id="success-criteria">Confirm the priority workloads
-Agree measurable business outcomes
-Define owners and next steps</textarea>
-        </label>
-        <button type="submit" class="button primary full-width">
-          Start live coaching
-        </button>
-      </form>
+        <form id="member-join-form" class="setup-form commercial-form">
+          <label>
+            Your display name
+            <input id="member-display-name" required maxlength="80" autocomplete="name">
+          </label>
+          <label>
+            Session code
+            <input id="member-session-code" class="session-code-input" required
+                   maxlength="9" inputmode="text" autocomplete="one-time-code"
+                   placeholder="ABCD-EFGH">
+          </label>
+          <button type="submit" class="button primary full-width">Join session</button>
+        </form>
+      </section>
 
       <p class="privacy-line">
-        Use only after participant notice and with a valid lawful basis.
+        Start transcription only after participant notice and with a valid lawful basis.
       </p>
     </section>
 
-    <section id="session-view" class="session-view hidden">
-      <header class="session-bar">
+    <section id="session-view" class="session-view host-dashboard hidden">
+      <header class="session-bar commercial-session-bar">
         <div class="session-identity">
           <span class="live-dot" aria-hidden="true"></span>
           <div>
+            <p class="role-kicker">Host workspace</p>
             <h1 id="purpose-title"></h1>
-            <p><span id="meeting-type-label"></span> · <span id="connection-status">Connecting</span></p>
+            <p>
+              <span id="meeting-type-label"></span> ·
+              <span id="connection-status">Connecting</span>
+            </p>
           </div>
         </div>
         <div class="bar-actions">
           <button id="open-diagnostics" type="button" class="icon-button"
-                  aria-label="Open diagnostics" title="Diagnostics">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm-8 4.75v-2.5l2.15-.72c.17-.55.4-1.08.68-1.57L5.8 6.43l1.77-1.77 2.03 1.03c.5-.28 1.02-.5 1.57-.66L11.9 2.9h2.5l.72 2.13c.56.16 1.1.38 1.6.66l2.01-1.03 1.77 1.77-1.03 2.02c.28.5.5 1.03.67 1.58l2.16.72v2.5l-2.16.72c-.17.55-.4 1.08-.68 1.58l1.04 2.02-1.77 1.77-2.03-1.03c-.5.28-1.02.5-1.58.66l-.72 2.14h-2.5l-.73-2.14a8.2 8.2 0 0 1-1.58-.66l-2.02 1.03-1.77-1.77 1.03-2.02a8.3 8.3 0 0 1-.68-1.58L4 13.25Z"/>
-            </svg>
-          </button>
-          <button id="complete-meeting" type="button" class="button subtle">End</button>
+                  aria-label="Open diagnostics" title="Diagnostics">⋯</button>
+          <button id="complete-meeting" type="button" class="button subtle">End session</button>
         </div>
         <p id="purpose-objective" class="visually-hidden"></p>
       </header>
 
-      <article id="microphone-panel" class="microphone-card hidden"
-               aria-labelledby="microphone-heading">
-        <div class="microphone-main">
-          <button id="microphone-toggle" type="button" class="microphone-button"
-                  aria-label="Set up meeting audio" aria-pressed="false">
-            <span class="microphone-icon" aria-hidden="true"></span>
-          </button>
-          <div class="microphone-copy">
-            <div class="microphone-title-row">
-              <h2 id="microphone-heading">Meeting audio</h2>
-              <span id="microphone-status" class="status neutral">Off</span>
+      <div class="host-layout">
+        <aside class="host-sidebar">
+          <article class="session-access-card">
+            <div class="section-heading-row">
+              <div>
+                <p class="eyebrow">Member access</p>
+                <h2>Session code</h2>
+              </div>
+              <span id="session-template-label" class="template-badge"></span>
             </div>
-            <p id="microphone-preview" class="live-caption" aria-live="polite">
-              Tap the microphone to start live coaching.
+            <output id="host-session-code" class="host-session-code"
+                    aria-label="Member session code"></output>
+            <p class="retention-copy">
+              Expires <time id="session-expiry"></time>. The session and all knowledge
+              are then deleted.
             </p>
-          </div>
-        </div>
+          </article>
 
-        <div id="microphone-unlock" class="microphone-unlock hidden">
-          <div class="unlock-heading">
-            <strong>Enable this device</strong>
-            <button id="close-microphone-unlock" type="button" class="icon-button"
-                    aria-label="Close microphone setup">×</button>
-          </div>
-          <p>
-            Azure Speech processes the selected audio; raw audio is not stored by
-            the coach. Screen video is not processed or uploaded.
-          </p>
-          <label class="consent-option">
-            <input id="microphone-consent" type="checkbox">
-            <span>I notified participants and have permission to transcribe.</span>
-          </label>
-          <label class="consent-option">
-            <input id="include-system-audio" type="checkbox">
-            <span>
-              Include meeting audio played by this device.
-              <span class="field-hint">
-                In Edge or Chrome, choose the Teams tab, or Entire screen for the
-                desktop app, and enable Share system audio.
-              </span>
-            </span>
-          </label>
-          <label>
-            Demo access code
-            <input id="microphone-access-key" type="password" autocomplete="off">
-            <span id="microphone-access-status" class="field-hint" aria-live="polite">
-              Enter once per browser; the code is exchanged for protected access
-              and is not copied to the clipboard.
-            </span>
-          </label>
-          <button id="confirm-microphone" type="button" class="button primary full-width">
-            Start listening
-          </button>
-        </div>
-      </article>
+          <article class="knowledge-card" aria-labelledby="knowledge-title">
+            <div class="section-heading-row">
+              <div>
+                <p class="eyebrow">Grounding</p>
+                <h2 id="knowledge-title">Session knowledge</h2>
+              </div>
+              <span id="knowledge-count" class="count-badge">0/50</span>
+            </div>
+            <p class="section-description">
+              Private by default. Member-eligible sources may ground member alerts.
+            </p>
+            <form id="knowledge-file-form" class="knowledge-form">
+              <label>
+                Upload a file
+                <input id="knowledge-file" name="file" type="file"
+                       accept=".docx,.html,.json,.md,.pptx,.txt,.xlsx" required>
+              </label>
+              <label>
+                Visibility
+                <select id="knowledge-file-visibility">
+                  <option value="hostPrivate">Host only</option>
+                  <option value="memberEligible">Member alerts eligible</option>
+                </select>
+              </label>
+              <button type="submit" class="button subtle">Scan and add file</button>
+            </form>
+            <form id="knowledge-link-form" class="knowledge-form">
+              <label>
+                Add a public HTTPS link
+                <input id="knowledge-link" type="url" required
+                       placeholder="https://learn.microsoft.com/...">
+              </label>
+              <label>
+                Visibility
+                <select id="knowledge-link-visibility">
+                  <option value="hostPrivate">Host only</option>
+                  <option value="memberEligible">Member alerts eligible</option>
+                </select>
+              </label>
+              <button type="submit" class="button subtle">Validate and add link</button>
+            </form>
+            <div id="knowledge-list" class="knowledge-list empty-state">
+              No session knowledge added.
+            </div>
+          </article>
+        </aside>
 
-      <article class="focus-card" aria-labelledby="next-discussion-heading">
-        <div class="section-label">
-          <span class="spark" aria-hidden="true">✦</span>
-          <span>Next up</span>
-        </div>
-        <h2 id="next-discussion-heading" class="visually-hidden">Next up</h2>
-        <div id="recommendations" class="recommendation-list empty-state" aria-live="polite">
-          Listening for a customer need or question…
-        </div>
-      </article>
+        <section class="host-main">
+          <article id="microphone-panel" class="microphone-card hidden"
+                   aria-labelledby="microphone-heading">
+            <div class="microphone-main">
+              <button id="microphone-toggle" type="button" class="microphone-button"
+                      aria-label="Set up meeting audio" aria-pressed="false">
+                <span class="microphone-icon" aria-hidden="true"></span>
+              </button>
+              <div class="microphone-copy">
+                <div class="microphone-title-row">
+                  <h2 id="microphone-heading">Live speech</h2>
+                  <span id="microphone-status" class="status neutral">Off</span>
+                </div>
+                <p id="microphone-preview" class="live-caption" aria-live="polite">
+                  Start listening when participants have been notified.
+                </p>
+              </div>
+            </div>
+            <div id="microphone-unlock" class="microphone-unlock hidden">
+              <div class="unlock-heading">
+                <strong>Enable this device</strong>
+                <button id="close-microphone-unlock" type="button" class="icon-button"
+                        aria-label="Close microphone setup">×</button>
+              </div>
+              <p>
+                Azure Speech processes selected audio. Raw audio is not stored by
+                Session Copilot, and screen video is never processed.
+              </p>
+              <label class="consent-option">
+                <input id="microphone-consent" type="checkbox">
+                <span>I notified participants and have permission to transcribe.</span>
+              </label>
+              <label class="consent-option">
+                <input id="include-system-audio" type="checkbox">
+                <span>
+                  Include meeting audio played by this device.
+                  <span class="field-hint">Share the Teams tab or screen with system audio enabled.</span>
+                </span>
+              </label>
+              <label>
+                Demo speech access code
+                <input id="microphone-access-key" type="password" autocomplete="off">
+                <span id="microphone-access-status" class="field-hint" aria-live="polite"></span>
+              </label>
+              <button id="confirm-microphone" type="button" class="button primary full-width">
+                Start listening
+              </button>
+            </div>
+          </article>
 
-      <article id="live-plan" class="progress-card" aria-labelledby="live-plan-heading">
-        <div class="progress-header">
+          <article class="focus-card" aria-labelledby="next-discussion-heading">
+            <div class="section-label"><span class="spark" aria-hidden="true">✦</span>Host guidance</div>
+            <h2 id="next-discussion-heading" class="visually-hidden">Host guidance</h2>
+            <div id="recommendations" class="recommendation-list empty-state" aria-live="polite">
+              Listening for explicit discussion to suggest what to cover next.
+            </div>
+          </article>
+
+          <article id="live-plan" class="progress-card" aria-labelledby="live-plan-heading">
+            <div class="progress-header">
+              <div>
+                <p class="eyebrow">Session progress</p>
+                <h2 id="live-plan-heading">Evidence-backed plan</h2>
+              </div>
+              <span id="progress-label" class="progress-count" aria-live="polite">0/0</span>
+            </div>
+            <div class="progress-track" aria-hidden="true"><span id="progress-fill"></span></div>
+            <div id="accepted-recommendations" class="compact-list"></div>
+            <div id="checklist" class="compact-list goals-list"></div>
+          </article>
+
+          <article class="progress-card member-alert-review" aria-labelledby="alert-review-heading">
+            <div class="progress-header">
+              <div>
+                <p class="eyebrow">Member experience</p>
+                <h2 id="alert-review-heading">Learning alert review</h2>
+              </div>
+            </div>
+            <div id="contextual-card-history"
+                 class="contextual-card-history empty-state">No learning alerts yet.</div>
+          </article>
+        </section>
+      </div>
+    </section>
+
+    <section id="member-session-view" class="member-dashboard hidden"
+             aria-labelledby="member-purpose-title">
+      <header class="member-header">
+        <div class="product-brand">
+          <span class="product-glyph member-glyph" aria-hidden="true">M</span>
+          <span>Live member view</span>
+        </div>
+        <span id="member-connection-status" class="status neutral">Connecting</span>
+      </header>
+      <div class="member-stage">
+        <p id="member-template-label" class="eyebrow"></p>
+        <h1 id="member-purpose-title"></h1>
+        <p id="member-purpose-objective" class="member-objective"></p>
+        <p class="retention-copy">
+          This view expires <time id="member-session-expiry"></time>. It does not expose
+          the host transcript, private guidance, checklist, or private knowledge.
+        </p>
+        <div class="member-alert-heading">
           <div>
-            <p class="eyebrow">Meeting progress</p>
-            <h2 id="live-plan-heading">Discussion plan</h2>
+            <p class="eyebrow">Live learning layer</p>
+            <h2>Definitions and useful context</h2>
           </div>
-          <span id="progress-label" class="progress-count" aria-live="polite">0/5</span>
+          <span id="member-alert-count" class="count-badge">0</span>
         </div>
-        <div class="progress-track" aria-hidden="true">
-          <span id="progress-fill"></span>
+        <div id="member-alert-list" class="member-alert-list empty-state" aria-live="polite">
+          Approved alerts will appear here as the session progresses.
         </div>
-        <div id="accepted-recommendations" class="compact-list"></div>
-        <div id="checklist" class="compact-list goals-list"></div>
-      </article>
+      </div>
     </section>
   </main>
 
-  <dialog id="diagnostics-dialog" class="diagnostics-dialog"
-          aria-labelledby="diagnostics-title">
+  <dialog id="diagnostics-dialog" class="diagnostics-dialog" aria-labelledby="diagnostics-title">
     <div class="dialog-bar">
-      <div>
-        <p class="eyebrow">Development and safety</p>
-        <h2 id="diagnostics-title">Diagnostics</h2>
-      </div>
+      <div><p class="eyebrow">Development and safety</p><h2 id="diagnostics-title">Diagnostics</h2></div>
       <button id="close-diagnostics" type="button" class="icon-button"
               aria-label="Close diagnostics">×</button>
     </div>
-
     <details class="diagnostic-section">
       <summary>Speech pipeline</summary>
       <div class="diagnostic-content">
         <p id="speech-diagnostics" class="speech-diagnostics" aria-live="polite">
           Interim: 0 · Final: 0 · Queued: 0 · Published: 0 · Publish failures: 0.
-          Last stage: Waiting for microphone activity. (not yet)
-        </p>
-        <p class="field-hint">
-          Interim text is preview-only. Only final Azure Speech results are sent
-          to the coach and allowed to become transcript evidence.
         </p>
       </div>
     </details>
-
     <details class="diagnostic-section">
       <summary>Transcript simulator</summary>
       <form id="transcript-form" class="diagnostic-content">
-        <label>
-          Speaker
-          <input id="speaker" required value="CSA">
-        </label>
+        <label>Speaker<input id="speaker" required value="Presenter"></label>
         <label>
           Final transcript segment
           <textarea id="transcript-text" required
-                    placeholder="Example: Our objective is to migrate the customer portal to Azure."></textarea>
+                    placeholder="Example: Availability zones isolate datacenter-level failures."></textarea>
         </label>
         <button type="submit" class="button primary">Send segment</button>
       </form>
     </details>
-
     <details class="diagnostic-section">
       <summary>Transcript evidence</summary>
       <div id="transcript" class="transcript diagnostic-content empty-state">
         No transcript segments yet.
       </div>
     </details>
-
-    <details class="diagnostic-section">
-      <summary>Contextual card history</summary>
-      <div id="contextual-card-history"
-           class="contextual-card-history diagnostic-content empty-state">
-        No contextual cards yet.
-      </div>
-    </details>
-
     <details id="warnings-panel" class="diagnostic-section warning-panel hidden">
       <summary>Rejected agent decisions</summary>
       <div id="warnings" class="diagnostic-content compact-list"></div>
     </details>
   </dialog>
 
-  <section id="contextual-cards"
-           class="contextual-card-stack"
-           aria-label="Client Learning Alerts"
-           aria-live="polite"
-           aria-relevant="additions">
-    <div class="contextual-card-stack-label">Client Learning Alerts</div>
+  <section id="contextual-cards" class="contextual-card-stack"
+           aria-label="Live learning alerts" aria-live="polite" aria-relevant="additions">
+    <div class="contextual-card-stack-label">Live learning alerts</div>
   </section>
   <div id="toast" role="status" aria-live="polite" class="toast hidden"></div>
   <script src="https://res.cdn.office.net/teams-js/2.31.0/js/MicrosoftTeams.min.js"></script>
   <script src="vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0"></script>
-  <script src="app.js?v=20260810b"></script>
+  <script src="app.js?v=20260819a"></script>
 </body>
 </html>

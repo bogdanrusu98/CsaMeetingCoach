@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using CsaMeetingCoach.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
 
@@ -7,6 +8,8 @@ namespace CsaMeetingCoach.BotService.Tests;
 
 public sealed class ServerSentEventTests
 {
+    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+
     [Fact]
     public async Task EventStreamStartsWithTheCurrentSession()
     {
@@ -21,7 +24,10 @@ public sealed class ServerSentEventTests
                 "VBD",
                 "Validate the live connection.",
                 ["Connect to the event stream"]));
-        using var createResponse = await client.PostAsJsonAsync("/api/sessions", request);
+        using var createResponse = await client.PostAsJsonAsync(
+            "/api/sessions",
+            request,
+            JsonOptions);
         createResponse.EnsureSuccessStatusCode();
         using var document = JsonDocument.Parse(
             await createResponse.Content.ReadAsStringAsync());
@@ -58,7 +64,10 @@ public sealed class ServerSentEventTests
                 "VBD",
                 "Stop local capture after a missed completion event.",
                 ["Reconnect safely"]));
-        using var createResponse = await client.PostAsJsonAsync("/api/sessions", request);
+        using var createResponse = await client.PostAsJsonAsync(
+            "/api/sessions",
+            request,
+            JsonOptions);
         createResponse.EnsureSuccessStatusCode();
         using var createdDocument = JsonDocument.Parse(
             await createResponse.Content.ReadAsStringAsync());
@@ -96,5 +105,12 @@ public sealed class ServerSentEventTests
         Assert.StartsWith("data: ", data, StringComparison.Ordinal);
         using var document = JsonDocument.Parse(data["data: ".Length..]);
         return document.RootElement.Clone();
+    }
+
+    private static JsonSerializerOptions CreateJsonOptions()
+    {
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+        return options;
     }
 }

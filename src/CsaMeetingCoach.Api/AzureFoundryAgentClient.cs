@@ -57,6 +57,7 @@ public sealed class AzureFoundryAgentClient : IFoundryAgentClient
     {
         return new CreateResponseOptions
         {
+            StoredOutputEnabled = false,
             InputItems =
             {
                 ResponseItem.CreateUserMessageItem(inputJson)

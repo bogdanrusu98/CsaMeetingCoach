@@ -1,19 +1,29 @@
 using System.Security.Cryptography;
+using System.Text.Json;
+using CsaMeetingCoach.Contracts;
+using CsaMeetingCoach.Core;
 using Microsoft.AspNetCore.DataProtection;
 
 namespace CsaMeetingCoach.Api;
 
-public sealed class SessionAccessTokenService(IDataProtectionProvider dataProtectionProvider)
+public sealed class SessionAccessTokenService(
+    IDataProtectionProvider dataProtectionProvider,
+    TimeProvider timeProvider)
 {
     private const string CookiePrefix = "CsaMeetingCoach.Session.";
     private readonly IDataProtector _protector = dataProtectionProvider.CreateProtector(
-        "CsaMeetingCoach.SessionAccess.v1");
+        "CsaMeetingCoach.SessionAccess.v2");
 
-    public void GrantAccess(HttpContext context, Guid sessionId)
+    public void GrantAccess(HttpContext context, SessionAccessGrant grant)
     {
-        var token = _protector.Protect(sessionId.ToString("N"));
+        if (grant.ExpiresAtUtc <= timeProvider.GetUtcNow())
+        {
+            throw new SessionExpiredException(grant.SessionId);
+        }
+
+        var token = _protector.Protect(JsonSerializer.Serialize(grant));
         context.Response.Cookies.Append(
-            GetCookieName(sessionId),
+            GetCookieName(grant.SessionId),
             token,
             new CookieOptions
             {
@@ -24,12 +34,16 @@ public sealed class SessionAccessTokenService(IDataProtectionProvider dataProtec
                     ? SameSiteMode.None
                     : SameSiteMode.Strict,
                 Secure = context.Request.IsHttps,
-                MaxAge = TimeSpan.FromHours(12)
+                MaxAge = grant.ExpiresAtUtc - timeProvider.GetUtcNow()
             });
     }
 
-    public bool HasAccess(HttpContext context, Guid sessionId)
+    public bool TryGetAccess(
+        HttpContext context,
+        Guid sessionId,
+        out SessionAccessGrant grant)
     {
+        grant = default!;
         if (!context.Request.Cookies.TryGetValue(
                 GetCookieName(sessionId),
                 out var protectedToken)
@@ -40,13 +54,21 @@ public sealed class SessionAccessTokenService(IDataProtectionProvider dataProtec
 
         try
         {
-            var protectedSessionId = _protector.Unprotect(protectedToken);
-            return string.Equals(
-                protectedSessionId,
-                sessionId.ToString("N"),
-                StringComparison.Ordinal);
+            var json = _protector.Unprotect(protectedToken);
+            var candidate = JsonSerializer.Deserialize<SessionAccessGrant>(json);
+            if (candidate is null
+                || candidate.SessionId != sessionId
+                || candidate.ParticipantId == Guid.Empty
+                || !Enum.IsDefined(candidate.Role))
+            {
+                return false;
+            }
+
+            grant = candidate;
+            return true;
         }
-        catch (CryptographicException)
+        catch (Exception exception) when (
+            exception is CryptographicException or JsonException)
         {
             return false;
         }
@@ -57,3 +79,9 @@ public sealed class SessionAccessTokenService(IDataProtectionProvider dataProtec
         return string.Concat(CookiePrefix, sessionId.ToString("N"));
     }
 }
+
+public sealed record SessionAccessGrant(
+    Guid SessionId,
+    Guid ParticipantId,
+    SessionRole Role,
+    DateTimeOffset ExpiresAtUtc);

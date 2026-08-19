@@ -1,6 +1,9 @@
 const state = {
   session: null,
+  role: null,
+  joinCode: null,
   eventSource: null,
+  eventProbePending: false,
   teamsMeetingId: null,
   browserSpeechAvailable: false,
   browserSpeechAuthorized: false,
@@ -9,6 +12,8 @@ const state = {
   microphoneCapture: null,
   microphoneSourceLabel: "Presenter microphone",
   microphoneRefreshTimer: null,
+  sessionExpiryTimer: null,
+  sessionExpiryHandling: false,
   microphoneStartupAbortController: null,
   microphoneRefreshAbortController: null,
   microphoneBusy: false,
@@ -39,7 +44,12 @@ const state = {
 const elements = {
   setupView: document.querySelector("#setup-view"),
   sessionView: document.querySelector("#session-view"),
+  memberSessionView: document.querySelector("#member-session-view"),
+  rolePicker: document.querySelector("#role-picker"),
+  hostSetupPanel: document.querySelector("#host-setup-panel"),
+  memberJoinPanel: document.querySelector("#member-join-panel"),
   sessionForm: document.querySelector("#session-form"),
+  memberJoinForm: document.querySelector("#member-join-form"),
   transcriptForm: document.querySelector("#transcript-form"),
   microphonePanel: document.querySelector("#microphone-panel"),
   microphoneConsent: document.querySelector("#microphone-consent"),
@@ -62,10 +72,24 @@ const elements = {
   warningsPanel: document.querySelector("#warnings-panel"),
   warnings: document.querySelector("#warnings"),
   connectionStatus: document.querySelector("#connection-status"),
+  memberConnectionStatus: document.querySelector("#member-connection-status"),
   diagnosticsDialog: document.querySelector("#diagnostics-dialog"),
   openDiagnostics: document.querySelector("#open-diagnostics"),
   closeDiagnostics: document.querySelector("#close-diagnostics"),
   contextualCards: document.querySelector("#contextual-cards"),
+  hostSessionCode: document.querySelector("#host-session-code"),
+  sessionExpiry: document.querySelector("#session-expiry"),
+  sessionTemplateLabel: document.querySelector("#session-template-label"),
+  knowledgeFileForm: document.querySelector("#knowledge-file-form"),
+  knowledgeLinkForm: document.querySelector("#knowledge-link-form"),
+  knowledgeList: document.querySelector("#knowledge-list"),
+  knowledgeCount: document.querySelector("#knowledge-count"),
+  memberPurposeTitle: document.querySelector("#member-purpose-title"),
+  memberPurposeObjective: document.querySelector("#member-purpose-objective"),
+  memberTemplateLabel: document.querySelector("#member-template-label"),
+  memberSessionExpiry: document.querySelector("#member-session-expiry"),
+  memberAlertCount: document.querySelector("#member-alert-count"),
+  memberAlertList: document.querySelector("#member-alert-list"),
   toast: document.querySelector("#toast")
 };
 
@@ -99,6 +123,22 @@ async function initializeTeamsContext() {
 
 const teamsContextReady = initializeTeamsContext();
 initializeBrowserSpeechAvailability();
+
+document.querySelectorAll("[data-role-choice]").forEach(button => {
+  button.addEventListener("click", () => showEntryPanel(button.dataset.roleChoice));
+});
+document.querySelectorAll("[data-back-to-roles]").forEach(button => {
+  button.addEventListener("click", () => showEntryPanel(null));
+});
+document.querySelector("#member-session-code").addEventListener("input", event => {
+  const normalized = event.currentTarget.value
+    .toUpperCase()
+    .replace(/[^2-9A-HJ-NP-Z]/g, "")
+    .slice(0, 8);
+  event.currentTarget.value = normalized.length > 4
+    ? `${normalized.slice(0, 4)}-${normalized.slice(4)}`
+    : normalized;
+});
 
 elements.microphoneConsent.addEventListener("change", renderMicrophoneControls);
 elements.includeSystemAudio.addEventListener("change", renderMicrophoneControls);
@@ -179,7 +219,7 @@ elements.sessionForm.addEventListener("submit", async event => {
       throw new Error("The Teams meeting identifier is unavailable.");
     }
 
-    const session = await api("/api/sessions", {
+    const created = await api("/api/sessions/host", {
       method: "POST",
       body: JSON.stringify({
         purpose: {
@@ -188,16 +228,101 @@ elements.sessionForm.addEventListener("submit", async event => {
           objective: document.querySelector("#meeting-objective").value,
           successCriteria
         },
-        teamsOnlineMeetingId: state.teamsMeetingId
+        teamsOnlineMeetingId: state.teamsMeetingId,
+        template: document.querySelector("#session-template").value,
+        hostDisplayName: document.querySelector("#host-display-name").value,
+        memberAlertMode: document.querySelector("#member-alert-mode").value
       })
     });
 
     resetContextualCards();
-    state.session = session;
+    state.role = "host";
+    state.session = created.session;
+    state.joinCode = created.joinCode;
     elements.setupView.classList.add("hidden");
     elements.sessionView.classList.remove("hidden");
+    elements.memberSessionView.classList.add("hidden");
     render();
-    connectEvents(session.id);
+    connectEvents(state.session.id);
+  });
+});
+
+elements.memberJoinForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  await runWithButton(event.submitter, async () => {
+    const joined = await api("/api/sessions/join", {
+      method: "POST",
+      body: JSON.stringify({
+        code: document.querySelector("#member-session-code").value,
+        displayName: document.querySelector("#member-display-name").value
+      })
+    });
+    resetContextualCards();
+    state.role = "member";
+    state.session = joined.session;
+    state.joinCode = null;
+    elements.setupView.classList.add("hidden");
+    elements.sessionView.classList.add("hidden");
+    elements.memberSessionView.classList.remove("hidden");
+    render();
+    connectEvents(state.session.id);
+  });
+});
+
+elements.knowledgeFileForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  await runWithButton(event.submitter, async () => {
+    const file = document.querySelector("#knowledge-file").files[0];
+    if (!file) {
+      throw new Error("Choose one knowledge file.");
+    }
+
+    const form = new FormData();
+    form.append("file", file, file.name);
+    form.append(
+      "visibility",
+      document.querySelector("#knowledge-file-visibility").value);
+    state.session = await api(
+      `/api/sessions/${state.session.id}/knowledge/files`,
+      { method: "POST", body: form });
+    elements.knowledgeFileForm.reset();
+    render();
+    showToast("Knowledge file scanned and added.");
+  });
+});
+
+elements.knowledgeLinkForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  await runWithButton(event.submitter, async () => {
+    state.session = await api(
+      `/api/sessions/${state.session.id}/knowledge/links`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          url: document.querySelector("#knowledge-link").value,
+          visibility: document.querySelector("#knowledge-link-visibility").value
+        })
+      });
+    elements.knowledgeLinkForm.reset();
+    render();
+    showToast("Knowledge link validated and added.");
+  });
+});
+
+elements.knowledgeList.addEventListener("click", async event => {
+  const button = event.target instanceof Element
+    ? event.target.closest("[data-delete-knowledge]")
+    : null;
+  if (!button) {
+    return;
+  }
+
+  await runWithButton(button, async () => {
+    state.session = await api(
+      `/api/sessions/${state.session.id}/knowledge/${button.dataset.deleteKnowledge}`,
+      { method: "DELETE" });
+    render();
+    showToast("Knowledge source removed.");
   });
 });
 
@@ -247,6 +372,20 @@ elements.checklist.addEventListener("click", async event => {
 
 elements.sessionView.addEventListener("click", async event => {
   const target = event.target instanceof Element ? event.target : null;
+  const alertButton = target?.closest("button[data-alert-status]");
+  if (alertButton) {
+    await runWithButton(alertButton, async () => {
+      state.session = await api(
+        `/api/sessions/${state.session.id}/alerts/${alertButton.dataset.alertId}/status`,
+        {
+          method: "POST",
+          body: JSON.stringify({ status: alertButton.dataset.alertStatus })
+        });
+      render();
+    });
+    return;
+  }
+
   const statusButton = target?.closest("button[data-recommendation][data-status]");
   if (statusButton && elements.recommendations.contains(statusButton)) {
     await runWithButton(statusButton, async () => {
@@ -274,13 +413,11 @@ elements.sessionView.addEventListener("click", async event => {
 
 function connectEvents(sessionId) {
   state.eventSource?.close();
-  elements.connectionStatus.textContent = "Connecting";
-  elements.connectionStatus.className = "status neutral";
+  setConnectionStatus("Connecting", "neutral");
 
   state.eventSource = new EventSource(`/api/sessions/${sessionId}/events`);
   state.eventSource.addEventListener("open", async () => {
-    elements.connectionStatus.textContent = "Live";
-    elements.connectionStatus.className = "status connected";
+    setConnectionStatus("Live", "connected");
     try {
       const current = await api(`/api/sessions/${sessionId}`);
       if (!state.session || current.revision >= state.session.revision) {
@@ -306,34 +443,81 @@ function connectEvents(sessionId) {
       }
     }
   });
-  state.eventSource.addEventListener("error", () => {
-    elements.connectionStatus.textContent = "Reconnecting";
-    elements.connectionStatus.className = "status disconnected";
+  state.eventSource.addEventListener("expired", () => {
+    void handleSessionExpired();
+  });
+  state.eventSource.addEventListener("error", async () => {
+    if (Date.parse(state.session?.expiresAtUtc) <= Date.now()) {
+      await handleSessionExpired();
+      return;
+    }
+    setConnectionStatus("Reconnecting", "disconnected");
+    if (state.eventProbePending) {
+      return;
+    }
+
+    state.eventProbePending = true;
+    try {
+      await api(`/api/sessions/${sessionId}`);
+    } catch (error) {
+      if (error.status === 404 || error.status === 410) {
+        await handleSessionExpired();
+      }
+    } finally {
+      state.eventProbePending = false;
+    }
   });
 }
 
+function setConnectionStatus(text, className) {
+  const element = state.role === "member"
+    ? elements.memberConnectionStatus
+    : elements.connectionStatus;
+  element.textContent = text;
+  element.className = `status ${className}`;
+}
+
 function render() {
+  if (state.session?.expiresAtUtc && state.session.status !== "expired") {
+    scheduleSessionExpiry(state.session.expiresAtUtc);
+  }
+  if (state.role === "member") {
+    renderMember();
+    return;
+  }
+  renderHost();
+}
+
+function renderHost() {
   const session = state.session;
   if (!session) {
     return;
   }
 
+  elements.hostSessionCode.textContent = state.joinCode ?? "Unavailable";
+  elements.sessionExpiry.textContent = formatExpiry(session.expiresAtUtc);
+  elements.sessionExpiry.dateTime = session.expiresAtUtc;
+  elements.sessionTemplateLabel.textContent = formatEnumLabel(session.template);
   document.querySelector("#meeting-type-label").textContent =
     session.purpose.meetingType;
   document.querySelector("#purpose-title").textContent = session.purpose.title;
   document.querySelector("#purpose-objective").textContent = session.purpose.objective;
-  document.querySelector("#complete-meeting").disabled = session.status === "completed";
-  document.querySelector("#transcript-form button").disabled = session.status === "completed";
+  const sessionClosed = session.status !== "active";
+  document.querySelector("#complete-meeting").disabled = sessionClosed;
+  document.querySelector("#transcript-form button").disabled = sessionClosed;
+  elements.knowledgeFileForm.querySelector("button").disabled = sessionClosed;
+  elements.knowledgeLinkForm.querySelector("button").disabled = sessionClosed;
   renderMicrophoneControls();
   const contextualCards = session.contextualCards ?? [];
   renderContextualCards(contextualCards);
   renderContextualCardHistory(contextualCards);
+  renderKnowledge(session.knowledgeSources ?? []);
 
-  const liveRecommendations = session.recommendedTasks.filter(
+  const liveRecommendations = (session.recommendedTasks ?? []).filter(
     task => task.status === "accepted" || task.status === "completed");
-  const completed = session.checklist.filter(item => item.status === "completed").length
+  const completed = (session.checklist ?? []).filter(item => item.status === "completed").length
     + liveRecommendations.filter(task => task.status === "completed").length;
-  const total = session.checklist.length + liveRecommendations.length;
+  const total = (session.checklist ?? []).length + liveRecommendations.length;
   document.querySelector("#progress-label").textContent =
     `${completed}/${total}`;
   elements.progressFill.style.width =
@@ -360,7 +544,7 @@ function render() {
       </div>`;
   }).join("");
 
-  elements.checklist.innerHTML = session.checklist.map(item => {
+  elements.checklist.innerHTML = (session.checklist ?? []).map(item => {
     const isComplete = item.status === "completed";
     const evidence = item.evidence.at(-1);
     return `
@@ -380,7 +564,7 @@ function render() {
       </div>`;
   }).join("");
 
-  const proposedRecommendations = session.recommendedTasks.filter(
+  const proposedRecommendations = (session.recommendedTasks ?? []).filter(
     task => task.status === "proposed");
   if (proposedRecommendations.length === 0) {
     elements.recommendations.className = session.isAnalyzing
@@ -414,7 +598,7 @@ function render() {
       }).join("");
   }
 
-  if (session.transcript.length === 0) {
+  if ((session.transcript ?? []).length === 0) {
     elements.transcript.className = "transcript empty-state";
     elements.transcript.textContent = "No transcript segments yet.";
   } else {
@@ -431,9 +615,79 @@ function render() {
         </div>`).join("");
   }
 
-  elements.warningsPanel.classList.toggle("hidden", session.warnings.length === 0);
-  elements.warnings.innerHTML = session.warnings
+  elements.warningsPanel.classList.toggle(
+    "hidden",
+    (session.warnings ?? []).length === 0);
+  elements.warnings.innerHTML = (session.warnings ?? [])
     .map(warning => `<div class="warning">${escapeHtml(warning)}</div>`)
+    .join("");
+}
+
+function renderMember() {
+  const session = state.session;
+  if (!session) {
+    return;
+  }
+
+  elements.memberPurposeTitle.textContent = session.purpose.title;
+  elements.memberPurposeObjective.textContent = session.purpose.objective;
+  elements.memberTemplateLabel.textContent =
+    `${formatEnumLabel(session.template)} · member`;
+  elements.memberSessionExpiry.textContent = formatExpiry(session.expiresAtUtc);
+  elements.memberSessionExpiry.dateTime = session.expiresAtUtc;
+  const alerts = session.alerts ?? [];
+  elements.memberAlertCount.textContent = String(alerts.length);
+  renderContextualCards(alerts);
+  if (alerts.length === 0) {
+    elements.memberAlertList.className = "member-alert-list empty-state";
+    elements.memberAlertList.textContent =
+      "Approved alerts will appear here as the session progresses.";
+    return;
+  }
+
+  elements.memberAlertList.className = "member-alert-list";
+  elements.memberAlertList.innerHTML = alerts
+    .slice()
+    .reverse()
+    .map(card => {
+      const kind = String(card.kind).toLowerCase() === "definition"
+        ? "Definition"
+        : "Useful context";
+      return `
+        <article class="member-alert-card ${escapeHtml(String(card.kind).toLowerCase())}">
+          <span class="contextual-card-kind">${kind}</span>
+          <h3>${escapeHtml(card.title)}</h3>
+          <p>${escapeHtml(card.content)}</p>
+        </article>`;
+    })
+    .join("");
+}
+
+function renderKnowledge(sources) {
+  elements.knowledgeCount.textContent = `${sources.length}/50`;
+  if (sources.length === 0) {
+    elements.knowledgeList.className = "knowledge-list empty-state";
+    elements.knowledgeList.textContent = "No session knowledge added.";
+    return;
+  }
+
+  elements.knowledgeList.className = "knowledge-list";
+  elements.knowledgeList.innerHTML = sources
+    .slice()
+    .reverse()
+    .map(source => `
+      <div class="knowledge-item">
+        <span class="knowledge-source-icon" aria-hidden="true">
+          ${source.kind === "link" ? "↗" : "▤"}
+        </span>
+        <span class="knowledge-item-copy">
+          <strong>${escapeHtml(source.displayName)}</strong>
+          <span>${formatEnumLabel(source.visibility)} · ${formatEnumLabel(source.status)}</span>
+        </span>
+        <button type="button" class="icon-button knowledge-delete"
+                data-delete-knowledge="${source.id}"
+                aria-label="Remove ${escapeHtml(source.displayName)}">×</button>
+      </div>`)
     .join("");
 }
 
@@ -552,11 +806,33 @@ function renderContextualCardHistory(cards) {
       const kindLabel = String(card.kind).toLowerCase() === "definition"
         ? "📖 Definition"
         : "💡 Hint";
+      const deliveryStatus = card.memberAlertStatus ?? "published";
+      const deliveryLabel = deliveryStatus === "pendingApproval"
+        ? "Waiting for host"
+        : deliveryStatus === "published"
+          ? "Published"
+          : "Hidden";
       return `
         <div class="contextual-card-history-entry">
-          <span class="contextual-card-kind">${kindLabel}</span>
+          <div class="alert-history-heading">
+            <span class="contextual-card-kind">${kindLabel}</span>
+            <span class="badge ${deliveryStatus === "published" ? "success" : ""}">
+              ${deliveryLabel}
+            </span>
+          </div>
           <strong>${escapeHtml(card.title)}</strong>
           <span>${escapeHtml(card.content)}</span>
+          ${deliveryStatus === "pendingApproval" ? `
+            <div class="actions">
+              <button type="button" class="button primary"
+                      data-alert-id="${card.id}" data-alert-status="published">
+                Publish to members
+              </button>
+              <button type="button" class="button subtle"
+                      data-alert-id="${card.id}" data-alert-status="hidden">
+                Keep private
+              </button>
+            </div>` : ""}
         </div>`;
     })
     .join("");
@@ -1181,10 +1457,10 @@ function stopContinuousRecognition(recognizer) {
 function renderMicrophoneControls() {
   elements.microphonePanel.classList.toggle(
     "hidden",
-    !state.browserSpeechAvailable);
+    state.role !== "host" || !state.browserSpeechAvailable);
   const listening = Boolean(state.microphoneRecognizer);
   const mixedAudio = Boolean(state.microphoneCapture);
-  const sessionCompleted = state.session?.status === "completed";
+  const sessionCompleted = state.session?.status !== "active";
   elements.microphoneToggle.classList.toggle("listening", listening);
   elements.microphoneToggle.disabled = state.microphoneBusy
     || sessionCompleted
@@ -1277,20 +1553,100 @@ function normalizeMicrophoneError(error) {
 
 async function api(url, options = {}) {
   const { headers = {}, ...requestOptions } = options;
+  const method = String(requestOptions.method ?? "GET").toUpperCase();
+  const isFormData = requestOptions.body instanceof FormData;
   const response = await fetch(url, {
     ...requestOptions,
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
+      ...(method === "GET" ? {} : { "X-Session-Request": "1" }),
       ...headers
     }
   });
 
   if (!response.ok) {
     const problem = await response.json().catch(() => null);
-    throw new Error(problem?.detail || `Request failed with status ${response.status}.`);
+    const error = new Error(
+      problem?.detail || `Request failed with status ${response.status}.`);
+    error.status = response.status;
+    if (response.status === 410) {
+      void handleSessionExpired();
+    }
+    throw error;
   }
 
   return response.json();
+}
+
+function scheduleSessionExpiry(expiresAtUtc) {
+  window.clearTimeout(state.sessionExpiryTimer);
+  const remaining = Date.parse(expiresAtUtc) - Date.now();
+  if (!Number.isFinite(remaining) || remaining <= 0) {
+    void handleSessionExpired();
+    return;
+  }
+
+  state.sessionExpiryTimer = window.setTimeout(
+    () => void handleSessionExpired(),
+    remaining);
+}
+
+async function handleSessionExpired() {
+  if (state.sessionExpiryHandling || state.session?.status === "expired") {
+    return;
+  }
+  state.sessionExpiryHandling = true;
+  window.clearTimeout(state.sessionExpiryTimer);
+  state.sessionExpiryTimer = null;
+  state.eventSource?.close();
+  cancelMicrophoneTokenRequests();
+  state.speechPublishAbortController?.abort();
+  if (state.microphoneRecognizer || state.microphoneBusy) {
+    await queueMicrophoneOperation(stopMicrophone).catch(() => {});
+  }
+  if (state.session) {
+    state.session = { ...state.session, status: "expired" };
+    render();
+  }
+  setConnectionStatus("Expired", "disconnected");
+  showToast("This session reached its 24-hour limit and access is closed.");
+}
+
+function showEntryPanel(role) {
+  elements.rolePicker.classList.toggle("hidden", Boolean(role));
+  elements.hostSetupPanel.classList.toggle("hidden", role !== "host");
+  elements.memberJoinPanel.classList.toggle("hidden", role !== "member");
+  if (role === "host") {
+    document.querySelector("#host-display-name").focus();
+  } else if (role === "member") {
+    document.querySelector("#member-display-name").focus();
+  } else {
+    document.querySelector("[data-role-choice='host']").focus();
+  }
+}
+
+function formatExpiry(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "at the 24-hour limit"
+    : date.toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+}
+
+function formatEnumLabel(value) {
+  if (!value) {
+    return "";
+  }
+  if (value === "csaVbd") {
+    return "CSA / VBD";
+  }
+  return String(value)
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/^./, character => character.toUpperCase());
 }
 
 async function runWithButton(button, action) {
@@ -1328,6 +1684,7 @@ function resolveSourceTranscript(task, transcript) {
 
 window.addEventListener("pagehide", () => {
   window.clearTimeout(state.microphoneRefreshTimer);
+  window.clearTimeout(state.sessionExpiryTimer);
   state.contextualCardTimers.forEach(timer => window.clearTimeout(timer));
   cancelMicrophoneTokenRequests();
   state.speechPublishAbortController?.abort();

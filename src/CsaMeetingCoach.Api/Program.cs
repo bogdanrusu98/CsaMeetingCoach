@@ -8,6 +8,8 @@ using CsaMeetingCoach.Core;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
@@ -21,6 +23,12 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         new JsonStringEnumConverter(
             JsonNamingPolicy.CamelCase,
             allowIntegerValues: false));
+});
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = SessionKnowledgeLimits.MaximumFileBytes + 1_048_576;
+    options.ValueLengthLimit = 16_384;
+    options.MultipartHeadersLengthLimit = 16_384;
 });
 var dataProtection = builder.Services.AddDataProtection()
     .SetApplicationName("CsaMeetingCoach");
@@ -57,9 +65,21 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0,
                 AutoReplenishment = true
             }));
+    options.AddPolicy(
+        "session-join",
+        context => RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+               PermitLimit = 10,
+               Window = TimeSpan.FromMinutes(5),
+               QueueLimit = 0,
+               AutoReplenishment = true
+            }));
 });
 builder.Services.AddSingleton<IMeetingChecklistPlanner, MeetingChecklistPlanner>();
 builder.Services.AddSingleton<SessionAccessTokenService>();
+builder.Services.AddSingleton<SessionAuthorizationService>();
 builder.Services.AddSingleton<SessionEventBroker>();
 builder.Services.AddSingleton<ISessionUpdatePublisher>(
     services => services.GetRequiredService<SessionEventBroker>());
@@ -103,6 +123,19 @@ else if (!Path.IsPathRooted(dataDirectory))
 
 builder.Services.AddSingleton<IMeetingSessionStore>(
     new JsonMeetingSessionStore(dataDirectory));
+builder.Services.AddSingleton<ISessionJoinCodeStore>(
+    new JsonSessionJoinCodeStore(dataDirectory));
+builder.Services.AddSingleton<IKnowledgeMalwareScanner, WindowsDefenderKnowledgeMalwareScanner>();
+builder.Services.AddSingleton<ISessionKnowledgeStore>(services =>
+    new LocalSessionKnowledgeStore(
+        Path.Combine(dataDirectory, "knowledge"),
+        services.GetRequiredService<IKnowledgeMalwareScanner>()));
+builder.Services.AddSingleton<ISessionKnowledgeReader>(
+    services => services.GetRequiredService<ISessionKnowledgeStore>());
+builder.Services.AddSingleton<ISessionArtifactCleaner>(
+    services => services.GetRequiredService<ISessionKnowledgeStore>());
+builder.Services.AddSingleton<IKnowledgeLinkFetcher, SafeKnowledgeLinkFetcher>();
+builder.Services.AddSingleton<SessionKnowledgeService>();
 var coachAgentProvider = builder.Configuration["CoachAgent:Provider"] ?? "Local";
 builder.Services.AddCoachAgent(builder.Configuration);
 
@@ -113,7 +146,11 @@ builder.Services.AddSingleton<MeetingSessionCoordinator>(sp => new MeetingSessio
     sp.GetService<EvidenceBackedConversationCoachAgent>(),
     sp.GetRequiredService<ISessionUpdatePublisher>(),
     sp.GetRequiredService<ILogger<MeetingSessionCoordinator>>(),
-    sp.GetService<AnalysisOptions>()));
+    sp.GetService<AnalysisOptions>(),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ISessionKnowledgeReader>()));
+builder.Services.AddSingleton<SessionOnboardingService>();
+builder.Services.AddHostedService<SessionCleanupWorker>();
 
 var adapterAuthModeValue =
     builder.Configuration["TranscriptAdapter:AuthenticationMode"] ?? "Disabled";
@@ -192,6 +229,16 @@ app.UseExceptionHandler(errorApplication =>
             JsonException => (StatusCodes.Status400BadRequest, "Invalid JSON request"),
             UnauthorizedAccessException => (StatusCodes.Status401Unauthorized, "Access denied"),
             KeyNotFoundException => (StatusCodes.Status404NotFound, "Resource not found"),
+            SessionExpiredException => (StatusCodes.Status410Gone, "Session expired"),
+            KnowledgeRejectedException => (
+                StatusCodes.Status422UnprocessableEntity,
+                "Knowledge source rejected"),
+            KnowledgeScannerUnavailableException => (
+                StatusCodes.Status503ServiceUnavailable,
+                "Knowledge scanning unavailable"),
+            SessionUpdateNotificationException => (
+                StatusCodes.Status503ServiceUnavailable,
+                "Realtime notification unavailable"),
             TranscriptAdapterUnavailableException => (
                 StatusCodes.Status503ServiceUnavailable,
                 "Transcript adapter unavailable"),
@@ -224,6 +271,20 @@ app.Use((context, next) =>
             "no-store, no-cache, must-revalidate, max-age=0";
         context.Response.Headers.Pragma = "no-cache";
         context.Response.Headers.Expires = "0";
+    }
+
+    return next(context);
+});
+app.Use((context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api"))
+    {
+        context.Response.OnStarting(() =>
+        {
+            context.Response.Headers.CacheControl = "private, no-store";
+            context.Response.Headers.Vary = "Cookie";
+            return Task.CompletedTask;
+        });
     }
 
     return next(context);
@@ -268,12 +329,195 @@ app.MapPost(
         CreateMeetingSessionRequest request,
         HttpContext context,
         SessionAccessTokenService accessTokens,
+        SessionOnboardingService onboarding,
+        CancellationToken cancellationToken) =>
+    {
+        var (session, host, code) = await onboarding.CreateHostSessionAsync(
+            request,
+            cancellationToken);
+        accessTokens.GrantAccess(
+            context,
+            new SessionAccessGrant(
+                session.Id,
+                host.Id,
+                SessionRole.Host,
+                session.ExpiresAtUtc));
+        context.Response.Headers["X-Session-Code"] = code;
+        context.Response.Headers.CacheControl = "no-store";
+        return Results.Created($"/api/sessions/{session.Id}", session);
+    });
+
+app.MapPost(
+    "/api/sessions/host",
+    async (
+        CreateMeetingSessionRequest request,
+        HttpContext context,
+        SessionAccessTokenService accessTokens,
+        SessionOnboardingService onboarding,
+        CancellationToken cancellationToken) =>
+    {
+        var (session, host, code) = await onboarding.CreateHostSessionAsync(
+            request,
+            cancellationToken);
+        accessTokens.GrantAccess(
+            context,
+            new SessionAccessGrant(
+                session.Id,
+                host.Id,
+                SessionRole.Host,
+                session.ExpiresAtUtc));
+        context.Response.Headers.CacheControl = "no-store";
+        return Results.Created(
+            $"/api/sessions/{session.Id}",
+            new CreateHostSessionResponse(session, code));
+    });
+
+app.MapPost(
+    "/api/sessions/join",
+    async (
+        JoinMeetingSessionRequest request,
+        HttpContext context,
+        SessionAccessTokenService accessTokens,
+        SessionOnboardingService onboarding,
+        CancellationToken cancellationToken) =>
+    {
+        var (session, member) = await onboarding.JoinSessionAsync(
+            request,
+            cancellationToken);
+        accessTokens.GrantAccess(
+            context,
+            new SessionAccessGrant(
+                session.Id,
+                member.Id,
+                SessionRole.Member,
+                session.ExpiresAtUtc));
+        context.Response.Headers.CacheControl = "no-store";
+        return Results.Ok(new JoinMeetingSessionResponse(
+            SessionViewProjector.ForMember(session)));
+    })
+    .RequireRateLimiting("session-join");
+
+app.MapPost(
+    "/api/sessions/{sessionId:guid}/knowledge/files",
+    async (
+        Guid sessionId,
+        HttpContext context,
+        SessionAuthorizationService sessionAuthorization,
+        SessionKnowledgeService knowledge,
+        CancellationToken cancellationToken) =>
+    {
+        await sessionAuthorization.RequireAsync(
+            context,
+            sessionId,
+            SessionRole.Host,
+            cancellationToken);
+        RequireSessionMutationHeader(context);
+        if (!context.Request.HasFormContentType)
+        {
+            throw new BadHttpRequestException(
+                "Knowledge file upload requires multipart form data.");
+        }
+
+        var form = await context.Request.ReadFormAsync(cancellationToken);
+        var file = form.Files.GetFile("file");
+        if (file is null || form.Files.Count != 1)
+        {
+            throw new BadHttpRequestException(
+                "Exactly one knowledge file named 'file' is required.");
+        }
+
+        var visibilityValue = form["visibility"].FirstOrDefault();
+        var visibility = string.IsNullOrWhiteSpace(visibilityValue)
+            ? KnowledgeSourceVisibility.HostPrivate
+            : Enum.TryParse<KnowledgeSourceVisibility>(
+                visibilityValue,
+                ignoreCase: true,
+                out var parsedVisibility)
+                ? parsedVisibility
+                : throw new BadHttpRequestException(
+                    "Knowledge visibility must be hostPrivate or memberEligible.");
+        var session = await knowledge.AddFileAsync(
+            sessionId,
+            file,
+            visibility,
+            cancellationToken);
+        context.Response.Headers.CacheControl = "no-store";
+        return Results.Ok(session);
+    })
+    .WithMetadata(new RequestSizeLimitAttribute(
+        SessionKnowledgeLimits.MaximumFileBytes + 1_048_576));
+
+app.MapPost(
+    "/api/sessions/{sessionId:guid}/knowledge/links",
+    async (
+        Guid sessionId,
+        AddKnowledgeLinkRequest request,
+        HttpContext context,
+        SessionAuthorizationService sessionAuthorization,
+        SessionKnowledgeService knowledge,
+        CancellationToken cancellationToken) =>
+    {
+        await sessionAuthorization.RequireAsync(
+            context,
+            sessionId,
+            SessionRole.Host,
+            cancellationToken);
+        RequireSessionMutationHeader(context);
+        var session = await knowledge.AddLinkAsync(
+            sessionId,
+            request,
+            cancellationToken);
+        context.Response.Headers.CacheControl = "no-store";
+        return Results.Ok(session);
+    });
+
+app.MapDelete(
+    "/api/sessions/{sessionId:guid}/knowledge/{sourceId:guid}",
+    async (
+        Guid sessionId,
+        Guid sourceId,
+        HttpContext context,
+        SessionAuthorizationService sessionAuthorization,
+        SessionKnowledgeService knowledge,
+        CancellationToken cancellationToken) =>
+    {
+        await sessionAuthorization.RequireAsync(
+            context,
+            sessionId,
+            SessionRole.Host,
+            cancellationToken);
+        RequireSessionMutationHeader(context);
+        var session = await knowledge.DeleteAsync(
+            sessionId,
+            sourceId,
+            cancellationToken);
+        context.Response.Headers.CacheControl = "no-store";
+        return Results.Ok(session);
+    });
+
+app.MapPost(
+    "/api/sessions/{sessionId:guid}/alerts/{cardId:guid}/status",
+    async (
+        Guid sessionId,
+        Guid cardId,
+        SetMemberAlertStatusRequest request,
+        HttpContext context,
+        SessionAuthorizationService sessionAuthorization,
         MeetingSessionCoordinator coordinator,
         CancellationToken cancellationToken) =>
     {
-        var session = await coordinator.CreateAsync(request, cancellationToken);
-        accessTokens.GrantAccess(context, session.Id);
-        return Results.Created($"/api/sessions/{session.Id}", session);
+        await sessionAuthorization.RequireAsync(
+            context,
+            sessionId,
+            SessionRole.Host,
+            cancellationToken);
+        RequireSessionMutationHeader(context);
+        var session = await coordinator.SetMemberAlertStatusAsync(
+            sessionId,
+            cardId,
+            request.Status,
+            cancellationToken);
+        return Results.Ok(session);
     });
 
 app.MapPost(
@@ -281,15 +525,17 @@ app.MapPost(
     async (
         Guid sessionId,
         HttpContext context,
-        SessionAccessTokenService accessTokens,
-        MeetingSessionCoordinator coordinator,
+        SessionAuthorizationService sessionAuthorization,
         BrowserSpeechAuthorizer speechAuthorizer,
         IBrowserSpeechTokenService speechTokens,
         CancellationToken cancellationToken) =>
     {
-        RequireSessionAccess(context, sessionId, accessTokens);
-        var session = await coordinator.GetAsync(sessionId, cancellationToken)
-            ?? throw new KeyNotFoundException($"Meeting session {sessionId} was not found.");
+        var session = (await sessionAuthorization.RequireAsync(
+            context,
+            sessionId,
+            SessionRole.Host,
+            cancellationToken)).Session;
+        RequireSessionMutationHeader(context);
         if (session.Status != MeetingSessionStatus.Active)
         {
             throw new InvalidOperationException(
@@ -349,13 +595,18 @@ app.MapGet(
     async (
         Guid sessionId,
         HttpContext context,
-        SessionAccessTokenService accessTokens,
-        MeetingSessionCoordinator coordinator,
+        SessionAuthorizationService sessionAuthorization,
         CancellationToken cancellationToken) =>
     {
-        RequireSessionAccess(context, sessionId, accessTokens);
-        var session = await coordinator.GetAsync(sessionId, cancellationToken);
-        return session is null ? Results.NotFound() : Results.Ok(session);
+        var authorized = await sessionAuthorization.RequireAsync(
+            context,
+            sessionId,
+            requiredRole: null,
+            cancellationToken);
+        IResult result = authorized.Grant.Role == SessionRole.Host
+            ? Results.Ok(authorized.Session)
+            : Results.Ok(SessionViewProjector.ForMember(authorized.Session));
+        return result;
     });
 
 app.MapPost(
@@ -364,11 +615,16 @@ app.MapPost(
         Guid sessionId,
         AddTranscriptSegmentRequest request,
         HttpContext context,
-        SessionAccessTokenService accessTokens,
+        SessionAuthorizationService sessionAuthorization,
         MeetingSessionCoordinator coordinator,
         CancellationToken cancellationToken) =>
     {
-        RequireSessionAccess(context, sessionId, accessTokens);
+        await sessionAuthorization.RequireAsync(
+            context,
+            sessionId,
+            SessionRole.Host,
+            cancellationToken);
+        RequireSessionMutationHeader(context);
         return Results.Ok(await coordinator.AddTranscriptAsync(
             sessionId,
             request,
@@ -381,11 +637,16 @@ app.MapPost(
         Guid sessionId,
         Guid checklistItemId,
         HttpContext context,
-        SessionAccessTokenService accessTokens,
+        SessionAuthorizationService sessionAuthorization,
         MeetingSessionCoordinator coordinator,
         CancellationToken cancellationToken) =>
     {
-        RequireSessionAccess(context, sessionId, accessTokens);
+        await sessionAuthorization.RequireAsync(
+            context,
+            sessionId,
+            SessionRole.Host,
+            cancellationToken);
+        RequireSessionMutationHeader(context);
         return Results.Ok(await coordinator.ReopenChecklistItemAsync(
             sessionId,
             checklistItemId,
@@ -399,11 +660,16 @@ app.MapPost(
         Guid recommendationId,
         SetRecommendationStatusRequest request,
         HttpContext context,
-        SessionAccessTokenService accessTokens,
+        SessionAuthorizationService sessionAuthorization,
         MeetingSessionCoordinator coordinator,
         CancellationToken cancellationToken) =>
     {
-        RequireSessionAccess(context, sessionId, accessTokens);
+        await sessionAuthorization.RequireAsync(
+            context,
+            sessionId,
+            SessionRole.Host,
+            cancellationToken);
+        RequireSessionMutationHeader(context);
         return Results.Ok(await coordinator.SetRecommendationStatusAsync(
             sessionId,
             recommendationId,
@@ -417,11 +683,16 @@ app.MapPost(
         Guid sessionId,
         Guid recommendationId,
         HttpContext context,
-        SessionAccessTokenService accessTokens,
+        SessionAuthorizationService sessionAuthorization,
         MeetingSessionCoordinator coordinator,
         CancellationToken cancellationToken) =>
     {
-        RequireSessionAccess(context, sessionId, accessTokens);
+        await sessionAuthorization.RequireAsync(
+            context,
+            sessionId,
+            SessionRole.Host,
+            cancellationToken);
+        RequireSessionMutationHeader(context);
         return Results.Ok(await coordinator.ReopenRecommendationAsync(
             sessionId,
             recommendationId,
@@ -433,11 +704,16 @@ app.MapPost(
     async (
         Guid sessionId,
         HttpContext context,
-        SessionAccessTokenService accessTokens,
+        SessionAuthorizationService sessionAuthorization,
         MeetingSessionCoordinator coordinator,
         CancellationToken cancellationToken) =>
     {
-        RequireSessionAccess(context, sessionId, accessTokens);
+        await sessionAuthorization.RequireAsync(
+            context,
+            sessionId,
+            SessionRole.Host,
+            cancellationToken);
+        RequireSessionMutationHeader(context);
         return Results.Ok(await coordinator.CompleteAsync(sessionId, cancellationToken));
     });
 
@@ -446,13 +722,18 @@ app.MapGet(
     async (
         Guid sessionId,
         HttpContext context,
-        SessionAccessTokenService accessTokens,
+        SessionAuthorizationService sessionAuthorization,
         SessionEventBroker broker,
         MeetingSessionCoordinator coordinator,
+        TimeProvider timeProvider,
         CancellationToken cancellationToken) =>
     {
-        RequireSessionAccess(context, sessionId, accessTokens);
-        await using var subscription = broker.Subscribe(sessionId);
+        var authorized = await sessionAuthorization.RequireAsync(
+            context,
+            sessionId,
+            requiredRole: null,
+            cancellationToken);
+        await using var subscription = broker.Subscribe(sessionId, authorized.Grant.Role);
         var currentSession = await coordinator.GetAsync(sessionId, cancellationToken);
         if (currentSession is null)
         {
@@ -460,21 +741,54 @@ app.MapGet(
             return;
         }
 
-        context.Response.Headers.CacheControl = "no-cache";
+        context.Response.Headers.CacheControl = "private, no-store";
         context.Response.Headers.Connection = "keep-alive";
         context.Response.ContentType = "text/event-stream";
 
-        await context.Response.WriteAsync(": connected\n\n", cancellationToken);
-        await context.Response.WriteAsync(
-            $"event: session\ndata: {broker.SerializeSession(currentSession)}\n\n",
-            cancellationToken);
-        await context.Response.Body.FlushAsync(cancellationToken);
-        await foreach (var payload in subscription.Reader.ReadAllAsync(cancellationToken))
+        var remainingLifetime = currentSession.ExpiresAtUtc - timeProvider.GetUtcNow();
+        if (remainingLifetime <= TimeSpan.Zero)
         {
+            throw new SessionExpiredException(sessionId);
+        }
+
+        using var expiryCancellation = new CancellationTokenSource(remainingLifetime);
+        using var streamCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            expiryCancellation.Token);
+        try
+        {
+            await context.Response.WriteAsync(": connected\n\n", streamCancellation.Token);
             await context.Response.WriteAsync(
-                $"event: session\ndata: {payload}\n\n",
-                cancellationToken);
-            await context.Response.Body.FlushAsync(cancellationToken);
+                $"event: session\ndata: {broker.SerializeSession(currentSession, authorized.Grant.Role)}\n\n",
+                streamCancellation.Token);
+            await context.Response.Body.FlushAsync(streamCancellation.Token);
+            await foreach (var payload in subscription.Reader.ReadAllAsync(
+                streamCancellation.Token))
+            {
+                await context.Response.WriteAsync(
+                    $"event: session\ndata: {payload}\n\n",
+                    streamCancellation.Token);
+                await context.Response.Body.FlushAsync(streamCancellation.Token);
+            }
+        }
+        catch (OperationCanceledException)
+            when (expiryCancellation.IsCancellationRequested
+                && !cancellationToken.IsCancellationRequested)
+        {
+            using var notificationTimeout = new CancellationTokenSource(
+                TimeSpan.FromSeconds(2));
+            try
+            {
+                await context.Response.WriteAsync(
+                    "event: expired\ndata: {}\n\n",
+                    notificationTimeout.Token);
+                await context.Response.Body.FlushAsync(notificationTimeout.Token);
+            }
+            catch (Exception exception) when (
+                exception is IOException or OperationCanceledException)
+            {
+                // The local expiry timer and terminal reconnect probe remain fallbacks.
+            }
         }
     });
 
@@ -490,20 +804,21 @@ static string RequireConfiguration(IConfiguration configuration, string key)
         : value;
 }
 
-static void RequireSessionAccess(
-    HttpContext context,
-    Guid sessionId,
-    SessionAccessTokenService accessTokens)
+static void RequireSessionMutationHeader(HttpContext context)
 {
-    if (!accessTokens.HasAccess(context, sessionId))
+    if (!string.Equals(
+            context.Request.Headers["X-Session-Request"].FirstOrDefault(),
+            "1",
+            StringComparison.Ordinal))
     {
         throw new UnauthorizedAccessException(
-            "A valid access token for this meeting session is required.");
+            "The session mutation request header is required.");
     }
 }
 
 namespace CsaMeetingCoach.Api
 {
     public sealed record SetRecommendationStatusRequest(RecommendationStatus Status);
+    public sealed record SetMemberAlertStatusRequest(MemberAlertStatus Status);
     public sealed class ApiEntryPoint;
 }

@@ -38,6 +38,8 @@ public sealed class MeetingSessionCoordinator : IDisposable
     private readonly ISessionUpdatePublisher _updatePublisher;
     private readonly ILogger<MeetingSessionCoordinator>? _logger;
     private readonly AnalysisOptions _analysisOptions;
+    private readonly TimeProvider _timeProvider;
+    private readonly ISessionKnowledgeReader? _knowledgeReader;
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _sessionLocks = new();
     private readonly ConcurrentDictionary<Guid, SessionAnalysisState> _analysisStates = new();
     private readonly CancellationTokenSource _disposalCts = new();
@@ -49,7 +51,9 @@ public sealed class MeetingSessionCoordinator : IDisposable
         IConversationCoachAgent? aiAgent,
         ISessionUpdatePublisher updatePublisher,
         ILogger<MeetingSessionCoordinator>? logger = null,
-        AnalysisOptions? analysisOptions = null)
+        AnalysisOptions? analysisOptions = null,
+        TimeProvider? timeProvider = null,
+        ISessionKnowledgeReader? knowledgeReader = null)
     {
         _store = store;
         _checklistPlanner = checklistPlanner;
@@ -58,6 +62,8 @@ public sealed class MeetingSessionCoordinator : IDisposable
         _updatePublisher = updatePublisher;
         _logger = logger;
         _analysisOptions = analysisOptions ?? AnalysisOptions.Default;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _knowledgeReader = knowledgeReader;
         _analysisOptions.Validate();
     }
 
@@ -67,7 +73,15 @@ public sealed class MeetingSessionCoordinator : IDisposable
         CancellationToken cancellationToken)
     {
         ValidatePurpose(request.Purpose);
-        var now = DateTimeOffset.UtcNow;
+        ValidateTemplate(request.Template);
+        ValidateMemberAlertMode(request.MemberAlertMode);
+        var now = _timeProvider.GetUtcNow();
+        var host = new SessionParticipantState(
+            Guid.NewGuid(),
+            NormalizeParticipantName(request.HostDisplayName, "Host"),
+            SessionRole.Host,
+            SessionParticipantStatus.Active,
+            now);
         var session = new MeetingSessionState(
             Guid.NewGuid(),
             request.Purpose,
@@ -75,12 +89,21 @@ public sealed class MeetingSessionCoordinator : IDisposable
             now,
             now,
             Revision: 1,
-            _checklistPlanner.CreateChecklist(request.Purpose, request.Checklist),
+            _checklistPlanner.CreateChecklist(
+                request.Purpose,
+                request.Checklist,
+                request.Template),
             Transcript: [],
             RecommendedTasks: [],
             Warnings: [],
             TeamsOnlineMeetingId: NormalizeMeetingId(request.TeamsOnlineMeetingId),
-            StateSchemaVersion: MeetingSessionState.CurrentSchemaVersion);
+            StateSchemaVersion: MeetingSessionState.CurrentSchemaVersion)
+        {
+            Template = request.Template,
+            MemberAlertMode = request.MemberAlertMode,
+            ExpiresAtUtc = now + SessionLifecycle.Lifetime,
+            Participants = [host]
+        };
 
         await _store.SaveAsync(session, cancellationToken);
         await _updatePublisher.PublishAsync(session, cancellationToken);
@@ -93,6 +116,40 @@ public sealed class MeetingSessionCoordinator : IDisposable
     {
         var session = await _store.GetAsync(sessionId, cancellationToken);
         return session is null ? null : ApplyRuntimeAnalysisState(session);
+    }
+
+    public async Task<(MeetingSessionState Session, SessionParticipantState Participant)>
+        JoinParticipantAsync(
+            Guid sessionId,
+            string displayName,
+            CancellationToken cancellationToken)
+    {
+        SessionParticipantState? participant = null;
+        var updated = await MutateAsync(
+            sessionId,
+            session =>
+            {
+                EnsureActive(session);
+                if (session.Participants.Count(participantState =>
+                        participantState.Status == SessionParticipantStatus.Active) >= 100)
+                {
+                    throw new InvalidOperationException(
+                        "This session has reached its participant limit.");
+                }
+
+                participant = new SessionParticipantState(
+                    Guid.NewGuid(),
+                    NormalizeParticipantName(displayName, "Member"),
+                    SessionRole.Member,
+                    SessionParticipantStatus.Active,
+                    _timeProvider.GetUtcNow());
+                return Task.FromResult(session with
+                {
+                    Participants = session.Participants.Append(participant).ToArray()
+                });
+            },
+            cancellationToken);
+        return (updated, participant!);
     }
 
     public async Task<MeetingSessionState> AddTranscriptAsync(
@@ -158,7 +215,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
                     Guid.NewGuid(),
                     request.Speaker.Trim(),
                     normalizeResult.NormalizedText,
-                    request.OccurredAtUtc ?? DateTimeOffset.UtcNow,
+                    request.OccurredAtUtc ?? _timeProvider.GetUtcNow(),
                     request.IsFinal,
                     request.SourceSegmentId)
                 {
@@ -180,7 +237,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 {
                     Transcript = transcript,
                     Revision = session.Revision + 1,
-                    UpdatedAtUtc = DateTimeOffset.UtcNow
+                    UpdatedAtUtc = _timeProvider.GetUtcNow()
                 };
                 await _store.SaveAsync(transcriptUpdate, cancellationToken);
                 await _updatePublisher.PublishAsync(transcriptUpdate, cancellationToken);
@@ -196,12 +253,23 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 .Where(transcriptSegment => transcriptSegment.IsFinal)
                 .ToArray();
             var analysisWindow = TranscriptAnalysisWindow.Select(finalTranscript);
+            var knowledge = _knowledgeReader is null
+                ? []
+                : await _knowledgeReader.ReadAsync(
+                    sessionId,
+                    transcriptUpdate.KnowledgeSources
+                        .Where(source => source.Status == KnowledgeSourceStatus.Ready)
+                        .Select(source => source.Id)
+                        .ToArray(),
+                    cancellationToken);
             var context = new CoachAgentContext(
                 transcriptUpdate.Purpose,
                 transcriptUpdate.Checklist,
                 finalTranscript,
                 transcriptUpdate.RecommendedTasks,
-                FilterClientReadyCards(transcriptUpdate.ContextualCards));
+                FilterClientReadyCards(transcriptUpdate.ContextualCards),
+                transcriptUpdate.Template,
+                knowledge);
             var deterministicDecision = await _deterministicAgent.AnalyzeAsync(
                 context, segment, cancellationToken);
             var fastLaneDecision = (_aiAgent is null
@@ -213,7 +281,10 @@ public sealed class MeetingSessionCoordinator : IDisposable
                     deterministicDecision.ContextualCards,
                     analysisWindow)
             };
-            var decision = CrossCuttingRecommendationPolicy.Apply(fastLaneDecision, segment);
+            var decision = CrossCuttingRecommendationPolicy.Apply(
+                fastLaneDecision,
+                segment,
+                transcriptUpdate.Template);
 
             var warnings = transcriptUpdate.Warnings
                 .Where(warning => string.Equals(
@@ -241,6 +312,10 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 finalTranscript,
                 transcriptUpdate.Checklist,
                 transcriptUpdate.Purpose,
+                transcriptUpdate.KnowledgeSources
+                    .Where(source => source.Status == KnowledgeSourceStatus.Ready)
+                    .Select(source => source.Id)
+                    .ToArray(),
                 warnings);
             var contextualCardResult = ApplyContextualCards(
                 transcriptUpdate,
@@ -291,13 +366,59 @@ public sealed class MeetingSessionCoordinator : IDisposable
     private void SignalAsyncAnalysisLane(Guid sessionId)
     {
         var state = _analysisStates.GetOrAdd(sessionId, static _ => new SessionAnalysisState());
-        if (state.BackgroundTask is null || state.BackgroundTask.IsCompleted)
+        state.EnsureBackgroundTask(() => Task.Run(async () =>
         {
-            state.BackgroundTask = Task.Run(
-                () => RunAnalysisLoopAsync(sessionId, state, _disposalCts.Token));
-        }
+            using var linkedCancellation = CancellationTokenSource
+                .CreateLinkedTokenSource(
+                    _disposalCts.Token,
+                    state.CancellationToken);
+            await RunAnalysisLoopAsync(
+                sessionId,
+                state,
+                linkedCancellation.Token);
+        }));
 
         state.Signal();
+    }
+
+    private async Task<MeetingSessionState> MutateKnowledgeAsync(
+        Guid sessionId,
+        Func<MeetingSessionState, MeetingSessionState> mutation,
+        CancellationToken cancellationToken)
+    {
+        var gate = _sessionLocks.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            var session = await _store.GetAsync(sessionId, cancellationToken)
+                ?? throw new KeyNotFoundException($"Meeting session {sessionId} was not found.");
+            EnsureActive(session);
+            var mutated = mutation(session);
+            var updated = mutated with
+            {
+                IsAnalyzing = false,
+                Revision = session.Revision + 1,
+                UpdatedAtUtc = _timeProvider.GetUtcNow()
+            };
+
+            await _store.SaveAsync(updated, cancellationToken);
+            try
+            {
+                CancelSessionAnalysis(sessionId);
+                ResignalAnalysisAfterKnowledgeChange(updated);
+                await _updatePublisher.PublishAsync(updated, cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                throw new SessionUpdateNotificationException(updated, exception);
+            }
+
+            return updated;
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     private async Task RunAnalysisLoopAsync(
@@ -403,6 +524,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
         TranscriptSegment latestSegment;
         IReadOnlyList<TranscriptSegment> analysisWindow;
         CoachAgentContext context;
+        IReadOnlyDictionary<Guid, KnowledgeSourceVisibility> authorizedKnowledge;
         {
             var loadGate = _sessionLocks.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
             await loadGate.WaitAsync(cancellationToken);
@@ -415,10 +537,14 @@ public sealed class MeetingSessionCoordinator : IDisposable
                     return;
                 }
 
-                if (loaded.Status != MeetingSessionStatus.Active)
+                if (loaded.Status != MeetingSessionStatus.Active
+                    || SessionLifecycle.IsExpired(loaded, _timeProvider.GetUtcNow()))
                 {
                     state.MarkCompleted(analysisGeneration);
-                    await ClearAnalyzingFlagAsync(loaded, cancellationToken);
+                    if (loaded.Status != MeetingSessionStatus.Active)
+                    {
+                        await ClearAnalyzingFlagAsync(loaded, cancellationToken);
+                    }
                     return;
                 }
 
@@ -435,12 +561,23 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 session = loaded;
                 latestSegment = finalTranscript[finalTranscript.Length - 1];
                 analysisWindow = TranscriptAnalysisWindow.Select(finalTranscript);
+                authorizedKnowledge = session.KnowledgeSources
+                    .Where(source => source.Status == KnowledgeSourceStatus.Ready)
+                    .ToDictionary(source => source.Id, source => source.Visibility);
+                var knowledge = _knowledgeReader is null
+                    ? []
+                    : await _knowledgeReader.ReadAsync(
+                        sessionId,
+                        authorizedKnowledge.Keys.ToArray(),
+                        cancellationToken);
                 context = new CoachAgentContext(
                     session.Purpose,
                     session.Checklist,
                     finalTranscript,
                     session.RecommendedTasks,
-                    FilterClientReadyCards(session.ContextualCards));
+                    FilterClientReadyCards(session.ContextualCards),
+                    session.Template,
+                    knowledge);
             }
             finally
             {
@@ -449,12 +586,28 @@ public sealed class MeetingSessionCoordinator : IDisposable
         }
 
         // Call AI with a bounded timeout.
+        var remainingLifetime = session.ExpiresAtUtc - _timeProvider.GetUtcNow();
+        if (remainingLifetime <= TimeSpan.Zero)
+        {
+            state.MarkCompleted(analysisGeneration);
+            return;
+        }
+
         CoachAgentDecision aiDecision;
         using var aiCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        aiCts.CancelAfter(_analysisOptions.AiTimeout);
+        aiCts.CancelAfter(
+            remainingLifetime < _analysisOptions.AiTimeout
+                ? remainingLifetime
+                : _analysisOptions.AiTimeout);
         try
         {
             aiDecision = await _aiAgent!.AnalyzeAsync(context, latestSegment, aiCts.Token);
+        }
+        catch (OperationCanceledException)
+            when (SessionLifecycle.IsExpired(session, _timeProvider.GetUtcNow()))
+        {
+            state.MarkCompleted(analysisGeneration);
+            return;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -485,10 +638,19 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 return;
             }
 
-            if (current.Status != MeetingSessionStatus.Active)
+            if (current.Status != MeetingSessionStatus.Active
+                || SessionLifecycle.IsExpired(current, _timeProvider.GetUtcNow()))
             {
                 state.MarkCompleted(analysisGeneration);
-                await ClearAnalyzingFlagAsync(current, cancellationToken);
+                if (current.Status != MeetingSessionStatus.Active)
+                {
+                    await ClearAnalyzingFlagAsync(current, cancellationToken);
+                }
+                return;
+            }
+            if (!HasSameKnowledgeAuthorization(current, authorizedKnowledge))
+            {
+                state.MarkCompleted(analysisGeneration);
                 return;
             }
 
@@ -525,6 +687,10 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 finalTranscript,
                 current.Checklist,
                 current.Purpose,
+                current.KnowledgeSources
+                    .Where(source => source.Status == KnowledgeSourceStatus.Ready)
+                    .Select(source => source.Id)
+                    .ToArray(),
                 mergeWarnings);
             var contextualCardResult = ApplyContextualCards(
                 current,
@@ -563,6 +729,11 @@ public sealed class MeetingSessionCoordinator : IDisposable
         MeetingSessionState session,
         CancellationToken cancellationToken)
     {
+        if (SessionLifecycle.IsExpired(session, _timeProvider.GetUtcNow()))
+        {
+            return;
+        }
+
         var cleared = session with
         {
             IsAnalyzing = false,
@@ -588,6 +759,10 @@ public sealed class MeetingSessionCoordinator : IDisposable
             {
                 var session = await _store.GetAsync(sessionId, cts.Token);
                 if (session is null)
+                {
+                    return;
+                }
+                if (SessionLifecycle.IsExpired(session, _timeProvider.GetUtcNow()))
                 {
                     return;
                 }
@@ -633,6 +808,15 @@ public sealed class MeetingSessionCoordinator : IDisposable
         _disposalCts.Dispose();
         foreach (var state in _analysisStates.Values)
         {
+            state.Dispose();
+        }
+    }
+
+    public void CancelSessionAnalysis(Guid sessionId)
+    {
+        if (_analysisStates.TryRemove(sessionId, out var state))
+        {
+            state.Cancel();
             state.Dispose();
         }
     }
@@ -778,6 +962,137 @@ public sealed class MeetingSessionCoordinator : IDisposable
             cancellationToken);
     }
 
+    public async Task<MeetingSessionState> AddKnowledgeSourceAsync(
+        Guid sessionId,
+        KnowledgeSourceState source,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (source.Id == Guid.Empty
+            || string.IsNullOrWhiteSpace(source.DisplayName)
+            || !Enum.IsDefined(source.Kind)
+            || !Enum.IsDefined(source.Visibility)
+            || !Enum.IsDefined(source.Status)
+            || source.SizeBytes < 0)
+        {
+            throw new ArgumentException("Knowledge source metadata is invalid.", nameof(source));
+        }
+
+        return await MutateKnowledgeAsync(
+            sessionId,
+            session =>
+            {
+                if (session.KnowledgeSources.Any(existing => existing.Id == source.Id))
+                {
+                    throw new InvalidOperationException(
+                        $"Knowledge source {source.Id} already exists.");
+                }
+
+                if (session.KnowledgeSources.Count >= SessionKnowledgeLimits.MaximumSourceCount)
+                {
+                    throw new InvalidOperationException(
+                        $"A session can contain at most {SessionKnowledgeLimits.MaximumSourceCount} knowledge sources.");
+                }
+
+                var totalBytes = checked(
+                    session.KnowledgeSources.Sum(existing => existing.SizeBytes)
+                    + source.SizeBytes);
+                if (totalBytes > SessionKnowledgeLimits.MaximumTotalBytes)
+                {
+                    throw new InvalidOperationException(
+                        "Session knowledge exceeds the 100 MB aggregate limit.");
+                }
+
+                return session with
+                {
+                    KnowledgeSources = session.KnowledgeSources.Append(source).ToArray()
+                };
+            },
+            cancellationToken);
+    }
+
+    public async Task<MeetingSessionState> RemoveKnowledgeSourceAsync(
+        Guid sessionId,
+        Guid sourceId,
+        CancellationToken cancellationToken)
+    {
+        return await MutateKnowledgeAsync(
+            sessionId,
+            session =>
+            {
+                if (!session.KnowledgeSources.Any(source => source.Id == sourceId))
+                {
+                    throw new KeyNotFoundException(
+                        $"Knowledge source {sourceId} was not found.");
+                }
+
+                return session with
+                {
+                    KnowledgeSources = session.KnowledgeSources
+                        .Where(source => source.Id != sourceId)
+                        .ToArray(),
+                    ContextualCards = session.ContextualCards
+                        .Where(card => !(card.KnowledgeSourceIds ?? []).Contains(sourceId))
+                        .ToArray(),
+                    RecommendedTasks = session.RecommendedTasks
+                        .Where(task => !(task.KnowledgeSourceIds ?? []).Contains(sourceId))
+                        .ToArray()
+                };
+            },
+            cancellationToken);
+    }
+
+    private void ResignalAnalysisAfterKnowledgeChange(MeetingSessionState session)
+    {
+        if (_aiAgent is not null
+            && session.Status == MeetingSessionStatus.Active
+            && !SessionLifecycle.IsExpired(session, _timeProvider.GetUtcNow())
+            && session.Transcript.Any(segment => segment.IsFinal))
+        {
+            SignalAsyncAnalysisLane(session.Id);
+        }
+    }
+
+    public Task<MeetingSessionState> SetMemberAlertStatusAsync(
+        Guid sessionId,
+        Guid cardId,
+        MemberAlertStatus status,
+        CancellationToken cancellationToken)
+    {
+        if (status is not MemberAlertStatus.Published and not MemberAlertStatus.Hidden)
+        {
+            throw new ArgumentException(
+                "A member alert can only be published or hidden.",
+                nameof(status));
+        }
+
+        return MutateAsync(
+            sessionId,
+            session =>
+            {
+                EnsureActive(session);
+                var found = false;
+                var cards = session.ContextualCards.Select(card =>
+                {
+                    if (card.Id != cardId)
+                    {
+                        return card;
+                    }
+
+                    found = true;
+                    return card with { MemberAlertStatus = status };
+                }).ToArray();
+                if (!found)
+                {
+                    throw new KeyNotFoundException(
+                        $"Contextual card {cardId} was not found.");
+                }
+
+                return Task.FromResult(session with { ContextualCards = cards });
+            },
+            cancellationToken);
+    }
+
     private async Task<MeetingSessionState> MutateAsync(
         Guid sessionId,
         Func<MeetingSessionState, Task<MeetingSessionState>> mutation,
@@ -789,13 +1104,14 @@ public sealed class MeetingSessionCoordinator : IDisposable
         {
             var session = await _store.GetAsync(sessionId, cancellationToken)
                 ?? throw new KeyNotFoundException($"Meeting session {sessionId} was not found.");
+            EnsureNotExpired(session);
             var updated = await mutation(session);
             updated = updated with
             {
                 IsAnalyzing = updated.Status == MeetingSessionStatus.Active
                     && IsAnalysisPending(sessionId),
                 Revision = session.Revision + 1,
-                UpdatedAtUtc = DateTimeOffset.UtcNow
+                UpdatedAtUtc = _timeProvider.GetUtcNow()
             };
 
             await _store.SaveAsync(updated, cancellationToken);
@@ -937,6 +1253,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
         IReadOnlyList<TranscriptSegment> transcript,
         IReadOnlyList<ChecklistItemState> checklist,
         MeetingPurpose purpose,
+        IReadOnlyCollection<Guid> knowledgeSourceIds,
         ICollection<string> warnings)
     {
         var segmentIds = transcript.Select(segment => segment.Id).ToHashSet();
@@ -992,7 +1309,10 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 proposal.SourceTranscriptSegmentIds.Distinct().ToArray(),
                 RecommendationStatus.Proposed,
                 DateTimeOffset.UtcNow,
-                Evidence: []));
+                Evidence: [])
+            {
+                KnowledgeSourceIds = knowledgeSourceIds.Distinct().ToArray()
+            });
         }
 
         return result;
@@ -1024,7 +1344,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
             StringComparer.Ordinal);
         var diagnostics = new List<AlertDiagnostic>();
         var latestFinalSegmentIndex = session.Transcript.Count(segment => segment.IsFinal) - 1;
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         var candidates = new List<AlertCandidate>();
 
         foreach (var proposal in proposals)
@@ -1196,7 +1516,15 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 winner.Candidate.SourceTranscriptSegmentIds,
                 now)
             {
-                ConceptKey = winner.Candidate.ConceptKey
+                ConceptKey = winner.Candidate.ConceptKey,
+                MemberAlertStatus = ResolveMemberAlertStatus(
+                    session,
+                    winner.Candidate.Kind),
+                KnowledgeSourceIds = session.KnowledgeSources
+                    .Where(source => source.Status == KnowledgeSourceStatus.Ready)
+                    .Select(source => source.Id)
+                    .Distinct()
+                    .ToArray()
             });
 
             if (winner.Candidate.Kind == ContextualCardKind.Definition)
@@ -1204,6 +1532,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 shownDefinitionKeys.Add(winner.Candidate.ConceptKey);
                 definitionCooldowns[winner.Candidate.ConceptKey] = now;
             }
+
             else
             {
                 shownHintKeys.Add(winner.Candidate.ConceptKey);
@@ -1228,6 +1557,37 @@ public sealed class MeetingSessionCoordinator : IDisposable
             hintCooldowns,
             contentFingerprints,
             session.LastEducationalCardSegmentIndex);
+    }
+
+    private static MemberAlertStatus ResolveMemberAlertStatus(
+        MeetingSessionState session,
+        ContextualCardKind kind)
+    {
+        return session.MemberAlertMode switch
+        {
+            MemberAlertDeliveryMode.Manual => MemberAlertStatus.PendingApproval,
+            MemberAlertDeliveryMode.Automatic => MemberAlertStatus.Published,
+            MemberAlertDeliveryMode.SafeAutomatic
+                when kind == ContextualCardKind.Definition
+                && session.KnowledgeSources.All(source =>
+                    source.Visibility == KnowledgeSourceVisibility.MemberEligible) =>
+                MemberAlertStatus.Published,
+            MemberAlertDeliveryMode.SafeAutomatic => MemberAlertStatus.PendingApproval,
+            _ => MemberAlertStatus.PendingApproval
+        };
+    }
+
+    private static bool HasSameKnowledgeAuthorization(
+        MeetingSessionState session,
+        IReadOnlyDictionary<Guid, KnowledgeSourceVisibility> expected)
+    {
+        var current = session.KnowledgeSources
+            .Where(source => source.Status == KnowledgeSourceStatus.Ready)
+            .ToDictionary(source => source.Id, source => source.Visibility);
+        return current.Count == expected.Count
+            && expected.All(pair =>
+                current.TryGetValue(pair.Key, out var visibility)
+                && visibility == pair.Value);
     }
 
     private static IReadOnlyList<ContextualCardState> FilterClientReadyCards(
@@ -1505,12 +1865,50 @@ public sealed class MeetingSessionCoordinator : IDisposable
         }
     }
 
-    private static void EnsureActive(MeetingSessionState session)
+    private void EnsureActive(MeetingSessionState session)
     {
+        EnsureNotExpired(session);
         if (session.Status != MeetingSessionStatus.Active)
         {
             throw new InvalidOperationException("The meeting session is already completed.");
         }
+    }
+
+    private void EnsureNotExpired(MeetingSessionState session)
+    {
+        if (SessionLifecycle.IsExpired(session, _timeProvider.GetUtcNow()))
+        {
+            throw new SessionExpiredException(session.Id);
+        }
+    }
+
+    private static void ValidateTemplate(SessionTemplateKind template)
+    {
+        if (!Enum.IsDefined(template))
+        {
+            throw new ArgumentException("A supported session template is required.");
+        }
+    }
+
+    private static void ValidateMemberAlertMode(MemberAlertDeliveryMode mode)
+    {
+        if (!Enum.IsDefined(mode))
+        {
+            throw new ArgumentException("A supported member alert mode is required.");
+        }
+    }
+
+    private static string NormalizeParticipantName(string? displayName, string fallback)
+    {
+        var normalized = string.IsNullOrWhiteSpace(displayName)
+            ? fallback
+            : displayName.Trim();
+        if (normalized.Length > 80)
+        {
+            throw new ArgumentException("Participant display name cannot exceed 80 characters.");
+        }
+
+        return normalized;
     }
 
     private static string? NormalizeMeetingId(string? meetingId)
@@ -1564,10 +1962,20 @@ public sealed class MeetingSessionCoordinator : IDisposable
             });
         private long _latestRequestedGeneration;
         private long _completedGeneration;
+        private readonly CancellationTokenSource _cancellation = new();
+        private readonly CancellationToken _cancellationToken;
+        private readonly object _workerLock = new();
+        private int _disposed;
+
+        public SessionAnalysisState()
+        {
+            _cancellationToken = _cancellation.Token;
+        }
 
         public Task? BackgroundTask;
 
         public ChannelReader<long> TriggerReader => _trigger.Reader;
+        public CancellationToken CancellationToken => _cancellationToken;
 
         public bool IsAnalyzing =>
             Volatile.Read(ref _latestRequestedGeneration)
@@ -1580,6 +1988,17 @@ public sealed class MeetingSessionCoordinator : IDisposable
         {
             var generation = Interlocked.Increment(ref _latestRequestedGeneration);
             _trigger.Writer.TryWrite(generation);
+        }
+
+        public void EnsureBackgroundTask(Func<Task> taskFactory)
+        {
+            lock (_workerLock)
+            {
+                if (BackgroundTask is null || BackgroundTask.IsCompleted)
+                {
+                    BackgroundTask = taskFactory();
+                }
+            }
         }
 
         public void MarkCompleted(long generation)
@@ -1598,6 +2017,18 @@ public sealed class MeetingSessionCoordinator : IDisposable
             }
         }
 
-        public void Dispose() => _trigger.Writer.TryComplete();
+        public void Cancel() => _cancellation.Cancel();
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            _cancellation.Cancel();
+            _trigger.Writer.TryComplete();
+            _cancellation.Dispose();
+        }
     }
 }
