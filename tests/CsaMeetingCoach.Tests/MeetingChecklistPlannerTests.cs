@@ -82,4 +82,28 @@ public sealed class MeetingChecklistPlannerTests
             checklist,
             item => item.Title.Contains("business value", StringComparison.OrdinalIgnoreCase));
     }
+
+    [Fact]
+    public void CreateChecklist_AllBuiltInTemplatesHaveDistinctPlans()
+    {
+        var planner = new MeetingChecklistPlanner();
+        var signatures = Enum.GetValues<SessionTemplateKind>()
+            .ToDictionary(
+                template => template,
+                template => string.Join(
+                    "|",
+                    planner.CreateChecklist(
+                            TestData.CreatePurpose(),
+                            requestedChecklist: null,
+                            template)
+                        .Select(item => item.Title)));
+
+        Assert.Equal(signatures.Count, signatures.Values.Distinct().Count());
+        Assert.All(
+            signatures.Where(entry => entry.Key != SessionTemplateKind.CsaVbd),
+            entry => Assert.DoesNotContain(
+                "customer",
+                entry.Value,
+                StringComparison.OrdinalIgnoreCase));
+    }
 }

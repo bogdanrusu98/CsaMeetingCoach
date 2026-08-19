@@ -48,6 +48,17 @@ public sealed class CommercialSessionEndpointTests
         Assert.False(memberJson.RootElement.TryGetProperty("participants", out _));
         Assert.False(memberJson.RootElement.TryGetProperty("knowledgeSources", out _));
 
+        using var refreshedHostResponse = await host.GetAsync(
+            $"/api/sessions/{created.Session.Id:D}");
+        refreshedHostResponse.EnsureSuccessStatusCode();
+        var refreshedHost = await refreshedHostResponse.Content
+            .ReadFromJsonAsync<MeetingSessionState>(JsonOptions);
+        Assert.NotNull(refreshedHost);
+        var joinedMember = Assert.Single(
+            refreshedHost.Participants,
+            participant => participant.Role == SessionRole.Member);
+        Assert.Equal("Member", joinedMember.DisplayName);
+
         using var forbidden = await member.PostAsJsonAsync(
             $"/api/sessions/{created.Session.Id:D}/transcript",
             new AddTranscriptSegmentRequest("Member", "I must not write transcript."),

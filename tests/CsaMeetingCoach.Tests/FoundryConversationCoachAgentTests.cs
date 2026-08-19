@@ -655,10 +655,69 @@ public sealed class FoundryConversationCoachAgentTests
             StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(
+        SessionTemplateKind.Presentation,
+        "Presenter",
+        "narrative clarity",
+        "audience")]
+    [InlineData(
+        SessionTemplateKind.Workshop,
+        "Facilitator",
+        "trade-offs",
+        "assumptions")]
+    [InlineData(
+        SessionTemplateKind.Training,
+        "Trainer",
+        "understanding checks",
+        "common pitfalls")]
+    [InlineData(
+        SessionTemplateKind.Custom,
+        "Session host",
+        "configured objective",
+        "configured objective")]
+    [InlineData(
+        SessionTemplateKind.CsaVbd,
+        "Customer-facing CSA",
+        "business value",
+        "Azure concepts")]
+    public async Task Analyze_SendsTrustedTemplateBehavior(
+        SessionTemplateKind template,
+        string expectedRole,
+        string expectedRecommendationFocus,
+        string expectedMemberAlertFocus)
+    {
+        var latestSegment = CreateLatestSegment("An explicit session topic.");
+        var client = new RecordingFoundryClient(
+            """{"checklistEvaluations":[],"recommendedTasks":[],"recommendationEvaluations":[],"contextualCards":[]}""");
+
+        await new FoundryConversationCoachAgent(client).AnalyzeAsync(
+            CreateContext(latestSegment, template: template),
+            latestSegment,
+            CancellationToken.None);
+
+        using var document = JsonDocument.Parse(Assert.IsType<string>(client.InputJson));
+        var behavior = document.RootElement.GetProperty("templateBehavior");
+        Assert.Equal(expectedRole, behavior.GetProperty("hostRole").GetString());
+        Assert.Contains(
+            expectedRecommendationFocus,
+            behavior.GetProperty("recommendationFocus").GetString()!,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            expectedMemberAlertFocus,
+            behavior.GetProperty("memberAlertFocus").GetString()!,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "templateBehavior is",
+            FoundryAgentContract.Instructions,
+            StringComparison.Ordinal);
+    }
+
     private static CoachAgentContext CreateContext(
         TranscriptSegment latestSegment,
         IReadOnlyList<RecommendedTaskState>? recommendations = null,
-        IReadOnlyList<TranscriptSegment>? transcript = null)
+        IReadOnlyList<TranscriptSegment>? transcript = null,
+        SessionTemplateKind template = SessionTemplateKind.CsaVbd)
     {
         var checklist = new MeetingChecklistPlanner().CreateChecklist(
             TestData.CreatePurpose(),
@@ -667,7 +726,8 @@ public sealed class FoundryConversationCoachAgentTests
             TestData.CreatePurpose(),
             checklist,
             transcript ?? [latestSegment],
-            recommendations);
+            recommendations,
+            Template: template);
     }
 
     private static TranscriptSegment CreateLatestSegment(

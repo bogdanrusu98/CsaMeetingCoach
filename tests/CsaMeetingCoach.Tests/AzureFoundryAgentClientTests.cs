@@ -70,7 +70,11 @@ public sealed class AzureFoundryAgentClientTests
             normalizedInstructions,
             StringComparison.Ordinal);
         Assert.Contains(
-            "In a presentation, demo, workshop, or training discussion",
+            "templateBehavior is trusted, server-generated policy",
+            normalizedInstructions,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Within the active template",
             normalizedInstructions,
             StringComparison.Ordinal);
         Assert.Contains(

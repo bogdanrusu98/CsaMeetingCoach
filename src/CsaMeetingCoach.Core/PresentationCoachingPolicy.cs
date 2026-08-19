@@ -246,14 +246,16 @@ internal static partial class PresentationCoachingPolicy
             .Select(HeuristicConversationCoachAgent.Normalize)
             .Where(value => value.Length > 0)
             .ToArray();
-        var presentationMatch = FindRecommendationMatches(
-                analysisWindow,
-                HasAzureMeetingContext(context.Purpose))
-            .FirstOrDefault(match => !coveredContext.Any(covered =>
-                HasSubstantialOverlap(
-                    HeuristicConversationCoachAgent.Normalize(
-                        match.Definition.Title),
-                    covered)));
+        var presentationMatch = context.Template == SessionTemplateKind.CsaVbd
+            ? FindRecommendationMatches(
+                    analysisWindow,
+                    HasAzureMeetingContext(context.Purpose))
+                .FirstOrDefault(match => !coveredContext.Any(covered =>
+                    HasSubstantialOverlap(
+                        HeuristicConversationCoachAgent.Normalize(
+                            match.Definition.Title),
+                        covered)))
+            : null;
         var safePrimary = primaryRecommendations
             .Where(proposal => proposal is not null)
             .Where(proposal =>

@@ -6,6 +6,47 @@ namespace CsaMeetingCoach.Tests;
 public sealed class HeuristicConversationCoachAgentTests
 {
     [Theory]
+    [InlineData(SessionTemplateKind.Presentation, "Clarify for the audience", "audience")]
+    [InlineData(SessionTemplateKind.Workshop, "Facilitate the group", "decision")]
+    [InlineData(SessionTemplateKind.Training, "Teach and check understanding", "Training coaching")]
+    [InlineData(SessionTemplateKind.Custom, "Advance the configured objective", "configured objective")]
+    [InlineData(SessionTemplateKind.CsaVbd, "Discuss next", "customer discovery")]
+    public async Task Analyze_RecommendationUsesSelectedTemplate(
+        SessionTemplateKind template,
+        string expectedTitle,
+        string expectedRationale)
+    {
+        var latest = CreateFinalSegment("Can we review the delivery approach?");
+        var context = new CoachAgentContext(
+            TestData.CreatePurpose(),
+            [],
+            [latest],
+            Template: template);
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            context,
+            latest,
+            CancellationToken.None);
+
+        var recommendation = Assert.Single(decision.RecommendedTasks);
+        Assert.Contains(
+            expectedTitle,
+            recommendation.Title,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            expectedRationale,
+            recommendation.Rationale,
+            StringComparison.OrdinalIgnoreCase);
+        if (template != SessionTemplateKind.CsaVbd)
+        {
+            Assert.DoesNotContain(
+                "customer",
+                recommendation.Rationale,
+                StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Theory]
     [InlineData(
         "objective",
         "Our objective is to migrate the customer portal and SQL databases to Azure.")]

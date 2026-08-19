@@ -38,11 +38,101 @@ const state = {
   dismissedContextualCardIds: new Set(),
   notifiedRecommendationIds: new Set(),
   notifiedWarningMessages: new Set(),
+  knownParticipantIds: new Set(),
+  participantTrackingInitialized: false,
   fallbackToastTimer: null,
   systemAudioCaptureAvailable: Boolean(
     navigator.mediaDevices?.getDisplayMedia
       && (window.AudioContext || window.webkitAudioContext))
 };
+
+const templateProfiles = Object.freeze({
+  presentation: {
+    label: "Presentation",
+    meetingType: "Presentation",
+    setupHost: "Narrative clarity, audience relevance, examples, transitions, questions, and takeaway.",
+    setupMember: "Definitions, distinctions, implications, and context that help the audience follow.",
+    titlePlaceholder: "e.g. Product roadmap presentation",
+    objectivePlaceholder: "e.g. Help the audience understand the proposal and the decision required",
+    criteriaPlaceholder: "Audience outcome is explicit\nKey messages are covered\nQuestions and closing action are addressed",
+    focusLabel: "Presentation coaching",
+    guidanceEmpty: "Listening for a narrative gap, audience question, useful example, or clearer takeaway.",
+    planLabel: "Presentation progress",
+    planHeading: "Audience-ready plan",
+    alertReviewLabel: "Audience experience",
+    alertReviewHeading: "Presentation context review",
+    memberLayerLabel: "Live audience context",
+    memberLayerHeading: "Definitions and presentation context"
+  },
+  workshop: {
+    label: "Workshop",
+    meetingType: "Workshop",
+    setupHost: "Participation, assumptions, trade-offs, decisions, unresolved items, owners, and actions.",
+    setupMember: "Terminology, assumptions, constraints, options, and trade-offs already in discussion.",
+    titlePlaceholder: "e.g. Service design workshop",
+    objectivePlaceholder: "e.g. Reach a shared decision and leave with owned actions",
+    criteriaPlaceholder: "Shared outcome is confirmed\nAssumptions and options are surfaced\nDecisions and owners are captured",
+    focusLabel: "Workshop facilitation",
+    guidanceEmpty: "Listening for missing perspectives, assumptions, trade-offs, decisions, or owners.",
+    planLabel: "Workshop progress",
+    planHeading: "Decision and action plan",
+    alertReviewLabel: "Participant experience",
+    alertReviewHeading: "Workshop context review",
+    memberLayerLabel: "Live workshop context",
+    memberLayerHeading: "Terms, options, and trade-offs"
+  },
+  training: {
+    label: "Training",
+    meetingType: "Training",
+    setupHost: "Explanations, examples, demonstrations, practice, understanding checks, and recap.",
+    setupMember: "Definitions, examples, prerequisites, distinctions, mechanisms, and common pitfalls.",
+    titlePlaceholder: "e.g. Platform fundamentals training",
+    objectivePlaceholder: "e.g. Enable learners to explain and apply the core concepts",
+    criteriaPlaceholder: "Learning objectives are introduced\nCore concepts are demonstrated\nUnderstanding is checked and resources are shared",
+    focusLabel: "Training guidance",
+    guidanceEmpty: "Listening for a concept that needs an example, practice, misconception check, or recap.",
+    planLabel: "Learning progress",
+    planHeading: "Evidence-backed learning plan",
+    alertReviewLabel: "Learner experience",
+    alertReviewHeading: "Learning aid review",
+    memberLayerLabel: "Live learning layer",
+    memberLayerHeading: "Concepts, examples, and useful context"
+  },
+  custom: {
+    label: "Custom",
+    meetingType: null,
+    setupHost: "Only the configured objective, success criteria, discussion, and supplied knowledge.",
+    setupMember: "Concepts that help members follow the configured purpose and member-eligible knowledge.",
+    titlePlaceholder: "Name your custom session",
+    objectivePlaceholder: "Describe the exact outcome this custom session should achieve",
+    criteriaPlaceholder: "Add one observable success criterion per line",
+    focusLabel: "Objective-based guidance",
+    guidanceEmpty: "Listening for the most useful next step against your configured objective.",
+    planLabel: "Configured progress",
+    planHeading: "Custom evidence-backed plan",
+    alertReviewLabel: "Member experience",
+    alertReviewHeading: "Custom context review",
+    memberLayerLabel: "Live session context",
+    memberLayerHeading: "Definitions and objective-relevant context"
+  },
+  csaVbd: {
+    label: "CSA / VBD",
+    meetingType: "CSA / VBD",
+    setupHost: "Discovery, solution fit, measurable value, risks, Azure decision signals, and next actions.",
+    setupMember: "Grounded business and Azure definitions, mechanisms, implications, and limitations.",
+    titlePlaceholder: "e.g. Cloud value discovery",
+    objectivePlaceholder: "e.g. Align customer priorities to measurable outcomes and next decisions",
+    criteriaPlaceholder: "Customer objectives are explicit\nValue and risks are discussed\nOwners and next actions are agreed",
+    focusLabel: "CSA / VBD guidance",
+    guidanceEmpty: "Listening for a discovery gap, value link, risk, Azure decision signal, or next action.",
+    planLabel: "Customer conversation progress",
+    planHeading: "Value and action plan",
+    alertReviewLabel: "Client experience",
+    alertReviewHeading: "Client learning alert review",
+    memberLayerLabel: "Live client learning layer",
+    memberLayerHeading: "Business and Azure context"
+  }
+});
 
 const elements = {
   setupView: document.querySelector("#setup-view"),
@@ -51,6 +141,11 @@ const elements = {
   rolePicker: document.querySelector("#role-picker"),
   hostSetupPanel: document.querySelector("#host-setup-panel"),
   memberJoinPanel: document.querySelector("#member-join-panel"),
+  templateChoices: document.querySelectorAll("input[name='session-template']"),
+  customMeetingTypeField: document.querySelector("#custom-meeting-type-field"),
+  customMeetingType: document.querySelector("#custom-meeting-type"),
+  templateHostSummary: document.querySelector("#template-host-summary"),
+  templateMemberSummary: document.querySelector("#template-member-summary"),
   sessionForm: document.querySelector("#session-form"),
   memberJoinForm: document.querySelector("#member-join-form"),
   transcriptForm: document.querySelector("#transcript-form"),
@@ -82,6 +177,14 @@ const elements = {
   hostSessionCode: document.querySelector("#host-session-code"),
   sessionExpiry: document.querySelector("#session-expiry"),
   sessionTemplateLabel: document.querySelector("#session-template-label"),
+  hostMemberCount: document.querySelector("#host-member-count"),
+  hostParticipantList: document.querySelector("#host-participant-list"),
+  focusSectionLabel: document.querySelector("#focus-section-label"),
+  nextDiscussionHeading: document.querySelector("#next-discussion-heading"),
+  planSectionLabel: document.querySelector("#plan-section-label"),
+  livePlanHeading: document.querySelector("#live-plan-heading"),
+  alertReviewLabel: document.querySelector("#alert-review-label"),
+  alertReviewHeading: document.querySelector("#alert-review-heading"),
   knowledgeFileForm: document.querySelector("#knowledge-file-form"),
   knowledgeLinkForm: document.querySelector("#knowledge-link-form"),
   knowledgeList: document.querySelector("#knowledge-list"),
@@ -91,6 +194,8 @@ const elements = {
   memberTemplateLabel: document.querySelector("#member-template-label"),
   memberSessionExpiry: document.querySelector("#member-session-expiry"),
   memberAlertCount: document.querySelector("#member-alert-count"),
+  memberAlertLayerLabel: document.querySelector("#member-alert-layer-label"),
+  memberAlertLayerHeading: document.querySelector("#member-alert-layer-heading"),
   memberAlertList: document.querySelector("#member-alert-list"),
   toastFallback: document.querySelector("#toast-fallback")
 };
@@ -140,6 +245,10 @@ document.querySelectorAll("[data-role-choice]").forEach(button => {
 document.querySelectorAll("[data-back-to-roles]").forEach(button => {
   button.addEventListener("click", () => showEntryPanel(null));
 });
+elements.templateChoices.forEach(choice => {
+  choice.addEventListener("change", applySelectedTemplate);
+});
+applySelectedTemplate();
 document.querySelector("#member-session-code").addEventListener("input", event => {
   const normalized = event.currentTarget.value
     .toUpperCase()
@@ -206,12 +315,20 @@ elements.diagnosticsDialog.addEventListener("click", event => {
 });
 elements.sessionForm.addEventListener("submit", async event => {
   event.preventDefault();
+  const template = selectedTemplate();
+  const templateProfile = getTemplateProfile(template);
+  const meetingType = template === "custom"
+    ? elements.customMeetingType.value.trim()
+    : templateProfile.meetingType;
   const successCriteria = document.querySelector("#success-criteria").value
     .split("\n")
     .map(value => value.trim())
     .filter(Boolean);
 
   await runWithButton(event.submitter, async () => {
+    if (!meetingType) {
+      throw new Error("Enter a custom session type.");
+    }
     await teamsContextReady;
     const teamsHosted = new URLSearchParams(window.location.search).get("host") === "teams";
     if (teamsHosted && !state.teamsMeetingId) {
@@ -222,14 +339,14 @@ elements.sessionForm.addEventListener("submit", async event => {
       method: "POST",
       body: JSON.stringify({
         purpose: {
-          title: document.querySelector("#meeting-title").value,
-          meetingType: document.querySelector("#meeting-type").value,
-          objective: document.querySelector("#meeting-objective").value,
+          title: document.querySelector("#meeting-title").value.trim(),
+          meetingType,
+          objective: document.querySelector("#meeting-objective").value.trim(),
           successCriteria
         },
         teamsOnlineMeetingId: state.teamsMeetingId,
-        template: document.querySelector("#session-template").value,
-        hostDisplayName: document.querySelector("#host-display-name").value,
+        template,
+        hostDisplayName: document.querySelector("#host-display-name").value.trim(),
         memberAlertMode: document.querySelector("#member-alert-mode").value
       })
     });
@@ -495,10 +612,12 @@ function renderHost() {
     return;
   }
 
+  const templateProfile = getTemplateProfile(session.template);
+  elements.sessionView.dataset.template = session.template;
   elements.hostSessionCode.textContent = state.joinCode ?? "Unavailable";
   elements.sessionExpiry.textContent = formatExpiry(session.expiresAtUtc);
   elements.sessionExpiry.dateTime = session.expiresAtUtc;
-  elements.sessionTemplateLabel.textContent = formatEnumLabel(session.template);
+  elements.sessionTemplateLabel.textContent = templateProfile.label;
   document.querySelector("#meeting-type-label").textContent =
     session.purpose.meetingType;
   document.querySelector("#purpose-title").textContent = session.purpose.title;
@@ -508,11 +627,19 @@ function renderHost() {
   document.querySelector("#transcript-form button").disabled = sessionClosed;
   elements.knowledgeFileForm.querySelector("button").disabled = sessionClosed;
   elements.knowledgeLinkForm.querySelector("button").disabled = sessionClosed;
+  elements.focusSectionLabel.innerHTML =
+    `<span class="spark" aria-hidden="true">✦</span>${templateProfile.focusLabel}`;
+  elements.nextDiscussionHeading.textContent = templateProfile.focusLabel;
+  elements.planSectionLabel.textContent = templateProfile.planLabel;
+  elements.livePlanHeading.textContent = templateProfile.planHeading;
+  elements.alertReviewLabel.textContent = templateProfile.alertReviewLabel;
+  elements.alertReviewHeading.textContent = templateProfile.alertReviewHeading;
   renderMicrophoneControls();
   const contextualCards = session.contextualCards ?? [];
   renderContextualCards(contextualCards);
   renderContextualCardHistory(contextualCards);
   renderKnowledge(session.knowledgeSources ?? []);
+  renderParticipantPresence(session.participants ?? []);
 
   const liveRecommendations = (session.recommendedTasks ?? []).filter(
     task => task.status === "accepted" || task.status === "completed");
@@ -574,7 +701,7 @@ function renderHost() {
       : "stack empty-state";
     elements.recommendations.textContent = session.isAnalyzing
       ? "Analyzing meeting context\u2026"
-      : "Listening for explicit discussion to suggest what to cover next.";
+      : templateProfile.guidanceEmpty;
   } else {
     elements.recommendations.className = "stack";
     elements.recommendations.innerHTML = proposedRecommendations
@@ -632,10 +759,13 @@ function renderMember() {
     return;
   }
 
+  const templateProfile = getTemplateProfile(session.template);
+  elements.memberSessionView.dataset.template = session.template;
   elements.memberPurposeTitle.textContent = session.purpose.title;
   elements.memberPurposeObjective.textContent = session.purpose.objective;
-  elements.memberTemplateLabel.textContent =
-    `${formatEnumLabel(session.template)} · member`;
+  elements.memberTemplateLabel.textContent = `${templateProfile.label} · member`;
+  elements.memberAlertLayerLabel.textContent = templateProfile.memberLayerLabel;
+  elements.memberAlertLayerHeading.textContent = templateProfile.memberLayerHeading;
   elements.memberSessionExpiry.textContent = formatExpiry(session.expiresAtUtc);
   elements.memberSessionExpiry.dateTime = session.expiresAtUtc;
   const alerts = session.alerts ?? [];
@@ -664,6 +794,60 @@ function renderMember() {
         </article>`;
     })
     .join("");
+}
+
+function renderParticipantPresence(participants) {
+  const members = participants
+    .filter(participant =>
+      String(participant.role).toLowerCase() === "member")
+    .sort((left, right) =>
+      Date.parse(left.joinedAtUtc) - Date.parse(right.joinedAtUtc));
+
+  if (state.participantTrackingInitialized) {
+    members
+      .filter(member => !state.knownParticipantIds.has(member.id))
+      .forEach(member => {
+        showToast(`${member.displayName} joined the session.`, "success", {
+          title: "Member joined"
+        });
+      });
+  }
+
+  members.forEach(member => state.knownParticipantIds.add(member.id));
+  state.participantTrackingInitialized = true;
+  elements.hostMemberCount.textContent = String(members.length);
+
+  if (members.length === 0) {
+    elements.hostParticipantList.className = "participant-list empty-state";
+    elements.hostParticipantList.textContent = "No members have joined yet.";
+    return;
+  }
+
+  elements.hostParticipantList.className = "participant-list";
+  elements.hostParticipantList.innerHTML = members.map(member => {
+    const joinedAt = new Date(member.joinedAtUtc);
+    const joinedLabel = Number.isNaN(joinedAt.getTime())
+      ? "Joined"
+      : `Joined ${joinedAt.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit"
+        })}`;
+    const initials = String(member.displayName)
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map(part => part.charAt(0).toUpperCase())
+      .join("") || "M";
+    return `
+      <div class="participant-item">
+        <span class="participant-avatar" aria-hidden="true">${escapeHtml(initials)}</span>
+        <span class="participant-copy">
+          <strong>${escapeHtml(member.displayName)}</strong>
+          <span>${escapeHtml(joinedLabel)}</span>
+        </span>
+        <span class="participant-state">Joined</span>
+      </div>`;
+  }).join("");
 }
 
 function renderKnowledge(sources) {
@@ -810,6 +994,8 @@ function resetContextualCards() {
   state.dismissedContextualCardIds.clear();
   state.notifiedRecommendationIds.clear();
   state.notifiedWarningMessages.clear();
+  state.knownParticipantIds.clear();
+  state.participantTrackingInitialized = false;
   window.sessionToast?.clear();
 }
 
@@ -1599,6 +1785,34 @@ function showEntryPanel(role) {
   } else {
     document.querySelector("[data-role-choice='host']").focus();
   }
+}
+
+function selectedTemplate() {
+  return Array.from(elements.templateChoices)
+    .find(choice => choice.checked)?.value ?? "presentation";
+}
+
+function getTemplateProfile(template) {
+  return templateProfiles[template] ?? templateProfiles.custom;
+}
+
+function applySelectedTemplate() {
+  const template = selectedTemplate();
+  const profile = getTemplateProfile(template);
+  const isCustom = template === "custom";
+  elements.hostSetupPanel.dataset.template = template;
+  elements.templateChoices.forEach(choice => {
+    choice.closest(".template-option")?.classList.toggle(
+      "selected",
+      choice.checked);
+  });
+  elements.customMeetingTypeField.classList.toggle("hidden", !isCustom);
+  elements.customMeetingType.required = isCustom;
+  elements.templateHostSummary.textContent = profile.setupHost;
+  elements.templateMemberSummary.textContent = profile.setupMember;
+  document.querySelector("#meeting-title").placeholder = profile.titlePlaceholder;
+  document.querySelector("#meeting-objective").placeholder = profile.objectivePlaceholder;
+  document.querySelector("#success-criteria").placeholder = profile.criteriaPlaceholder;
 }
 
 function formatExpiry(value) {

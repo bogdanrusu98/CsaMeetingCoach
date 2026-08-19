@@ -249,7 +249,10 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
                 normalizedText))
             .ToArray();
 
-        var recommendations = CreateRecommendations(latestSegment, normalizedText);
+        var recommendations = CreateRecommendations(
+            latestSegment,
+            normalizedText,
+            context.Template);
         var recommendationEvaluations = (context.RecommendedTasks ?? [])
             .Where(item => item.Status == RecommendationStatus.Accepted)
             .Select(item => EvaluateRecommendation(item, latestSegment, normalizedText))
@@ -547,7 +550,8 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
 
     private static IReadOnlyList<RecommendedTaskProposal> CreateRecommendations(
         TranscriptSegment segment,
-        string normalizedText)
+        string normalizedText,
+        SessionTemplateKind template)
     {
         if (!CommitmentCues.Any(normalizedText.Contains)
             && !CustomerNeedCues.Any(normalizedText.Contains)
@@ -562,11 +566,31 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
             topic = string.Concat(topic.AsSpan(0, 122), "...");
         }
 
+        var (titlePrefix, rationale) = template switch
+        {
+            SessionTemplateKind.Presentation => (
+                "Clarify for the audience",
+                "Presentation coaching uses this explicit point to improve narrative clarity, audience relevance, and the final takeaway."),
+            SessionTemplateKind.Workshop => (
+                "Facilitate the group on",
+                "Workshop coaching uses this explicit point to surface perspectives, reach a decision, or identify an owner."),
+            SessionTemplateKind.Training => (
+                "Teach and check understanding",
+                "Training coaching uses this explicit point to add explanation, an example, practice, or an understanding check."),
+            SessionTemplateKind.Custom => (
+                "Advance the configured objective",
+                "Custom coaching uses this explicit point only to advance the host-configured objective and success criteria."),
+            SessionTemplateKind.CsaVbd => (
+                "Discuss next",
+                "CSA / VBD coaching uses this explicit need, question, or next step to advance customer discovery and a useful outcome."),
+            _ => throw new ArgumentOutOfRangeException(nameof(template), template, null)
+        };
+
         return
         [
             new(
-                $"Discuss next: {topic}",
-                "Addressing this explicit need, question, or next step helps the customer get a clear, useful outcome during the meeting.",
+                $"{titlePrefix}: {topic}",
+                rationale,
                 0.86,
                 [segment.Id])
         ];

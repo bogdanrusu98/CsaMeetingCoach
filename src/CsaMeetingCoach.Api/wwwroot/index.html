@@ -13,8 +13,8 @@
     })();
   </script>
   <link rel="stylesheet"
-        href="vendor/react-toastify.bundle.css?v=11.1.0-20260819b">
-  <link rel="stylesheet" href="styles.css?v=20260819b">
+        href="vendor/react-toastify.bundle.css?v=11.1.0-20260819c">
+  <link rel="stylesheet" href="styles.css?v=20260819c">
 </head>
 <body>
   <main class="app-shell">
@@ -70,31 +70,71 @@
           <p>The template shapes the checklist and AI behavior. You can add knowledge after creation.</p>
         </div>
         <form id="session-form" class="setup-form commercial-form">
-          <div class="field-grid commercial-fields">
-            <label>
-              Host display name
-              <input id="host-display-name" required maxlength="80" value="Host">
-            </label>
-            <label>
-              Session template
-              <select id="session-template">
-                <option value="presentation">Presentation</option>
-                <option value="workshop">Workshop</option>
-                <option value="training">Training</option>
-                <option value="custom">Custom</option>
-                <option value="csaVbd">CSA / VBD</option>
-              </select>
-            </label>
+          <label>
+            Host display name
+            <input id="host-display-name" required maxlength="80" autocomplete="name"
+                   placeholder="Your name">
+          </label>
+          <fieldset class="template-picker">
+            <legend>Choose a session type</legend>
+            <div class="template-grid">
+              <label class="template-option" data-template-option="presentation">
+                <input type="radio" name="session-template" value="presentation" checked>
+                <span class="template-option-icon" aria-hidden="true">P</span>
+                <span class="template-option-copy">
+                  <strong>Presentation</strong>
+                  <span>Shape the narrative, examples, questions, and takeaway.</span>
+                </span>
+              </label>
+              <label class="template-option" data-template-option="workshop">
+                <input type="radio" name="session-template" value="workshop">
+                <span class="template-option-icon" aria-hidden="true">W</span>
+                <span class="template-option-copy">
+                  <strong>Workshop</strong>
+                  <span>Drive participation, decisions, owners, and open items.</span>
+                </span>
+              </label>
+              <label class="template-option" data-template-option="training">
+                <input type="radio" name="session-template" value="training">
+                <span class="template-option-icon" aria-hidden="true">T</span>
+                <span class="template-option-copy">
+                  <strong>Training</strong>
+                  <span>Teach with examples, practice, checks, and recap.</span>
+                </span>
+              </label>
+              <label class="template-option" data-template-option="custom">
+                <input type="radio" name="session-template" value="custom">
+                <span class="template-option-icon" aria-hidden="true">C</span>
+                <span class="template-option-copy">
+                  <strong>Custom</strong>
+                  <span>Follow only your configured objective and criteria.</span>
+                </span>
+              </label>
+              <label class="template-option" data-template-option="csaVbd">
+                <input type="radio" name="session-template" value="csaVbd">
+                <span class="template-option-icon" aria-hidden="true">A</span>
+                <span class="template-option-copy">
+                  <strong>CSA / VBD</strong>
+                  <span>Focus on discovery, Azure fit, value, risks, and next actions.</span>
+                </span>
+              </label>
+            </div>
+          </fieldset>
+          <div id="template-behavior-summary" class="template-behavior-summary"
+               aria-live="polite">
+            <p><strong>Host AI</strong><span id="template-host-summary"></span></p>
+            <p><strong>Member alerts</strong><span id="template-member-summary"></span></p>
           </div>
           <label>
             Session title
             <input id="meeting-title" required maxlength="120"
-                   value="Cloud modernization workshop">
+                   placeholder="Name this session">
           </label>
           <div class="field-grid commercial-fields">
-            <label>
-              Session type
-              <input id="meeting-type" required maxlength="80" value="Workshop">
+            <label id="custom-meeting-type-field" class="hidden">
+              Custom session type
+              <input id="custom-meeting-type" maxlength="80"
+                     placeholder="e.g. Design review">
             </label>
             <label>
               Member alert mode
@@ -107,13 +147,13 @@
           </div>
           <label>
             Objective
-            <textarea id="meeting-objective" required maxlength="600">Align participants on the target outcome, constraints, and next actions.</textarea>
+            <textarea id="meeting-objective" required maxlength="600"
+                      placeholder="Describe the outcome this session should achieve"></textarea>
           </label>
           <label>
             Success criteria <span class="field-hint">one per line</span>
-            <textarea id="success-criteria">Confirm the desired outcome
-Capture decisions and open questions
-Define owners and next actions</textarea>
+            <textarea id="success-criteria"
+                      placeholder="Add the observable outcomes that indicate success"></textarea>
           </label>
           <button type="submit" class="button primary full-width">Create secure session</button>
         </form>
@@ -184,6 +224,17 @@ Define owners and next actions</textarea>
               Expires <time id="session-expiry"></time>. The session and all knowledge
               are then deleted.
             </p>
+            <div class="participant-presence" aria-labelledby="participant-presence-title">
+              <div class="participant-presence-heading">
+                <div>
+                  <p class="eyebrow">Session audience</p>
+                  <h3 id="participant-presence-title">Members joined</h3>
+                </div>
+                <span id="host-member-count" class="count-badge">0</span>
+              </div>
+              <div id="host-participant-list" class="participant-list empty-state"
+                   aria-live="polite">No members have joined yet.</div>
+            </div>
           </article>
 
           <article class="knowledge-card" aria-labelledby="knowledge-title">
@@ -284,7 +335,7 @@ Define owners and next actions</textarea>
           </article>
 
           <article class="focus-card" aria-labelledby="next-discussion-heading">
-            <div class="section-label"><span class="spark" aria-hidden="true">✦</span>Host guidance</div>
+            <div id="focus-section-label" class="section-label"><span class="spark" aria-hidden="true">✦</span>Host guidance</div>
             <h2 id="next-discussion-heading" class="visually-hidden">Host guidance</h2>
             <div id="recommendations" class="recommendation-list empty-state" aria-live="polite">
               Listening for explicit discussion to suggest what to cover next.
@@ -294,7 +345,7 @@ Define owners and next actions</textarea>
           <article id="live-plan" class="progress-card" aria-labelledby="live-plan-heading">
             <div class="progress-header">
               <div>
-                <p class="eyebrow">Session progress</p>
+                <p id="plan-section-label" class="eyebrow">Session progress</p>
                 <h2 id="live-plan-heading">Evidence-backed plan</h2>
               </div>
               <span id="progress-label" class="progress-count" aria-live="polite">0/0</span>
@@ -307,7 +358,7 @@ Define owners and next actions</textarea>
           <article class="progress-card member-alert-review" aria-labelledby="alert-review-heading">
             <div class="progress-header">
               <div>
-                <p class="eyebrow">Member experience</p>
+                <p id="alert-review-label" class="eyebrow">Member experience</p>
                 <h2 id="alert-review-heading">Learning alert review</h2>
               </div>
             </div>
@@ -337,8 +388,8 @@ Define owners and next actions</textarea>
         </p>
         <div class="member-alert-heading">
           <div>
-            <p class="eyebrow">Live learning layer</p>
-            <h2>Definitions and useful context</h2>
+            <p id="member-alert-layer-label" class="eyebrow">Live learning layer</p>
+            <h2 id="member-alert-layer-heading">Definitions and useful context</h2>
           </div>
           <span id="member-alert-count" class="count-badge">0</span>
         </div>
@@ -392,7 +443,7 @@ Define owners and next actions</textarea>
        class="toast-fallback hidden"></div>
   <script src="https://res.cdn.office.net/teams-js/2.31.0/js/MicrosoftTeams.min.js"></script>
   <script src="vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0"></script>
-  <script src="vendor/react-toastify.bundle.js?v=11.1.0-20260819b"></script>
-  <script src="app.js?v=20260819b"></script>
+  <script src="vendor/react-toastify.bundle.js?v=11.1.0-20260819c"></script>
+  <script src="app.js?v=20260819c"></script>
 </body>
 </html>
