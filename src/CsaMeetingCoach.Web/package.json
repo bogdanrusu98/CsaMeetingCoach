@@ -1,0 +1,21 @@
+{
+  "name": "csa-meeting-coach-toast-ui",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/toast-bridge.jsx --bundle --minify --format=iife --target=es2020 --outfile=../CsaMeetingCoach.Api/wwwroot/vendor/react-toastify.bundle.js",
+    "validate:supply-chain": "node scripts/validate-package-lock.mjs"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-toastify": "11.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

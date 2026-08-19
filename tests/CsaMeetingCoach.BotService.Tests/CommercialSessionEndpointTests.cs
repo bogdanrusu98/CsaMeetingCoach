@@ -6,6 +6,10 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using CsaMeetingCoach.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
+using UglyToad.PdfPig.Content;
+using UglyToad.PdfPig.Core;
+using UglyToad.PdfPig.Fonts.Standard14Fonts;
+using UglyToad.PdfPig.Writer;
 
 namespace CsaMeetingCoach.BotService.Tests;
 
@@ -119,6 +123,45 @@ public sealed class CommercialSessionEndpointTests
         Assert.Equal(
             "The session code is invalid or expired.",
             payload.GetProperty("detail").GetString());
+    }
+
+    [Fact]
+    public async Task HostCanUploadReadablePdfKnowledge()
+    {
+        using var factory = new CoachApiFactory();
+        using var host = CreateClient(factory);
+        var created = await CreateHostSessionAsync(host);
+        var builder = new PdfDocumentBuilder();
+        var page = builder.AddPage(PageSize.A4);
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+        page.AddText(
+            "Availability zones isolate datacenter-level failures.",
+            12,
+            new PdfPoint(40, 760),
+            font);
+
+        using var upload = new MultipartFormDataContent();
+        var file = new ByteArrayContent(builder.Build());
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+        upload.Add(file, "file", "availability.pdf");
+        upload.Add(new StringContent("memberEligible"), "visibility");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/sessions/{created.Session.Id:D}/knowledge/files")
+        {
+            Content = upload
+        };
+        request.Headers.Add("X-Session-Request", "1");
+
+        using var response = await host.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var session = (await response.Content.ReadFromJsonAsync<MeetingSessionState>(
+            JsonOptions))!;
+        var source = Assert.Single(session.KnowledgeSources);
+        Assert.Equal("availability.pdf", source.DisplayName);
+        Assert.Equal(KnowledgeSourceStatus.Ready, source.Status);
+        Assert.Equal(KnowledgeSourceVisibility.MemberEligible, source.Visibility);
     }
 
     [Fact]

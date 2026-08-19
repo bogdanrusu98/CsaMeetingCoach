@@ -3,6 +3,10 @@ using System.IO.Compression;
 using System.Text;
 using CsaMeetingCoach.Api;
 using CsaMeetingCoach.Contracts;
+using UglyToad.PdfPig.Content;
+using UglyToad.PdfPig.Core;
+using UglyToad.PdfPig.Fonts.Standard14Fonts;
+using UglyToad.PdfPig.Writer;
 
 namespace CsaMeetingCoach.Tests;
 
@@ -106,6 +110,123 @@ public sealed class SessionKnowledgeStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task StorePdf_ExtractsReadableText()
+    {
+        var builder = new PdfDocumentBuilder();
+        var page = builder.AddPage(PageSize.A4);
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+        page.AddText(
+            "Recovery Time Objective defines the target restoration time.",
+            12,
+            new PdfPoint(40, 760),
+            font);
+        var pdfBytes = builder.Build();
+        var store = new LocalSessionKnowledgeStore(
+            _directory,
+            new RecordingScanner(KnowledgeMalwareScanResult.Clean));
+        var sessionId = Guid.NewGuid();
+        var sourceId = Guid.NewGuid();
+        await using var content = new MemoryStream(pdfBytes);
+
+        await store.StoreFileAsync(
+            sessionId,
+            sourceId,
+            "recovery.pdf",
+            KnowledgeSourceVisibility.MemberEligible,
+            "recovery.pdf",
+            "application/pdf",
+            content,
+            CancellationToken.None);
+        var snippet = Assert.Single(await store.ReadAsync(
+            sessionId,
+            [sourceId],
+            CancellationToken.None));
+
+        Assert.Contains(
+            "target restoration time",
+            snippet.Content,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task StoreMalformedPdf_FailsClosed()
+    {
+        var store = new LocalSessionKnowledgeStore(
+            _directory,
+            new RecordingScanner(KnowledgeMalwareScanResult.Clean));
+        await using var content = new MemoryStream(
+            Encoding.UTF8.GetBytes("%PDF-1.7 malformed"));
+
+        await Assert.ThrowsAsync<KnowledgeRejectedException>(() =>
+            store.StoreFileAsync(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                "malformed.pdf",
+                KnowledgeSourceVisibility.HostPrivate,
+                "malformed.pdf",
+                "application/pdf",
+                content,
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task StoreImageOnlyPdf_FailsClosed()
+    {
+        var builder = new PdfDocumentBuilder();
+        builder.AddPage(PageSize.A4);
+        var store = new LocalSessionKnowledgeStore(
+            _directory,
+            new RecordingScanner(KnowledgeMalwareScanResult.Clean));
+        await using var content = new MemoryStream(builder.Build());
+
+        var exception = await Assert.ThrowsAsync<KnowledgeRejectedException>(() =>
+            store.StoreFileAsync(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                "scan.pdf",
+                KnowledgeSourceVisibility.HostPrivate,
+                "scan.pdf",
+                "application/pdf",
+                content,
+                CancellationToken.None));
+
+        Assert.Contains(
+            "Image-only PDFs require OCR",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PdfExtraction_DoesNotHoldSessionMutationLock()
+    {
+        var extractor = new BlockingPdfExtractor();
+        var store = new LocalSessionKnowledgeStore(
+            _directory,
+            new RecordingScanner(KnowledgeMalwareScanResult.Clean),
+            extractor);
+        var sessionId = Guid.NewGuid();
+        await using var content = new MemoryStream(Encoding.ASCII.GetBytes("%PDF-1.7"));
+        var storeTask = store.StoreFileAsync(
+            sessionId,
+            Guid.NewGuid(),
+            "blocked.pdf",
+            KnowledgeSourceVisibility.HostPrivate,
+            "blocked.pdf",
+            "application/pdf",
+            content,
+            CancellationToken.None);
+        await extractor.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await store.DeleteSessionArtifactsAsync(
+                sessionId,
+                CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(2));
+
+        extractor.Release.TrySetResult();
+        await Assert.ThrowsAnyAsync<Exception>(() => storeTask);
+    }
+
+    [Fact]
     public async Task OpenXmlExpansion_UsesActualDecompressedByteLimit()
     {
         var store = new LocalSessionKnowledgeStore(
@@ -188,6 +309,23 @@ public sealed class SessionKnowledgeStoreTests : IDisposable
         {
             ScannedPaths.Add(path);
             return Task.FromResult(result);
+        }
+    }
+
+    private sealed class BlockingPdfExtractor : IPdfKnowledgeExtractor
+    {
+        public TaskCompletionSource Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<string> ExtractAsync(
+            string path,
+            CancellationToken cancellationToken)
+        {
+            Started.TrySetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+            return "Extracted PDF text.";
         }
     }
 }

@@ -42,11 +42,14 @@ public sealed record StoredKnowledgeContent(
 
 public sealed class LocalSessionKnowledgeStore(
     string rootDirectory,
-    IKnowledgeMalwareScanner malwareScanner) : ISessionKnowledgeStore
+    IKnowledgeMalwareScanner malwareScanner,
+    IPdfKnowledgeExtractor? pdfExtractor = null) : ISessionKnowledgeStore
 {
     private static readonly JsonSerializerOptions JsonOptions =
         new(JsonSerializerDefaults.Web) { WriteIndented = true };
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _sessionLocks = new();
+    private readonly IPdfKnowledgeExtractor _pdfExtractor =
+        pdfExtractor ?? new InProcessPdfKnowledgeExtractor();
 
     public async Task<StoredKnowledgeContent> StoreFileAsync(
         Guid sessionId,
@@ -61,14 +64,16 @@ public sealed class LocalSessionKnowledgeStore(
         var extension = KnowledgeTextExtractor.ValidateExtension(fileName);
         var sessionDirectory = GetSessionDirectory(sessionId);
         var finalDirectory = GetSourceDirectory(sessionId, sourceId);
-        var temporaryDirectory = string.Concat(finalDirectory, ".", Guid.NewGuid().ToString("N"), ".tmp");
+        var quarantineDirectory = GetQuarantineSessionDirectory(sessionId);
+        var temporaryDirectory = Path.Combine(
+            quarantineDirectory,
+            string.Concat(sourceId.ToString("N"), ".", Guid.NewGuid().ToString("N"), ".tmp"));
         var originalPath = Path.Combine(temporaryDirectory, string.Concat("original", extension));
         var gate = _sessionLocks.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
 
-        await gate.WaitAsync(cancellationToken);
         try
         {
-            Directory.CreateDirectory(sessionDirectory);
+            Directory.CreateDirectory(quarantineDirectory);
             Directory.CreateDirectory(temporaryDirectory);
             var sizeBytes = await CopyWithLimitAsync(
                 source,
@@ -93,6 +98,7 @@ public sealed class LocalSessionKnowledgeStore(
             var extractedText = await KnowledgeTextExtractor.ExtractFileAsync(
                 originalPath,
                 extension,
+                _pdfExtractor,
                 cancellationToken);
             await WriteContentAndMetadataAsync(
                 temporaryDirectory,
@@ -103,22 +109,34 @@ public sealed class LocalSessionKnowledgeStore(
                     DateTimeOffset.UtcNow),
                 extractedText,
                 cancellationToken);
-            Directory.Move(temporaryDirectory, finalDirectory);
-            return new StoredKnowledgeContent(sizeBytes, NormalizeMediaType(mediaType));
-        }
-        finally
-        {
+
+            await gate.WaitAsync(cancellationToken);
             try
             {
-                if (Directory.Exists(temporaryDirectory))
+                Directory.CreateDirectory(sessionDirectory);
+                if (Directory.Exists(finalDirectory))
                 {
-                    Directory.Delete(temporaryDirectory, recursive: true);
+                    throw new InvalidOperationException(
+                        $"Knowledge source {sourceId} already exists.");
                 }
+
+                Directory.Move(temporaryDirectory, finalDirectory);
             }
             finally
             {
                 gate.Release();
             }
+
+            return new StoredKnowledgeContent(sizeBytes, NormalizeMediaType(mediaType));
+        }
+        finally
+        {
+            if (Directory.Exists(temporaryDirectory))
+            {
+                Directory.Delete(temporaryDirectory, recursive: true);
+            }
+
+            TryDeleteEmptyDirectory(quarantineDirectory);
         }
     }
 
@@ -131,13 +149,15 @@ public sealed class LocalSessionKnowledgeStore(
         CancellationToken cancellationToken)
     {
         var finalDirectory = GetSourceDirectory(sessionId, sourceId);
-        var temporaryDirectory = string.Concat(finalDirectory, ".", Guid.NewGuid().ToString("N"), ".tmp");
+        var quarantineDirectory = GetQuarantineSessionDirectory(sessionId);
+        var temporaryDirectory = Path.Combine(
+            quarantineDirectory,
+            string.Concat(sourceId.ToString("N"), ".", Guid.NewGuid().ToString("N"), ".tmp"));
         var gate = _sessionLocks.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
 
-        await gate.WaitAsync(cancellationToken);
         try
         {
-            Directory.CreateDirectory(GetSessionDirectory(sessionId));
+            Directory.CreateDirectory(quarantineDirectory);
             Directory.CreateDirectory(temporaryDirectory);
             await WriteContentAndMetadataAsync(
                 temporaryDirectory,
@@ -148,21 +168,32 @@ public sealed class LocalSessionKnowledgeStore(
                     DateTimeOffset.UtcNow),
                 KnowledgeTextExtractor.NormalizeAndLimit(content),
                 cancellationToken);
-            Directory.Move(temporaryDirectory, finalDirectory);
-        }
-        finally
-        {
+
+            await gate.WaitAsync(cancellationToken);
             try
             {
-                if (Directory.Exists(temporaryDirectory))
+                Directory.CreateDirectory(GetSessionDirectory(sessionId));
+                if (Directory.Exists(finalDirectory))
                 {
-                    Directory.Delete(temporaryDirectory, recursive: true);
+                    throw new InvalidOperationException(
+                        $"Knowledge source {sourceId} already exists.");
                 }
+
+                Directory.Move(temporaryDirectory, finalDirectory);
             }
             finally
             {
                 gate.Release();
             }
+        }
+        finally
+        {
+            if (Directory.Exists(temporaryDirectory))
+            {
+                Directory.Delete(temporaryDirectory, recursive: true);
+            }
+
+            TryDeleteEmptyDirectory(quarantineDirectory);
         }
     }
 
@@ -254,6 +285,7 @@ public sealed class LocalSessionKnowledgeStore(
             {
                 Directory.Delete(path, recursive: true);
             }
+            DeleteMatchingQuarantineSources(sessionId, sourceId);
         }
         finally
         {
@@ -273,6 +305,11 @@ public sealed class LocalSessionKnowledgeStore(
             if (Directory.Exists(path))
             {
                 Directory.Delete(path, recursive: true);
+            }
+            var quarantinePath = GetQuarantineSessionDirectory(sessionId);
+            if (Directory.Exists(quarantinePath))
+            {
+                Directory.Delete(quarantinePath, recursive: true);
             }
         }
         finally
@@ -339,6 +376,46 @@ public sealed class LocalSessionKnowledgeStore(
     private string GetSourceDirectory(Guid sessionId, Guid sourceId) =>
         Path.Combine(GetSessionDirectory(sessionId), sourceId.ToString("N"));
 
+    private string GetQuarantineSessionDirectory(Guid sessionId) =>
+        Path.Combine(rootDirectory, ".quarantine", sessionId.ToString("N"));
+
+    private void DeleteMatchingQuarantineSources(Guid sessionId, Guid sourceId)
+    {
+        var directory = GetQuarantineSessionDirectory(sessionId);
+        if (!Directory.Exists(directory))
+        {
+            return;
+        }
+
+        foreach (var path in Directory.EnumerateDirectories(
+            directory,
+            string.Concat(sourceId.ToString("N"), ".*.tmp")))
+        {
+            Directory.Delete(path, recursive: true);
+        }
+        TryDeleteEmptyDirectory(directory);
+    }
+
+    private static void TryDeleteEmptyDirectory(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path)
+                && !Directory.EnumerateFileSystemEntries(path).Any())
+            {
+                Directory.Delete(path);
+            }
+        }
+        catch (IOException)
+        {
+            // A concurrent upload may still be using the quarantine directory.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Cleanup will retry the session quarantine directory later.
+        }
+    }
+
     private static string? NormalizeMediaType(string? mediaType)
     {
         if (string.IsNullOrWhiteSpace(mediaType))
@@ -366,6 +443,7 @@ internal static partial class KnowledgeTextExtractor
             ".html",
             ".json",
             ".md",
+            ".pdf",
             ".pptx",
             ".txt",
             ".xlsx"
@@ -385,7 +463,7 @@ internal static partial class KnowledgeTextExtractor
         if (!SupportedExtensions.Contains(extension))
         {
             throw new ArgumentException(
-                "Supported knowledge files are DOCX, HTML, JSON, Markdown, PPTX, TXT, and XLSX.",
+                "Supported knowledge files are DOCX, HTML, JSON, Markdown, PDF, PPTX, TXT, and XLSX.",
                 nameof(fileName));
         }
 
@@ -395,6 +473,7 @@ internal static partial class KnowledgeTextExtractor
     public static async Task<string> ExtractFileAsync(
         string path,
         string extension,
+        IPdfKnowledgeExtractor pdfExtractor,
         CancellationToken cancellationToken)
     {
         var text = extension switch
@@ -415,6 +494,7 @@ internal static partial class KnowledgeTextExtractor
                     && entry.EndsWith(".xml", StringComparison.OrdinalIgnoreCase),
                 cancellationToken),
             ".html" => ExtractHtml(await ReadTextAsync(path, cancellationToken)),
+            ".pdf" => await pdfExtractor.ExtractAsync(path, cancellationToken),
             _ => await ReadTextAsync(path, cancellationToken)
         };
         return NormalizeAndLimit(text);

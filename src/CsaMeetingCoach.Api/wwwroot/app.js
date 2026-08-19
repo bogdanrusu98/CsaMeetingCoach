@@ -34,8 +34,11 @@ const state = {
     lastStage: "Waiting for microphone activity.",
     lastEventAt: null
   },
-  contextualCardTimers: new Map(),
+  activeContextualToastIds: new Set(),
   dismissedContextualCardIds: new Set(),
+  notifiedRecommendationIds: new Set(),
+  notifiedWarningMessages: new Set(),
+  fallbackToastTimer: null,
   systemAudioCaptureAvailable: Boolean(
     navigator.mediaDevices?.getDisplayMedia
       && (window.AudioContext || window.webkitAudioContext))
@@ -76,7 +79,6 @@ const elements = {
   diagnosticsDialog: document.querySelector("#diagnostics-dialog"),
   openDiagnostics: document.querySelector("#open-diagnostics"),
   closeDiagnostics: document.querySelector("#close-diagnostics"),
-  contextualCards: document.querySelector("#contextual-cards"),
   hostSessionCode: document.querySelector("#host-session-code"),
   sessionExpiry: document.querySelector("#session-expiry"),
   sessionTemplateLabel: document.querySelector("#session-template-label"),
@@ -90,7 +92,7 @@ const elements = {
   memberSessionExpiry: document.querySelector("#member-session-expiry"),
   memberAlertCount: document.querySelector("#member-alert-count"),
   memberAlertList: document.querySelector("#member-alert-list"),
-  toast: document.querySelector("#toast")
+  toastFallback: document.querySelector("#toast-fallback")
 };
 
 function applyTeamsTheme(theme) {
@@ -123,6 +125,14 @@ async function initializeTeamsContext() {
 
 const teamsContextReady = initializeTeamsContext();
 initializeBrowserSpeechAvailability();
+window.addEventListener("session-toast-closed", event => {
+  if (event.detail?.source !== "contextual" || !event.detail.sourceId) {
+    return;
+  }
+
+  state.activeContextualToastIds.delete(event.detail.sourceId);
+  state.dismissedContextualCardIds.add(event.detail.sourceId);
+});
 
 document.querySelectorAll("[data-role-choice]").forEach(button => {
   button.addEventListener("click", () => showEntryPanel(button.dataset.roleChoice));
@@ -160,23 +170,23 @@ elements.microphoneToggle.addEventListener("click", async () => {
     await queueMicrophoneOperation(async () => {
       if (state.microphoneRecognizer) {
         await stopMicrophone();
-        showToast("Microphone transcription stopped.");
+        showToast("Microphone transcription stopped.", "success");
       } else {
         await startMicrophone();
-        showToast("Microphone transcription started.");
+        showToast("Microphone transcription started.", "success");
       }
     });
   } catch (error) {
-    showToast(normalizeMicrophoneError(error));
+    showToast(normalizeMicrophoneError(error), "error");
   }
 });
 elements.confirmMicrophone.addEventListener("click", async () => {
   try {
     await queueMicrophoneOperation(startMicrophone);
     elements.microphoneUnlock.classList.add("hidden");
-    showToast("Microphone transcription started.");
+    showToast("Microphone transcription started.", "success");
   } catch (error) {
-    showToast(normalizeMicrophoneError(error));
+    showToast(normalizeMicrophoneError(error), "error");
   }
 });
 elements.closeMicrophoneUnlock.addEventListener("click", () => {
@@ -194,17 +204,6 @@ elements.diagnosticsDialog.addEventListener("click", event => {
     elements.diagnosticsDialog.close();
   }
 });
-elements.contextualCards.addEventListener("click", event => {
-  const button = event.target instanceof Element
-    ? event.target.closest("button[data-contextual-card-dismiss]")
-    : null;
-  if (!button || !elements.contextualCards.contains(button)) {
-    return;
-  }
-
-  dismissContextualCard(button.dataset.contextualCardDismiss);
-});
-
 elements.sessionForm.addEventListener("submit", async event => {
   event.preventDefault();
   const successCriteria = document.querySelector("#success-criteria").value
@@ -287,7 +286,7 @@ elements.knowledgeFileForm.addEventListener("submit", async event => {
       { method: "POST", body: form });
     elements.knowledgeFileForm.reset();
     render();
-    showToast("Knowledge file scanned and added.");
+    showToast("Knowledge file scanned and added.", "success");
   });
 });
 
@@ -305,7 +304,7 @@ elements.knowledgeLinkForm.addEventListener("submit", async event => {
       });
     elements.knowledgeLinkForm.reset();
     render();
-    showToast("Knowledge link validated and added.");
+    showToast("Knowledge link validated and added.", "success");
   });
 });
 
@@ -322,7 +321,7 @@ elements.knowledgeList.addEventListener("click", async event => {
       `/api/sessions/${state.session.id}/knowledge/${button.dataset.deleteKnowledge}`,
       { method: "DELETE" });
     render();
-    showToast("Knowledge source removed.");
+    showToast("Knowledge source removed.", "success");
   });
 });
 
@@ -350,7 +349,7 @@ document.querySelector("#complete-meeting").addEventListener("click", async even
       method: "POST"
     });
     render();
-    showToast("Meeting session completed.");
+    showToast("Meeting session completed.", "success");
   });
 });
 
@@ -425,7 +424,9 @@ function connectEvents(sessionId) {
         render();
       }
     } catch (error) {
-      showToast(`The meeting state could not be refreshed: ${error.message}`);
+      showToast(
+        `The meeting state could not be refreshed: ${error.message}`,
+        "error");
     }
   });
   state.eventSource.addEventListener("session", event => {
@@ -438,7 +439,7 @@ function connectEvents(sessionId) {
         cancelMicrophoneTokenRequests();
         state.speechPublishAbortController?.abort();
         void queueMicrophoneOperation(stopMicrophone).catch(error => {
-          showToast(`Microphone could not be stopped: ${error.message}`);
+          showToast(`Microphone could not be stopped: ${error.message}`, "error");
         });
       }
     }
@@ -566,6 +567,7 @@ function renderHost() {
 
   const proposedRecommendations = (session.recommendedTasks ?? []).filter(
     task => task.status === "proposed");
+  renderRecommendationToasts(proposedRecommendations);
   if (proposedRecommendations.length === 0) {
     elements.recommendations.className = session.isAnalyzing
       ? "stack"
@@ -618,6 +620,7 @@ function renderHost() {
   elements.warningsPanel.classList.toggle(
     "hidden",
     (session.warnings ?? []).length === 0);
+  renderWarningToasts(session.warnings ?? []);
   elements.warnings.innerHTML = (session.warnings ?? [])
     .map(warning => `<div class="warning">${escapeHtml(warning)}</div>`)
     .join("");
@@ -692,101 +695,65 @@ function renderKnowledge(sources) {
 }
 
 function renderContextualCards(cards) {
-  const candidates = cards.filter(
-    card => !state.dismissedContextualCardIds.has(card.id));
-  const overflow = candidates.slice(0, Math.max(0, candidates.length - 3));
-  overflow.forEach(card => state.dismissedContextualCardIds.add(card.id));
-  const visibleCards = candidates.slice(-3);
-  const visibleIds = new Set(visibleCards.map(card => card.id));
+  const currentIds = new Set(cards
+    .filter(card => card.memberAlertStatus !== "hidden")
+    .map(card => card.id));
+  for (const activeId of state.activeContextualToastIds) {
+    if (!currentIds.has(activeId)) {
+      window.sessionToast?.dismiss(`contextual-${activeId}`);
+      state.activeContextualToastIds.delete(activeId);
+    }
+  }
 
-  elements.contextualCards
-    .querySelectorAll("[data-contextual-card-id]")
-    .forEach(cardElement => {
-      if (!visibleIds.has(cardElement.dataset.contextualCardId)) {
-        cardElement.remove();
+  cards
+    .filter(card => card.memberAlertStatus !== "hidden")
+    .filter(card => !state.dismissedContextualCardIds.has(card.id))
+    .forEach(card => {
+      if (state.activeContextualToastIds.has(card.id)) {
+        return;
       }
-    });
 
-  visibleCards.forEach(card => {
-    if (elements.contextualCards.querySelector(
-      `[data-contextual-card-id="${CSS.escape(card.id)}"]`)) {
+      state.activeContextualToastIds.add(card.id);
+      showToast(card.content, String(card.kind).toLowerCase(), {
+        autoClose: 14000,
+        id: `contextual-${card.id}`,
+        source: "contextual",
+        sourceId: card.id,
+        title: card.title
+      });
+    });
+}
+
+function renderRecommendationToasts(recommendations) {
+  recommendations.forEach(recommendation => {
+    if (state.notifiedRecommendationIds.has(recommendation.id)) {
       return;
     }
 
-    const kind = String(card.kind).toLowerCase() === "definition"
-      ? "definition"
-      : "hint";
-    const kindLabel = kind === "definition" ? "📖 Definition" : "💡 Hint";
-    const cardElement = document.createElement("article");
-    cardElement.className = `contextual-card ${kind}`;
-    cardElement.dataset.contextualCardId = card.id;
-    cardElement.dataset.kind = kind;
-    cardElement.innerHTML = `
-      <div class="contextual-card-heading">
-        <span class="contextual-card-kind">${kindLabel}</span>
-        <button class="contextual-card-dismiss" type="button">&times;</button>
-      </div>
-      <strong class="contextual-card-title">${escapeHtml(card.title)}</strong>
-      <p>${escapeHtml(card.content)}</p>`;
-    const dismissButton = cardElement.querySelector(".contextual-card-dismiss");
-    dismissButton.dataset.contextualCardDismiss = card.id;
-    dismissButton.setAttribute("aria-label", `Dismiss ${card.title}`);
-    cardElement.addEventListener(
-      "pointerenter",
-      () => pauseContextualCardDismissal(card.id));
-    cardElement.addEventListener(
-      "pointerleave",
-      () => scheduleContextualCardDismissal(card.id));
-    cardElement.addEventListener(
-      "focusin",
-      () => pauseContextualCardDismissal(card.id));
-    cardElement.addEventListener(
-      "focusout",
-      () => window.setTimeout(
-        () => scheduleContextualCardDismissal(card.id),
-        0));
-    elements.contextualCards.append(cardElement);
-
-    scheduleContextualCardDismissal(card.id);
+    state.notifiedRecommendationIds.add(recommendation.id);
+    showToast(recommendation.rationale, "recommendation", {
+      autoClose: 16000,
+      id: `recommendation-${recommendation.id}`,
+      source: "recommendation",
+      sourceId: recommendation.id,
+      title: recommendation.title
+    });
   });
 }
 
-function scheduleContextualCardDismissal(cardId) {
-  pauseContextualCardDismissal(cardId);
-  const cardElement = elements.contextualCards.querySelector(
-    `[data-contextual-card-id="${CSS.escape(cardId)}"]`);
-  if (!cardElement
-      || cardElement.matches(":hover")
-      || cardElement.contains(document.activeElement)) {
-    return;
-  }
+function renderWarningToasts(warnings) {
+  warnings.forEach(warning => {
+    if (state.notifiedWarningMessages.has(warning)) {
+      return;
+    }
 
-  state.contextualCardTimers.set(
-    cardId,
-    window.setTimeout(() => dismissContextualCard(cardId), 25_000));
-}
-
-function pauseContextualCardDismissal(cardId) {
-  window.clearTimeout(state.contextualCardTimers.get(cardId));
-  state.contextualCardTimers.delete(cardId);
-}
-
-function dismissContextualCard(cardId) {
-  if (!cardId) {
-    return;
-  }
-
-  state.dismissedContextualCardIds.add(cardId);
-  window.clearTimeout(state.contextualCardTimers.get(cardId));
-  state.contextualCardTimers.delete(cardId);
-  const cardElement = elements.contextualCards.querySelector(
-    `[data-contextual-card-id="${CSS.escape(cardId)}"]`);
-  if (!cardElement) {
-    return;
-  }
-
-  cardElement.classList.add("leaving");
-  window.setTimeout(() => cardElement.remove(), 180);
+    state.notifiedWarningMessages.add(warning);
+    showToast(warning, "warning", {
+      id: `session-warning-${state.notifiedWarningMessages.size}`,
+      source: "session-warning",
+      title: "Session warning"
+    });
+  });
 }
 
 function renderContextualCardHistory(cards) {
@@ -804,8 +771,8 @@ function renderContextualCardHistory(cards) {
     .reverse()
     .map(card => {
       const kindLabel = String(card.kind).toLowerCase() === "definition"
-        ? "📖 Definition"
-        : "💡 Hint";
+        ? "Definition"
+        : "Hint";
       const deliveryStatus = card.memberAlertStatus ?? "published";
       const deliveryLabel = deliveryStatus === "pendingApproval"
         ? "Waiting for host"
@@ -839,14 +806,11 @@ function renderContextualCardHistory(cards) {
 }
 
 function resetContextualCards() {
-  state.contextualCardTimers.forEach(timer => window.clearTimeout(timer));
-  state.contextualCardTimers.clear();
+  state.activeContextualToastIds.clear();
   state.dismissedContextualCardIds.clear();
-  const label = elements.contextualCards.querySelector(".contextual-card-stack-label");
-  elements.contextualCards.replaceChildren();
-  if (label) {
-    elements.contextualCards.append(label);
-  }
+  state.notifiedRecommendationIds.clear();
+  state.notifiedWarningMessages.clear();
+  window.sessionToast?.clear();
 }
 
 async function startMicrophone() {
@@ -983,7 +947,7 @@ async function startMicrophone() {
       const detail = event.errorDetails?.trim();
       showToast(detail
         ? `Microphone recognition stopped: ${detail}`
-        : "Microphone recognition was canceled.");
+        : "Microphone recognition was canceled.", "error");
       void queueMicrophoneOperation(stopMicrophone);
     };
     recognizer.sessionStopped = () => {
@@ -1061,7 +1025,9 @@ async function stopMicrophone() {
     if (recognizer) {
       const stopped = await stopContinuousRecognition(recognizer);
       if (!stopped) {
-        showToast("Speech SDK did not confirm shutdown; microphone resources were closed.");
+        showToast(
+          "Speech SDK did not confirm shutdown; microphone resources were closed.",
+          "warning");
       }
       recognizer.close();
     }
@@ -1144,7 +1110,9 @@ function scheduleSpeechTokenRefresh(token, recognizer) {
           || state.microphoneRecognizer !== recognizer) {
         return;
       }
-      showToast(`Speech authorization could not be renewed: ${error.message}`);
+      showToast(
+        `Speech authorization could not be renewed: ${error.message}`,
+        "error");
       await queueMicrophoneOperation(stopMicrophone);
     } finally {
       if (state.microphoneRefreshAbortController === refreshAbortController) {
@@ -1196,7 +1164,9 @@ function enqueueSpeechSegment(text, speaker = state.microphoneSourceLabel) {
     .catch(error => {
       if (!abortController.signal.aborted) {
         recordSpeechDiagnostic("Coach API publish failed.", "publishFailures");
-        showToast(`A recognized segment could not be processed: ${error.message}`);
+        showToast(
+          `A recognized segment could not be processed: ${error.message}`,
+          "error");
       }
     });
 }
@@ -1267,7 +1237,9 @@ async function drainSpeechPublishQueue(abortController) {
 
   abortController?.abort();
   await queue;
-  showToast("Microphone stopped before all final speech segments could be uploaded.");
+  showToast(
+    "Microphone stopped before all final speech segments could be uploaded.",
+    "warning");
 }
 
 async function createMixedMeetingAudioCapture() {
@@ -1359,7 +1331,9 @@ function attachSystemAudioEndedHandler(capture) {
 
     capture.ended = true;
     cancelMicrophoneTokenRequests();
-    showToast("Shared meeting audio stopped. Speech recognition is stopping safely.");
+    showToast(
+      "Shared meeting audio stopped. Speech recognition is stopping safely.",
+      "warning");
     void queueMicrophoneOperation(stopMicrophone);
   };
 
@@ -1609,7 +1583,9 @@ async function handleSessionExpired() {
     render();
   }
   setConnectionStatus("Expired", "disconnected");
-  showToast("This session reached its 24-hour limit and access is closed.");
+  showToast(
+    "This session reached its 24-hour limit and access is closed.",
+    "warning");
 }
 
 function showEntryPanel(role) {
@@ -1654,7 +1630,7 @@ async function runWithButton(button, action) {
   try {
     await action();
   } catch (error) {
-    showToast(error.message);
+    showToast(error.message, "error");
   } finally {
     button.disabled = false;
     if (state.session) {
@@ -1663,10 +1639,37 @@ async function runWithButton(button, action) {
   }
 }
 
-function showToast(message) {
-  elements.toast.textContent = message;
-  elements.toast.classList.remove("hidden");
-  window.setTimeout(() => elements.toast.classList.add("hidden"), 4500);
+function showToast(message, kind = "info", options = {}) {
+  if (window.sessionToast) {
+    return window.sessionToast.show({
+      ...options,
+      kind,
+      message
+    });
+  }
+
+  elements.toastFallback.textContent = options.title
+    ? `${options.title}: ${message}`
+    : message;
+  const isError = kind === "error";
+  elements.toastFallback.setAttribute("role", isError ? "alert" : "status");
+  elements.toastFallback.setAttribute(
+    "aria-live",
+    isError ? "assertive" : "polite");
+  elements.toastFallback.dataset.kind = kind;
+  elements.toastFallback.classList.remove("hidden");
+  window.clearTimeout(state.fallbackToastTimer);
+  state.fallbackToastTimer = null;
+  if (options.autoClose !== false) {
+    const defaultDuration = isError ? 9000 : kind === "warning" ? 9000 : 5000;
+    const duration = Number.isFinite(options.autoClose)
+      ? options.autoClose
+      : defaultDuration;
+    state.fallbackToastTimer = window.setTimeout(
+      () => elements.toastFallback.classList.add("hidden"),
+      duration);
+  }
+  return null;
 }
 
 function escapeHtml(value) {
@@ -1685,7 +1688,8 @@ function resolveSourceTranscript(task, transcript) {
 window.addEventListener("pagehide", () => {
   window.clearTimeout(state.microphoneRefreshTimer);
   window.clearTimeout(state.sessionExpiryTimer);
-  state.contextualCardTimers.forEach(timer => window.clearTimeout(timer));
+  window.clearTimeout(state.fallbackToastTimer);
+  window.sessionToast?.clear();
   cancelMicrophoneTokenRequests();
   state.speechPublishAbortController?.abort();
   state.microphoneRecognizer?.close();

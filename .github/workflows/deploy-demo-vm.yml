@@ -141,6 +141,28 @@ jobs:
         with:
           dotnet-version: 8.0.423
 
+      - name: Install Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.19.0
+          cache: npm
+          cache-dependency-path: src/CsaMeetingCoach.Web/package-lock.json
+          registry-url: https://packagefeedproxy.microsoft.io/npm/
+
+      - name: Build React Toastify UI
+        shell: powershell
+        working-directory: .\src\CsaMeetingCoach.Web
+        env:
+          NPM_CONFIG_REGISTRY: https://packagefeedproxy.microsoft.io/npm/
+        run: |
+          $registry = (npm config get registry).TrimEnd("/")
+          if ($registry -ne "https://packagefeedproxy.microsoft.io/npm") {
+            throw "npm registry must use the Microsoft CFS feed."
+          }
+          npm run validate:supply-chain --ignore-scripts
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build --ignore-scripts
+
       - name: Restore
         shell: powershell
         run: dotnet restore .\CsaMeetingCoach.sln
@@ -158,8 +180,10 @@ jobs:
         run: |
           $publishDirectory = "$env:RUNNER_TEMP\csa-meeting-coach-publish"
           $botPublishDirectory = "$env:RUNNER_TEMP\csa-meeting-coach-bot-publish"
+          $pdfPublishDirectory = "$env:RUNNER_TEMP\csa-meeting-coach-pdf-publish"
           Remove-Item $publishDirectory -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item $botPublishDirectory -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item $pdfPublishDirectory -Recurse -Force -ErrorAction SilentlyContinue
           dotnet publish .\src\CsaMeetingCoach.Api\CsaMeetingCoach.Api.csproj `
             -c Release `
             -r win-x64 `
@@ -170,6 +194,16 @@ jobs:
             -r win-x64 `
             --self-contained true `
             -o $botPublishDirectory
+          dotnet publish .\src\CsaMeetingCoach.PdfExtractor\CsaMeetingCoach.PdfExtractor.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:DebugType=None `
+            -o $pdfPublishDirectory
+          Copy-Item `
+            -Path "$pdfPublishDirectory\CsaMeetingCoach.PdfExtractor.exe" `
+            -Destination $publishDirectory
 
       - name: Deploy with local rollback
         shell: powershell

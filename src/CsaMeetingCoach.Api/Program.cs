@@ -126,10 +126,17 @@ builder.Services.AddSingleton<IMeetingSessionStore>(
 builder.Services.AddSingleton<ISessionJoinCodeStore>(
     new JsonSessionJoinCodeStore(dataDirectory));
 builder.Services.AddSingleton<IKnowledgeMalwareScanner, WindowsDefenderKnowledgeMalwareScanner>();
+builder.Services.AddSingleton<IPdfKnowledgeExtractor>(
+    builder.Environment.IsProduction()
+        ? new IsolatedPdfKnowledgeExtractor(Path.Combine(
+            AppContext.BaseDirectory,
+            "CsaMeetingCoach.PdfExtractor.exe"))
+        : new InProcessPdfKnowledgeExtractor());
 builder.Services.AddSingleton<ISessionKnowledgeStore>(services =>
     new LocalSessionKnowledgeStore(
         Path.Combine(dataDirectory, "knowledge"),
-        services.GetRequiredService<IKnowledgeMalwareScanner>()));
+        services.GetRequiredService<IKnowledgeMalwareScanner>(),
+        services.GetRequiredService<IPdfKnowledgeExtractor>()));
 builder.Services.AddSingleton<ISessionKnowledgeReader>(
     services => services.GetRequiredService<ISessionKnowledgeStore>());
 builder.Services.AddSingleton<ISessionArtifactCleaner>(
@@ -236,6 +243,9 @@ app.UseExceptionHandler(errorApplication =>
             KnowledgeScannerUnavailableException => (
                 StatusCodes.Status503ServiceUnavailable,
                 "Knowledge scanning unavailable"),
+            KnowledgeExtractionUnavailableException => (
+                StatusCodes.Status503ServiceUnavailable,
+                "Knowledge extraction unavailable"),
             SessionUpdateNotificationException => (
                 StatusCodes.Status503ServiceUnavailable,
                 "Realtime notification unavailable"),

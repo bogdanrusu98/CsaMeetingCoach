@@ -18,8 +18,18 @@ public sealed class StaticAssetCacheTests
         indexResponse.EnsureSuccessStatusCode();
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
-        Assert.Contains("styles.css?v=20260819a", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260819a", html, StringComparison.Ordinal);
+        Assert.Contains("styles.css?v=20260819b", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260819b", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"toast-root\"", html, StringComparison.Ordinal);
+        Assert.Contains(
+            "vendor/react-toastify.bundle.js?v=11.1.0-20260819b",
+            html,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "vendor/react-toastify.bundle.css?v=11.1.0-20260819b",
+            html,
+            StringComparison.Ordinal);
+        Assert.Contains("param || \"dark\"", html, StringComparison.Ordinal);
         Assert.Contains("data-theme", html, StringComparison.Ordinal);
         Assert.Contains("id=\"microphone-toggle\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"include-system-audio\"", html, StringComparison.Ordinal);
@@ -34,14 +44,14 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("id=\"member-session-view\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"diagnostics-dialog\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"speech-diagnostics\"", html, StringComparison.Ordinal);
-        Assert.Contains("id=\"contextual-cards\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("id=\"contextual-cards\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"contextual-card-history\"", html, StringComparison.Ordinal);
         Assert.Contains(
             "vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0",
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260819a");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260819b");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
@@ -79,6 +89,8 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("createMediaStreamDestination", script, StringComparison.Ordinal);
         Assert.Contains("Share system audio", script, StringComparison.Ordinal);
         Assert.Contains("renderContextualCards", script, StringComparison.Ordinal);
+        Assert.Contains("window.sessionToast", script, StringComparison.Ordinal);
+        Assert.Contains("\"recommendation\"", script, StringComparison.Ordinal);
         Assert.Contains("/api/sessions/host", script, StringComparison.Ordinal);
         Assert.Contains("/api/sessions/join", script, StringComparison.Ordinal);
         Assert.Contains("/knowledge/files", script, StringComparison.Ordinal);
@@ -90,7 +102,7 @@ public sealed class StaticAssetCacheTests
             "addEventListener(\"expired\"",
             script,
             StringComparison.Ordinal);
-        Assert.Contains("data-contextual-card-dismiss", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-contextual-card-dismiss", script, StringComparison.Ordinal);
         var recognizerIndex = script.IndexOf(
             "new window.SpeechSDK.SpeechRecognizer",
             StringComparison.Ordinal);
@@ -127,16 +139,31 @@ public sealed class StaticAssetCacheTests
             StringComparison.Ordinal);
         Assert.Contains("protected access lasts up to 30 days", script, StringComparison.Ordinal);
 
-        using var styleResponse = await client.GetAsync("/styles.css?v=20260819a");
+        using var styleResponse = await client.GetAsync("/styles.css?v=20260819b");
         styleResponse.EnsureSuccessStatusCode();
         AssertNoStore(styleResponse);
         var styles = await styleResponse.Content.ReadAsStringAsync();
-        Assert.Contains(".contextual-card-stack", styles, StringComparison.Ordinal);
-        Assert.Contains(".contextual-card", styles, StringComparison.Ordinal);
+        Assert.Contains("\"Segoe UI Variable Text\"", styles, StringComparison.Ordinal);
+        Assert.Contains(".session-toast--error", styles, StringComparison.Ordinal);
+        Assert.Contains(".session-toast--recommendation", styles, StringComparison.Ordinal);
+        Assert.Contains(".session-toast--hint", styles, StringComparison.Ordinal);
+        Assert.Contains(".session-toast--definition", styles, StringComparison.Ordinal);
         Assert.Contains(".role-card", styles, StringComparison.Ordinal);
         Assert.Contains(".host-layout", styles, StringComparison.Ordinal);
         Assert.Contains(".member-alert-card", styles, StringComparison.Ordinal);
         Assert.Contains(".speech-diagnostics", styles, StringComparison.Ordinal);
+
+        using var toastScriptResponse = await client.GetAsync(
+            "/vendor/react-toastify.bundle.js?v=11.1.0-20260819b");
+        toastScriptResponse.EnsureSuccessStatusCode();
+        AssertNoStore(toastScriptResponse);
+        var toastScript = await toastScriptResponse.Content.ReadAsStringAsync();
+        Assert.Contains("sessionToast", toastScript, StringComparison.Ordinal);
+
+        using var toastStyleResponse = await client.GetAsync(
+            "/vendor/react-toastify.bundle.css?v=11.1.0-20260819b");
+        toastStyleResponse.EnsureSuccessStatusCode();
+        AssertNoStore(toastStyleResponse);
 
         using var speechSdkResponse = await client.GetAsync(
             "/vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0");

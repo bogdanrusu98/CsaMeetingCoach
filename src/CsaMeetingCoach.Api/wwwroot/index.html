@@ -8,12 +8,13 @@
   <script>
     (() => {
       const param = new URLSearchParams(window.location.search).get("scoutTheme");
-      const theme =
-        param || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      const theme = param || "dark";
       document.documentElement.setAttribute("data-theme", theme);
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=20260819a">
+  <link rel="stylesheet"
+        href="vendor/react-toastify.bundle.css?v=11.1.0-20260819b">
+  <link rel="stylesheet" href="styles.css?v=20260819b">
 </head>
 <body>
   <main class="app-shell">
@@ -200,7 +201,7 @@ Define owners and next actions</textarea>
               <label>
                 Upload a file
                 <input id="knowledge-file" name="file" type="file"
-                       accept=".docx,.html,.json,.md,.pptx,.txt,.xlsx" required>
+                       accept=".docx,.html,.json,.md,.pdf,.pptx,.txt,.xlsx" required>
               </label>
               <label>
                 Visibility
@@ -386,13 +387,12 @@ Define owners and next actions</textarea>
     </details>
   </dialog>
 
-  <section id="contextual-cards" class="contextual-card-stack"
-           aria-label="Live learning alerts" aria-live="polite" aria-relevant="additions">
-    <div class="contextual-card-stack-label">Live learning alerts</div>
-  </section>
-  <div id="toast" role="status" aria-live="polite" class="toast hidden"></div>
+  <div id="toast-root"></div>
+  <div id="toast-fallback" role="status" aria-live="polite"
+       class="toast-fallback hidden"></div>
   <script src="https://res.cdn.office.net/teams-js/2.31.0/js/MicrosoftTeams.min.js"></script>
   <script src="vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0"></script>
-  <script src="app.js?v=20260819a"></script>
+  <script src="vendor/react-toastify.bundle.js?v=11.1.0-20260819b"></script>
+  <script src="app.js?v=20260819b"></script>
 </body>
 </html>
