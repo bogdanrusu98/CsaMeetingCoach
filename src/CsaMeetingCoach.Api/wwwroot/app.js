@@ -358,6 +358,7 @@ elements.sessionForm.addEventListener("submit", async event => {
     elements.setupView.classList.add("hidden");
     elements.sessionView.classList.remove("hidden");
     elements.memberSessionView.classList.add("hidden");
+    window.scrollTo(0, 0);
     render();
     connectEvents(state.session.id);
   });
@@ -380,6 +381,7 @@ elements.memberJoinForm.addEventListener("submit", async event => {
     elements.setupView.classList.add("hidden");
     elements.sessionView.classList.add("hidden");
     elements.memberSessionView.classList.remove("hidden");
+    window.scrollTo(0, 0);
     render();
     connectEvents(state.session.id);
   });

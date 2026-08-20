@@ -14,7 +14,7 @@
   </script>
   <link rel="stylesheet"
         href="vendor/react-toastify.bundle.css?v=11.1.0-20260819c">
-  <link rel="stylesheet" href="styles.css?v=20260819c">
+  <link rel="stylesheet" href="styles.css?v=20260820a">
 </head>
 <body>
   <main class="app-shell">
@@ -189,158 +189,107 @@
 
     <section id="session-view" class="session-view host-dashboard hidden">
       <header class="session-bar commercial-session-bar">
+        <div class="host-product-mark" aria-label="Session Copilot">
+          <span class="host-product-glyph" aria-hidden="true">C</span>
+        </div>
         <div class="session-identity">
           <span class="live-dot" aria-hidden="true"></span>
           <div>
             <p class="role-kicker">Host workspace</p>
-            <h1 id="purpose-title"></h1>
-            <p>
+            <div class="session-title-line">
+              <h1 id="purpose-title"></h1>
+              <span id="session-template-label" class="template-badge"></span>
+            </div>
+            <p class="session-meta-line">
               <span id="meeting-type-label"></span> ·
-              <span id="connection-status">Connecting</span>
+              <span id="connection-status" class="status neutral">Connecting</span>
             </p>
+            <p id="purpose-objective" class="session-objective"></p>
           </div>
         </div>
+        <div class="header-session-access" aria-label="Member access">
+          <span class="header-access-label">Member code</span>
+          <output id="host-session-code" class="host-session-code"
+                  aria-label="Member session code"></output>
+          <p class="header-retention">
+            Expires <time id="session-expiry"></time> · Auto-deletes
+          </p>
+        </div>
         <div class="bar-actions">
-          <button id="open-diagnostics" type="button" class="icon-button"
-                  aria-label="Open diagnostics" title="Diagnostics">⋯</button>
+          <button id="open-diagnostics" type="button" class="button subtle utility-button"
+                  aria-label="Open diagnostics and transcript simulator"
+                  title="Diagnostics and transcript simulator">
+            <span aria-hidden="true">•••</span><span class="utility-label">Tools</span>
+          </button>
           <button id="complete-meeting" type="button" class="button subtle">End session</button>
         </div>
-        <p id="purpose-objective" class="visually-hidden"></p>
       </header>
 
       <div class="host-layout">
-        <aside class="host-sidebar">
-          <article class="session-access-card">
-            <div class="section-heading-row">
-              <div>
-                <p class="eyebrow">Member access</p>
-                <h2>Session code</h2>
-              </div>
-              <span id="session-template-label" class="template-badge"></span>
-            </div>
-            <output id="host-session-code" class="host-session-code"
-                    aria-label="Member session code"></output>
-            <p class="retention-copy">
-              Expires <time id="session-expiry"></time>. The session and all knowledge
-              are then deleted.
-            </p>
-            <div class="participant-presence" aria-labelledby="participant-presence-title">
-              <div class="participant-presence-heading">
-                <div>
-                  <p class="eyebrow">Session audience</p>
-                  <h3 id="participant-presence-title">Members joined</h3>
-                </div>
-                <span id="host-member-count" class="count-badge">0</span>
-              </div>
-              <div id="host-participant-list" class="participant-list empty-state"
-                   aria-live="polite">No members have joined yet.</div>
-            </div>
-          </article>
-
-          <article class="knowledge-card" aria-labelledby="knowledge-title">
-            <div class="section-heading-row">
-              <div>
-                <p class="eyebrow">Grounding</p>
-                <h2 id="knowledge-title">Session knowledge</h2>
-              </div>
-              <span id="knowledge-count" class="count-badge">0/50</span>
-            </div>
-            <p class="section-description">
-              Private by default. Member-eligible sources may ground member alerts.
-            </p>
-            <form id="knowledge-file-form" class="knowledge-form">
-              <label>
-                Upload a file
-                <input id="knowledge-file" name="file" type="file"
-                       accept=".docx,.html,.json,.md,.pdf,.pptx,.txt,.xlsx" required>
-              </label>
-              <label>
-                Visibility
-                <select id="knowledge-file-visibility">
-                  <option value="hostPrivate">Host only</option>
-                  <option value="memberEligible">Member alerts eligible</option>
-                </select>
-              </label>
-              <button type="submit" class="button subtle">Scan and add file</button>
-            </form>
-            <form id="knowledge-link-form" class="knowledge-form">
-              <label>
-                Add a public HTTPS link
-                <input id="knowledge-link" type="url" required
-                       placeholder="https://learn.microsoft.com/...">
-              </label>
-              <label>
-                Visibility
-                <select id="knowledge-link-visibility">
-                  <option value="hostPrivate">Host only</option>
-                  <option value="memberEligible">Member alerts eligible</option>
-                </select>
-              </label>
-              <button type="submit" class="button subtle">Validate and add link</button>
-            </form>
-            <div id="knowledge-list" class="knowledge-list empty-state">
-              No session knowledge added.
-            </div>
-          </article>
-        </aside>
-
         <section class="host-main">
-          <article id="microphone-panel" class="microphone-card hidden"
-                   aria-labelledby="microphone-heading">
-            <div class="microphone-main">
-              <button id="microphone-toggle" type="button" class="microphone-button"
-                      aria-label="Set up meeting audio" aria-pressed="false">
-                <span class="microphone-icon" aria-hidden="true"></span>
-              </button>
-              <div class="microphone-copy">
-                <div class="microphone-title-row">
-                  <h2 id="microphone-heading">Live speech</h2>
-                  <span id="microphone-status" class="status neutral">Off</span>
+          <div class="host-primary-row">
+            <article id="microphone-panel" class="microphone-card hidden"
+                     aria-labelledby="microphone-heading">
+              <div class="microphone-main">
+                <button id="microphone-toggle" type="button" class="microphone-button"
+                        aria-label="Set up meeting audio" aria-pressed="false">
+                  <span class="microphone-icon" aria-hidden="true"></span>
+                </button>
+                <div class="microphone-copy">
+                  <div class="microphone-title-row">
+                    <h2 id="microphone-heading">Live speech</h2>
+                    <span id="microphone-status" class="status neutral">Off</span>
+                  </div>
+                  <p id="microphone-preview" class="live-caption" aria-live="polite">
+                    Start listening when participants have been notified.
+                  </p>
                 </div>
-                <p id="microphone-preview" class="live-caption" aria-live="polite">
-                  Start listening when participants have been notified.
+              </div>
+              <div id="microphone-unlock" class="microphone-unlock hidden">
+                <div class="unlock-heading">
+                  <strong>Enable this device</strong>
+                  <button id="close-microphone-unlock" type="button" class="icon-button"
+                          aria-label="Close microphone setup">×</button>
+                </div>
+                <p>
+                  Azure Speech processes selected audio. Raw audio is not stored by
+                  Session Copilot, and screen video is never processed.
                 </p>
+                <label class="consent-option">
+                  <input id="microphone-consent" type="checkbox">
+                  <span>I notified participants and have permission to transcribe.</span>
+                </label>
+                <label class="consent-option">
+                  <input id="include-system-audio" type="checkbox">
+                  <span>
+                    Include meeting audio played by this device.
+                    <span class="field-hint">Share the Teams tab or screen with system audio enabled.</span>
+                  </span>
+                </label>
+                <label>
+                  Demo speech access code
+                  <input id="microphone-access-key" type="password" autocomplete="off">
+                  <span id="microphone-access-status" class="field-hint" aria-live="polite"></span>
+                </label>
+                <button id="confirm-microphone" type="button" class="button primary full-width">
+                  Start listening
+                </button>
               </div>
-            </div>
-            <div id="microphone-unlock" class="microphone-unlock hidden">
-              <div class="unlock-heading">
-                <strong>Enable this device</strong>
-                <button id="close-microphone-unlock" type="button" class="icon-button"
-                        aria-label="Close microphone setup">×</button>
-              </div>
-              <p>
-                Azure Speech processes selected audio. Raw audio is not stored by
-                Session Copilot, and screen video is never processed.
-              </p>
-              <label class="consent-option">
-                <input id="microphone-consent" type="checkbox">
-                <span>I notified participants and have permission to transcribe.</span>
-              </label>
-              <label class="consent-option">
-                <input id="include-system-audio" type="checkbox">
-                <span>
-                  Include meeting audio played by this device.
-                  <span class="field-hint">Share the Teams tab or screen with system audio enabled.</span>
-                </span>
-              </label>
-              <label>
-                Demo speech access code
-                <input id="microphone-access-key" type="password" autocomplete="off">
-                <span id="microphone-access-status" class="field-hint" aria-live="polite"></span>
-              </label>
-              <button id="confirm-microphone" type="button" class="button primary full-width">
-                Start listening
-              </button>
-            </div>
-          </article>
+            </article>
 
-          <article class="focus-card" aria-labelledby="next-discussion-heading">
-            <div id="focus-section-label" class="section-label"><span class="spark" aria-hidden="true">✦</span>Host guidance</div>
-            <h2 id="next-discussion-heading" class="visually-hidden">Host guidance</h2>
-            <div id="recommendations" class="recommendation-list empty-state" aria-live="polite">
-              Listening for explicit discussion to suggest what to cover next.
-            </div>
-          </article>
+            <article class="focus-card" aria-labelledby="next-discussion-heading">
+              <div class="focus-card-heading">
+                <div id="focus-section-label" class="section-label">
+                  <span class="spark" aria-hidden="true">✦</span>Host guidance
+                </div>
+                <span class="guidance-privacy">Host only</span>
+              </div>
+              <h2 id="next-discussion-heading" class="visually-hidden">Host guidance</h2>
+              <div id="recommendations" class="recommendation-list empty-state" aria-live="polite">
+                Listening for explicit discussion to suggest what to cover next.
+              </div>
+            </article>
+          </div>
 
           <article id="live-plan" class="progress-card" aria-labelledby="live-plan-heading">
             <div class="progress-header">
@@ -354,6 +303,73 @@
             <div id="accepted-recommendations" class="compact-list"></div>
             <div id="checklist" class="compact-list goals-list"></div>
           </article>
+        </section>
+
+        <aside class="host-sidebar" aria-label="Session controls and member experience">
+          <article class="session-access-card" aria-labelledby="participant-presence-title">
+            <div class="section-heading-row">
+              <div>
+                <p class="eyebrow">Session audience</p>
+                <h2 id="participant-presence-title">Members joined</h2>
+              </div>
+              <span id="host-member-count" class="count-badge">0</span>
+            </div>
+            <p class="section-description">
+              Members appear after they enter the session code.
+            </p>
+            <div id="host-participant-list" class="participant-list empty-state"
+                 aria-live="polite">No members have joined yet.</div>
+          </article>
+
+          <article class="knowledge-card" aria-labelledby="knowledge-title">
+            <div class="section-heading-row">
+              <div>
+                <p class="eyebrow">Grounding</p>
+                <h2 id="knowledge-title">Session knowledge</h2>
+              </div>
+              <span id="knowledge-count" class="count-badge">0/50</span>
+            </div>
+            <p class="section-description">
+              Private by default. Member-eligible sources may ground member alerts.
+            </p>
+            <div class="knowledge-actions">
+              <form id="knowledge-file-form" class="knowledge-form"
+                    aria-label="Add a knowledge file">
+                <label>
+                  Upload a file
+                  <input id="knowledge-file" name="file" type="file"
+                         accept=".docx,.html,.json,.md,.pdf,.pptx,.txt,.xlsx" required>
+                </label>
+                <label>
+                  Visibility
+                  <select id="knowledge-file-visibility">
+                    <option value="hostPrivate">Host only</option>
+                    <option value="memberEligible">Member alerts eligible</option>
+                  </select>
+                </label>
+                <button type="submit" class="button subtle">Scan and add file</button>
+              </form>
+              <form id="knowledge-link-form" class="knowledge-form"
+                    aria-label="Add a public HTTPS knowledge link">
+                <label>
+                  Add a public HTTPS link
+                  <input id="knowledge-link" type="url" required
+                         placeholder="https://learn.microsoft.com/...">
+                </label>
+                <label>
+                  Visibility
+                  <select id="knowledge-link-visibility">
+                    <option value="hostPrivate">Host only</option>
+                    <option value="memberEligible">Member alerts eligible</option>
+                  </select>
+                </label>
+                <button type="submit" class="button subtle">Validate and add link</button>
+              </form>
+            </div>
+            <div id="knowledge-list" class="knowledge-list empty-state">
+              No session knowledge added.
+            </div>
+          </article>
 
           <article class="progress-card member-alert-review" aria-labelledby="alert-review-heading">
             <div class="progress-header">
@@ -365,7 +381,7 @@
             <div id="contextual-card-history"
                  class="contextual-card-history empty-state">No learning alerts yet.</div>
           </article>
-        </section>
+        </aside>
       </div>
     </section>
 
@@ -444,6 +460,6 @@
   <script src="https://res.cdn.office.net/teams-js/2.31.0/js/MicrosoftTeams.min.js"></script>
   <script src="vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0"></script>
   <script src="vendor/react-toastify.bundle.js?v=11.1.0-20260819c"></script>
-  <script src="app.js?v=20260819c"></script>
+  <script src="app.js?v=20260820a"></script>
 </body>
 </html>
