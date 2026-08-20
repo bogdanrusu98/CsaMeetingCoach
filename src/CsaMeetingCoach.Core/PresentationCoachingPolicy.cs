@@ -239,6 +239,7 @@ internal static partial class PresentationCoachingPolicy
         var analysisWindowIds = analysisWindow
             .Select(segment => segment.Id)
             .ToHashSet();
+        var coveredIntents = RecommendationIntentPolicy.GetCoveredIntents(context);
         var coveredContext = context.Checklist
             .SelectMany(item => new[] { item.Title, item.CompletionCriteria })
             .Concat(context.Purpose.SuccessCriteria)
@@ -279,6 +280,7 @@ internal static partial class PresentationCoachingPolicy
                         || IsTechnicalRecommendationTitle(
                             title,
                             presentationMatch.Definition))
+                    && !IsCoveredIntent(context, coveredIntents, proposal)
                     && !coveredContext.Any(covered =>
                         HasSubstantialOverlap(title, covered));
             })
@@ -302,6 +304,18 @@ internal static partial class PresentationCoachingPolicy
                 presentationMatch.Definition.Confidence,
                 presentationMatch.Mention.SourceTranscriptSegmentIds)
         ];
+    }
+
+    private static bool IsCoveredIntent(
+        CoachAgentContext context,
+        IReadOnlySet<string> coveredIntents,
+        RecommendedTaskProposal proposal)
+    {
+        var intent = RecommendationIntentPolicy.Resolve(
+            context.Template,
+            proposal.Title,
+            proposal.Rationale);
+        return intent is not null && coveredIntents.Contains(intent);
     }
 
     public static IReadOnlyList<ContextualCardProposal> SelectContextualCards(

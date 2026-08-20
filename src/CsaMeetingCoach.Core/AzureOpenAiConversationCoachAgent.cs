@@ -65,12 +65,19 @@ public sealed class AzureOpenAiConversationCoachAgent(
                         unsuccessful are not sufficient. When the
                         latest segment explicitly satisfies an item's completion criteria, return a
                         completion evaluation even when another coaching action is also present.
+                        For Presentation item "Frame the audience outcome", require an explicit
+                        objective, purpose, key-message statement, or audience learning outcome.
+                        For Presentation item "Close with the intended action", require explicit
+                        closing or recap framing followed by a meaningful takeaway or next action;
+                        a mid-presentation action or decision is not closing evidence.
 
                         Recommend a concise talking point describing what the host should discuss,
                         show, or ask next only when an explicit customer need, question, or meeting
                         context supports it. Its rationale must say why it helps the customer. Do not
                         generate generic administrative follow-up work and do not repeat anything
-                        already recommended or covered by the checklist/context.
+                        already recommended or covered by the checklist/context. Never propose an
+                        intent listed in coveredRecommendationIntents; dismissed, accepted, and
+                        completed intents remain covered.
                         During a presentation or demo, use the concrete service in analysisWindow to
                         recommend the highest-value uncovered function, decision factor, limitation,
                         validation, or customer discovery question instead of customer requirements,
@@ -151,6 +158,9 @@ public sealed class AzureOpenAiConversationCoachAgent(
                         pendingChecklist = context.Checklist
                             .Where(item => item.Status == ChecklistItemStatus.Pending),
                         existingRecommendations = context.RecommendedTasks ?? [],
+                        coveredRecommendationIntents = RecommendationIntentPolicy
+                            .GetCoveredIntents(context)
+                            .OrderBy(intent => intent, StringComparer.Ordinal),
                         acceptedRecommendations = (context.RecommendedTasks ?? [])
                             .Where(item => item.Status == RecommendationStatus.Accepted),
                         existingContextualCards = context.ContextualCards ?? [],

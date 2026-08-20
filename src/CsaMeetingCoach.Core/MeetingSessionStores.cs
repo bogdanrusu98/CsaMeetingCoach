@@ -110,22 +110,31 @@ public sealed class JsonMeetingSessionStore(string dataDirectory) : IExpiringMee
                                         : item.CompletionEligibleFromTranscriptIndex
                         })
                         .ToArray(),
-                    RecommendedTasks = session.RecommendedTasks
-                        .Select(item => item with
-                        {
-                            AcceptedAtUtc = item.Status == RecommendationStatus.Accepted
-                                && item.AcceptedAtUtc is null
-                                    ? session.UpdatedAtUtc
-                                    : item.AcceptedAtUtc,
-                            Evidence = item.Evidence ?? [],
-                            KnowledgeSourceIds = item.KnowledgeSourceIds ?? [],
-                            CompletionEligibleFromTranscriptIndex =
-                                item.Status == RecommendationStatus.Accepted
+                    RecommendedTasks = RecommendationIntentPolicy.Consolidate(
+                        session.Template,
+                        session.Checklist,
+                        session.RecommendedTasks
+                            .Select(item => item with
+                            {
+                                IntentKey = RecommendationIntentPolicy.Resolve(
+                                    session.Template,
+                                    item),
+                                AcceptedAtUtc =
+                                    item.Status == RecommendationStatus.Accepted
+                                    && item.AcceptedAtUtc is null
+                                        ? session.UpdatedAtUtc
+                                        : item.AcceptedAtUtc,
+                                Evidence = item.Evidence ?? [],
+                                KnowledgeSourceIds = item.KnowledgeSourceIds ?? [],
+                                WordingSourceTranscriptSegmentIds =
+                                    ResolveWordingSources(item),
+                                CompletionEligibleFromTranscriptIndex =
+                                    item.Status == RecommendationStatus.Accepted
                                     && item.CompletionEligibleFromTranscriptIndex is null
                                         ? finalTranscriptCount
                                         : item.CompletionEligibleFromTranscriptIndex
-                        })
-                        .ToArray(),
+                            })
+                            .ToArray()),
                     ContextualCards = (session.ContextualCards ?? [])
                         .Select(card => card with
                         {
@@ -281,6 +290,24 @@ public sealed class JsonMeetingSessionStore(string dataDirectory) : IExpiringMee
 
             gate.Release();
         }
+    }
+
+    private static IReadOnlyList<Guid> ResolveWordingSources(
+        RecommendedTaskState recommendation)
+    {
+        var sourceIds = (recommendation.SourceTranscriptSegmentIds ?? [])
+            .Distinct()
+            .TakeLast(20)
+            .ToArray();
+        var sourceIdSet = sourceIds.ToHashSet();
+        var persisted = (recommendation.WordingSourceTranscriptSegmentIds ?? [])
+            .Where(sourceIdSet.Contains)
+            .Distinct()
+            .TakeLast(20)
+            .ToArray();
+        return persisted.Length > 0
+            ? persisted
+            : sourceIds;
     }
 
     private string GetPath(Guid sessionId)

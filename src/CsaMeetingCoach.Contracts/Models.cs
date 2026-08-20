@@ -203,6 +203,8 @@ public sealed record RecommendedTaskState(
     IReadOnlyList<ChecklistEvidence>? Evidence = null,
     int? CompletionEligibleFromTranscriptIndex = null)
 {
+    public string? IntentKey { get; init; }
+    public IReadOnlyList<Guid> WordingSourceTranscriptSegmentIds { get; init; } = [];
     public IReadOnlyList<Guid> KnowledgeSourceIds { get; init; } = [];
 }
 
@@ -257,7 +259,7 @@ public sealed record MeetingSessionState(
     bool IsAnalyzing = false,
     int StateSchemaVersion = 0)
 {
-    public const int CurrentSchemaVersion = 6;
+    public const int CurrentSchemaVersion = 7;
 
     public IReadOnlyList<ContextualCardState> ContextualCards { get; init; } = [];
     public SessionTemplateKind Template { get; init; } = SessionTemplateKind.CsaVbd;

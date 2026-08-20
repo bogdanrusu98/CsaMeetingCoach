@@ -111,6 +111,84 @@ public sealed class AzureOpenAiConversationCoachAgentTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Analyze_PresentationRequestIncludesCoveredSemanticIntents()
+    {
+        var latest = new TranscriptSegment(
+            Guid.NewGuid(),
+            "Presenter",
+            "Lifecycle workflows automate identity changes.",
+            DateTimeOffset.UtcNow,
+            IsFinal: true);
+        var lifecycleTask = new RecommendedTaskState(
+            Guid.NewGuid(),
+            "Illustrate onboarding and offboarding with a practical identity lifecycle story",
+            "Connect the concept to a memorable access scenario.",
+            0.88,
+            [latest.Id],
+            RecommendationStatus.Proposed,
+            latest.OccurredAtUtc);
+        var responseJson = JsonSerializer.Serialize(new
+        {
+            choices = new[]
+            {
+                new
+                {
+                    message = new
+                    {
+                        content =
+                            """{"checklistEvaluations":[],"recommendedTasks":[],"recommendationEvaluations":[],"contextualCards":[]}"""
+                    }
+                }
+            }
+        });
+        var handler = new RecordingHandler(responseJson);
+        var agent = new AzureOpenAiConversationCoachAgent(
+            new HttpClient(handler),
+            new AzureOpenAiOptions(
+                new Uri("https://example.openai.azure.com/"),
+                "deployment",
+                "2024-10-21",
+                "key"));
+        var checklist = new MeetingChecklistPlanner().CreateChecklist(
+            TestData.CreatePurpose(),
+            requestedChecklist: null,
+            SessionTemplateKind.Presentation);
+        var context = new CoachAgentContext(
+            TestData.CreatePurpose(),
+            checklist,
+            [latest],
+            [lifecycleTask],
+            Template: SessionTemplateKind.Presentation);
+
+        var decision = await agent.AnalyzeAsync(
+            context,
+            latest,
+            CancellationToken.None);
+
+        Assert.Empty(decision.RecommendedTasks);
+        Assert.Contains(
+            "coveredRecommendationIntents",
+            handler.RequestBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            RecommendationIntentPolicy.PresentationOpeningOutcome,
+            handler.RequestBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            RecommendationIntentPolicy.PresentationClosingRecapActions,
+            handler.RequestBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            RecommendationIntentPolicy.PresentationLifecycleExample,
+            handler.RequestBody,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "mid-presentation action or decision is not closing evidence",
+            handler.RequestBody,
+            StringComparison.Ordinal);
+    }
+
     private sealed class RecordingHandler(string responseJson) : HttpMessageHandler
     {
         public int CallCount { get; private set; }

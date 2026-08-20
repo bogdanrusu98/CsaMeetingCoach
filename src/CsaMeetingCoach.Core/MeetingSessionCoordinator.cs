@@ -298,6 +298,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 analysisWindow,
                 segment,
                 finalTranscript,
+                transcriptUpdate.Template,
                 warnings);
             var evaluatedRecommendations = ApplyRecommendationEvaluations(
                 transcriptUpdate.RecommendedTasks,
@@ -308,6 +309,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 warnings);
             var recommendations = ApplyRecommendations(
                 evaluatedRecommendations,
+                transcriptUpdate.Template,
                 decision.RecommendedTasks,
                 finalTranscript,
                 transcriptUpdate.Checklist,
@@ -673,6 +675,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 analysisWindow,
                 latestSegment,
                 finalTranscript,
+                current.Template,
                 mergeWarnings);
             var evaluatedRecommendations = ApplyRecommendationEvaluations(
                 current.RecommendedTasks,
@@ -683,6 +686,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 mergeWarnings);
             var recommendations = ApplyRecommendations(
                 evaluatedRecommendations,
+                current.Template,
                 aiDecision.RecommendedTasks,
                 finalTranscript,
                 current.Checklist,
@@ -1130,6 +1134,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
         IReadOnlyList<TranscriptSegment> analysisWindow,
         TranscriptSegment latestSegment,
         IReadOnlyList<TranscriptSegment> finalTranscript,
+        SessionTemplateKind template,
         ICollection<string> warnings)
     {
         var knownIds = current.Select(item => item.Id).ToHashSet();
@@ -1192,6 +1197,10 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 && candidate.Evaluation.Confidence is >= AutoCompletionThreshold and <= 1
                 && !string.IsNullOrWhiteSpace(candidate.Evaluation.Reason)
                 && candidate.EvidenceSegment is not null
+                && PresentationChecklistEvidencePolicy.AllowsCompletion(
+                    template,
+                    checklistItem,
+                    candidate.EvidenceSegment)
                 && IsCompletionEvidenceEligible(
                     checklistItem.CompletionEligibleFromTranscriptIndex,
                     candidate.EvidenceSegment.Id,
@@ -1249,6 +1258,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
 
     private static IReadOnlyList<RecommendedTaskState> ApplyRecommendations(
         IReadOnlyList<RecommendedTaskState> current,
+        SessionTemplateKind template,
         IReadOnlyList<RecommendedTaskProposal> proposals,
         IReadOnlyList<TranscriptSegment> transcript,
         IReadOnlyList<ChecklistItemState> checklist,
@@ -1257,8 +1267,19 @@ public sealed class MeetingSessionCoordinator : IDisposable
         ICollection<string> warnings)
     {
         var segmentIds = transcript.Select(segment => segment.Id).ToHashSet();
-        var knownTitles = current
+        var result = RecommendationIntentPolicy
+            .Consolidate(template, checklist, current)
+            .ToList();
+        var knownTitles = result
             .Select(task => HeuristicConversationCoachAgent.Normalize(task.Title))
+            .ToHashSet(StringComparer.Ordinal);
+        var checklistIntents = checklist
+            .Select(item => RecommendationIntentPolicy.Resolve(
+                template,
+                item.Title,
+                item.CompletionCriteria))
+            .Where(intent => intent is not null)
+            .Cast<string>()
             .ToHashSet(StringComparer.Ordinal);
         var coveredContext = checklist
             .SelectMany(item => new[] { item.Title, item.CompletionCriteria })
@@ -1266,7 +1287,6 @@ public sealed class MeetingSessionCoordinator : IDisposable
             .Select(HeuristicConversationCoachAgent.Normalize)
             .Where(value => value.Length > 0)
             .ToArray();
-        var result = current.ToList();
 
         foreach (var proposal in proposals)
         {
@@ -1291,6 +1311,66 @@ public sealed class MeetingSessionCoordinator : IDisposable
             }
 
             var normalizedTitle = HeuristicConversationCoachAgent.Normalize(proposal.Title);
+            var intentKey = RecommendationIntentPolicy.Resolve(
+                template,
+                proposal.Title,
+                proposal.Rationale);
+            if (intentKey is not null)
+            {
+                if (checklistIntents.Contains(intentKey))
+                {
+                    continue;
+                }
+
+                var sameIntent = result
+                    .Where(task => string.Equals(
+                        RecommendationIntentPolicy.Resolve(template, task),
+                        intentKey,
+                        StringComparison.Ordinal))
+                    .ToArray();
+                if (sameIntent.Any(task => task.Status != RecommendationStatus.Proposed))
+                {
+                    continue;
+                }
+
+                var existing = sameIntent
+                    .Where(task => task.Status == RecommendationStatus.Proposed)
+                    .ToArray();
+                if (existing.Length > 0)
+                {
+                    var candidate = new RecommendedTaskState(
+                        Guid.NewGuid(),
+                        proposal.Title.Trim(),
+                        proposal.Rationale.Trim(),
+                        Math.Clamp(proposal.Confidence, 0, 1),
+                        proposal.SourceTranscriptSegmentIds.Distinct().ToArray(),
+                        RecommendationStatus.Proposed,
+                        DateTimeOffset.UtcNow,
+                        Evidence: [])
+                    {
+                        IntentKey = intentKey,
+                        WordingSourceTranscriptSegmentIds =
+                            proposal.SourceTranscriptSegmentIds
+                                .Distinct()
+                                .TakeLast(20)
+                                .ToArray(),
+                        KnowledgeSourceIds = knowledgeSourceIds.Distinct().ToArray()
+                    };
+                    var merged = RecommendationIntentPolicy.Merge(
+                        [.. existing, candidate],
+                        intentKey);
+                    var retainedIndex = result.FindIndex(task => task.Id == merged.Id);
+                    result.RemoveAll(task => existing.Any(existingTask =>
+                        existingTask.Id == task.Id));
+                    result.Insert(
+                        Math.Min(result.Count, Math.Max(0, retainedIndex)),
+                        merged);
+                    knownTitles.Add(
+                        HeuristicConversationCoachAgent.Normalize(merged.Title));
+                    continue;
+                }
+            }
+
             if (knownTitles.Contains(normalizedTitle)
                 || coveredContext.Any(context =>
                     PresentationCoachingPolicy.HasSubstantialOverlap(
@@ -1311,11 +1391,20 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 DateTimeOffset.UtcNow,
                 Evidence: [])
             {
+                IntentKey = intentKey,
+                WordingSourceTranscriptSegmentIds =
+                    proposal.SourceTranscriptSegmentIds
+                        .Distinct()
+                        .TakeLast(20)
+                        .ToArray(),
                 KnowledgeSourceIds = knowledgeSourceIds.Distinct().ToArray()
             });
         }
 
-        return result;
+        return RecommendationIntentPolicy.Consolidate(
+            template,
+            checklist,
+            result);
     }
 
     private ContextualCardApplicationResult ApplyContextualCards(

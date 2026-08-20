@@ -246,7 +246,8 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
                 item,
                 context.RecentTranscript,
                 latestSegment,
-                normalizedText))
+                normalizedText,
+                context.Template))
             .ToArray();
 
         var recommendations = CreateRecommendations(
@@ -269,8 +270,17 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
         ChecklistItemState item,
         IReadOnlyList<TranscriptSegment> recentTranscript,
         TranscriptSegment segment,
-        string normalizedText)
+        string normalizedText,
+        SessionTemplateKind template)
     {
+        if (!PresentationChecklistEvidencePolicy.AllowsCompletion(
+                template,
+                item,
+                segment))
+        {
+            return [];
+        }
+
         if (RequiresCompoundEvidence(item))
         {
             return EvaluateCompoundEvidence(item, recentTranscript, segment);
@@ -303,6 +313,16 @@ public sealed partial class HeuristicConversationCoachAgent : IConversationCoach
             && HasDirectConversationalObjective(normalizedText, segment.Text))
         {
             matchedHints.Add("direct conversational objective");
+        }
+
+        var explicitPresentationSignal =
+            PresentationChecklistEvidencePolicy.GetExplicitSignal(
+                template,
+                item,
+                segment);
+        if (explicitPresentationSignal is not null)
+        {
+            matchedHints.Add(explicitPresentationSignal);
         }
 
         if (matchedHints.Count == 0)

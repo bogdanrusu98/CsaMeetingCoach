@@ -51,6 +51,12 @@ public static class FoundryAgentContract
         across the analysis window and will be verified independently. For every
         completion, evidenceQuote must be an exact ordinal
         substring of that segment and sourceTranscriptSegmentId must copy its ID.
+        For Presentation item "Frame the audience outcome", require an explicit
+        objective, purpose, key-message statement, or audience learning outcome;
+        the word "today" alone is not evidence. For Presentation item "Close with
+        the intended action", require explicit closing or recap framing followed
+        by a meaningful takeaway or next action. A mid-presentation decision,
+        approval, action, or next-step mention is not evidence of closure.
 
         Evaluate every pending checklist item independently on every request.
         A success-criteria item requires an explicitly stated criterion, metric,
@@ -85,6 +91,10 @@ public static class FoundryAgentContract
         mechanism, decision input, limitation, business-value link, or next validation.
         Ground it in the meeting objective plus explicit analysisWindow content and
         reviewed knowledge. Never restate a pending checklist item as a recommendation.
+        Never propose an intent listed in coveredRecommendationIntents. In a
+        Presentation, opening objective/key-message framing, a closing recap with
+        actions, and a concrete joiner-mover-leaver lifecycle example are canonical
+        intents that may appear at most once across checklist and recommendations.
 
         Only for CSA / VBD, or for a Custom, Presentation, or Workshop objective
         explicitly focused on a technical architecture decision, use reviewed knowledge
@@ -158,7 +168,8 @@ public static class FoundryAgentContract
         Do not generate generic administrative follow-up work. Do not repeat a
         recommendation already proposed, accepted, completed, or dismissed, or a
         specific function or decision point already covered by the checklist or
-        meeting context. Merely mentioning or beginning to explain a service does
+        meeting context. Dismissed, accepted, and completed canonical intents remain
+        covered. Merely mentioning or beginning to explain a service does
         not mean all of its relevant decision factors have been covered. Proposal source
         IDs must be copied exactly from recentTranscript. Cite the latest segment only
         when it directly supports the proposal; otherwise cite the real earlier segment
@@ -356,8 +367,15 @@ public sealed class FoundryConversationCoachAgent(
                     item.Id,
                     item.Title,
                     item.Rationale,
-                    item.Status
+                    item.Status,
+                    intentKey = RecommendationIntentPolicy.Resolve(
+                        context.Template,
+                        item)
                 }),
+            coveredRecommendationIntents = RecommendationIntentPolicy
+                .GetCoveredIntents(context)
+                .OrderBy(intent => intent, StringComparer.Ordinal)
+                .ToArray(),
             acceptedRecommendations = (context.RecommendedTasks ?? [])
                 .Where(item => item.Status == RecommendationStatus.Accepted)
                 .Select(item => new
@@ -520,6 +538,10 @@ public sealed class FoundryConversationCoachAgent(
                     analysisWindowById,
                     latestSegment,
                     out var evidenceSegment)
+                 && PresentationChecklistEvidencePolicy.AllowsCompletion(
+                   context.Template,
+                   checklistItem,
+                   evidenceSegment)
                  && IsCompletionEvidenceEligible(
                     checklistItem.CompletionEligibleFromTranscriptIndex,
                     evidenceSegment.Id,

@@ -649,6 +649,123 @@ public sealed class MeetingSessionCoordinatorTests
     }
 
     [Fact]
+    public async Task PresentationOverSixtyMinutes_ConsolidatesReportParaphrasesAndRejectsFalseEvidence()
+    {
+        using var coordinator = CreateCoordinator(new LongPresentationReportAgent());
+        var purpose = new MeetingPurpose(
+            "Microsoft Entra ID presentation",
+            "Presentation",
+            "Explain Entra ID identity and access capabilities",
+            ["Audience understands the key governance options"]);
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(
+                purpose,
+                Template: SessionTemplateKind.Presentation),
+            CancellationToken.None);
+        var startedAtUtc = DateTimeOffset.UtcNow.AddHours(-2);
+        MeetingSessionState updated = session;
+
+        for (var index = 0; index < 65; index++)
+        {
+            var text = index switch
+            {
+                0 => "Thank you for having me. What I want to talk about today is really so that.",
+                1 => "Require approvals and use a manager as the approver. " +
+                     "Set the approver to either an external or internal sponsor.",
+                _ => $"The presentation continued with Microsoft Entra ID topic {index}."
+            };
+            updated = await coordinator.AddTranscriptAsync(
+                session.Id,
+                new AddTranscriptSegmentRequest(
+                    "Presenter",
+                    text,
+                    startedAtUtc.AddMinutes(index + 1)),
+                CancellationToken.None);
+        }
+
+        Assert.Equal(65, updated.Transcript.Count);
+        Assert.True(
+            updated.Transcript[^1].OccurredAtUtc - updated.Transcript[0].OccurredAtUtc >=
+            TimeSpan.FromMinutes(60));
+        Assert.Equal(
+            ChecklistItemStatus.Pending,
+            updated.Checklist.Single(
+                item => item.Title == "Frame the audience outcome").Status);
+        Assert.Equal(
+            ChecklistItemStatus.Pending,
+            updated.Checklist.Single(
+                item => item.Title == "Close with the intended action").Status);
+        var lifecycle = Assert.Single(updated.RecommendedTasks);
+        Assert.Equal(
+            RecommendationIntentPolicy.PresentationLifecycleExample,
+            lifecycle.IntentKey);
+        Assert.Equal(
+            "Add a concrete joiner-mover-leaver scenario with explicit access actions",
+            lifecycle.Title);
+        Assert.DoesNotContain(
+            updated.RecommendedTasks,
+            task => task.IntentKey == RecommendationIntentPolicy.PresentationOpeningOutcome);
+        Assert.DoesNotContain(
+            updated.RecommendedTasks,
+            task => task.IntentKey == RecommendationIntentPolicy.PresentationClosingRecapActions);
+    }
+
+    [Theory]
+    [InlineData(
+        "Frame the audience outcome",
+        "The objective of this presentation is under discussion.")]
+    [InlineData(
+        "Frame the audience outcome",
+        "The objective of this presentation is being discussed.")]
+    [InlineData(
+        "Frame the audience outcome",
+        "The objective of this presentation is yet to be discussed.")]
+    [InlineData(
+        "Close with the intended action",
+        "In conclusion, the next action has not been decided.")]
+    [InlineData(
+        "Close with the intended action",
+        "In conclusion, the takeaway is not clear yet.")]
+    [InlineData(
+        "Close with the intended action",
+        "In conclusion, we have not decided the next action.")]
+    [InlineData(
+        "Close with the intended action",
+        "In conclusion, we still need to decide the next step.")]
+    [InlineData(
+        "Close with the intended action",
+        "In conclusion, we haven't decided the next action.")]
+    [InlineData(
+        "Close with the intended action",
+        "In conclusion, we don't have a next action.")]
+    public async Task PresentationChecklist_UnresolvedModelEvidence_RemainsPending(
+        string checklistTitle,
+        string transcript)
+    {
+        using var coordinator = CreateCoordinator(
+            new PresentationCompletionClaimAgent(checklistTitle));
+        var purpose = new MeetingPurpose(
+            "Microsoft Entra ID presentation",
+            "Presentation",
+            "Explain Entra ID identity and access capabilities",
+            ["Audience understands the key governance options"]);
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(
+                purpose,
+                Template: SessionTemplateKind.Presentation),
+            CancellationToken.None);
+
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("Presenter", transcript),
+            CancellationToken.None);
+
+        Assert.Equal(
+            ChecklistItemStatus.Pending,
+            updated.Checklist.Single(item => item.Title == checklistTitle).Status);
+    }
+
+    [Fact]
     public async Task SetRecommendationStatus_WithUndefinedValue_RejectsUpdate()
     {
         var coordinator = CreateCoordinator(new HeuristicConversationCoachAgent());
@@ -1721,6 +1838,131 @@ public sealed class MeetingSessionCoordinatorTests
         Assert.False(segment.IsFinal);
         Assert.Equal(text, segment.Text);
         Assert.Null(segment.RecognizedText);
+    }
+
+    private sealed class LongPresentationReportAgent : IConversationCoachAgent
+    {
+        private static readonly (string Title, string Rationale, double Confidence)[]
+            ReportRecommendations =
+            [
+                (
+                    "Clearly introduce the key messages and objectives early in the presentation",
+                    "Defining these early improves narrative clarity and relevance.",
+                    0.91),
+                (
+                    "Add an explicit closing summary and next steps to conclude the presentation on Entra ID",
+                    "A focused conclusion strengthens the audience takeaway.",
+                    0.93),
+                (
+                    "Add a concrete joiner-mover-leaver scenario with explicit access actions",
+                    "A practical lifecycle example connects the concepts to memorable actions.",
+                    0.96),
+                (
+                    "Clarify and explicitly state the key messages and objectives of the Entra ID presentation early",
+                    "The audience needs a clear statement of purpose.",
+                    0.90),
+                (
+                    "Add a concise, explicit recap of Entra ID Governance features at the presentation conclusion",
+                    "A recap reinforces the key points.",
+                    0.92),
+                (
+                    "Add a concise, audience-relevant example illustrating lifecycle workflows",
+                    "A concrete example improves clarity and relevance.",
+                    0.84),
+                (
+                    "Add a clear, concise summary of the key messages and objectives early in the presentation",
+                    "The introduction should establish the planned messages.",
+                    0.89),
+                (
+                    "Add an explicit verbal summary of the key Entra ID messages and next actions to close the presentation",
+                    "The closing should give the audience a focused conclusion.",
+                    0.94),
+                (
+                    "Illustrate onboarding and offboarding with a practical identity lifecycle story",
+                    "The story links abstract governance concepts to access changes.",
+                    0.88)
+            ];
+
+        private int _callCount;
+
+        public Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken)
+        {
+            var call = Interlocked.Increment(ref _callCount) - 1;
+            var evaluations = new List<ChecklistEvaluation>();
+            if (call == 0)
+            {
+                evaluations.Add(CreateChecklistEvaluation(
+                    context,
+                    "Frame the audience outcome",
+                    latestSegment));
+            }
+            else if (call == 1)
+            {
+                evaluations.Add(CreateChecklistEvaluation(
+                    context,
+                    "Close with the intended action",
+                    latestSegment));
+            }
+
+            var recommendation = ReportRecommendations[call % ReportRecommendations.Length];
+            return Task.FromResult(new CoachAgentDecision(
+                evaluations,
+                [
+                    new RecommendedTaskProposal(
+                        recommendation.Title,
+                        recommendation.Rationale,
+                        recommendation.Confidence,
+                        [latestSegment.Id])
+                ]));
+        }
+
+        private static ChecklistEvaluation CreateChecklistEvaluation(
+            CoachAgentContext context,
+            string title,
+            TranscriptSegment latestSegment)
+        {
+            var item = context.Checklist.Single(checklistItem => checklistItem.Title == title);
+            return new ChecklistEvaluation(
+                item.Id,
+                ShouldComplete: true,
+                Confidence: 0.98,
+                "The model claimed this segment completed the item.",
+                latestSegment.Text,
+                latestSegment.Id);
+        }
+    }
+
+    private sealed class PresentationCompletionClaimAgent : IConversationCoachAgent
+    {
+        private readonly string _checklistTitle;
+
+        public PresentationCompletionClaimAgent(string checklistTitle)
+        {
+            _checklistTitle = checklistTitle;
+        }
+
+        public Task<CoachAgentDecision> AnalyzeAsync(
+            CoachAgentContext context,
+            TranscriptSegment latestSegment,
+            CancellationToken cancellationToken)
+        {
+            var item = context.Checklist.Single(
+                checklistItem => checklistItem.Title == _checklistTitle);
+            return Task.FromResult(new CoachAgentDecision(
+                [
+                    new ChecklistEvaluation(
+                        item.Id,
+                        ShouldComplete: true,
+                        Confidence: 0.98,
+                        "The model claimed this segment completed the item.",
+                        latestSegment.Text,
+                        latestSegment.Id)
+                ],
+                []));
+        }
     }
 
     private sealed class BlockingAgent : IConversationCoachAgent

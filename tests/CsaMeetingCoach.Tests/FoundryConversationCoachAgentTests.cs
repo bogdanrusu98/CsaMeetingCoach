@@ -713,6 +713,86 @@ public sealed class FoundryConversationCoachAgentTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Analyze_PresentationPayloadIncludesChecklistAndRecommendationIntents()
+    {
+        var latest = CreateLatestSegment("Lifecycle workflows automate identity changes.");
+        var lifecycleTask = new RecommendedTaskState(
+            Guid.NewGuid(),
+            "Illustrate onboarding and offboarding with a practical identity lifecycle story",
+            "Connect the concept to a memorable access scenario.",
+            0.88,
+            [latest.Id],
+            RecommendationStatus.Proposed,
+            latest.OccurredAtUtc);
+        var client = new RecordingFoundryClient(
+            """{"checklistEvaluations":[],"recommendedTasks":[],"recommendationEvaluations":[],"contextualCards":[]}""");
+
+        await new FoundryConversationCoachAgent(client).AnalyzeAsync(
+            CreateContext(
+                latest,
+                [lifecycleTask],
+                template: SessionTemplateKind.Presentation),
+            latest,
+            CancellationToken.None);
+
+        using var payload = JsonDocument.Parse(Assert.IsType<string>(client.InputJson));
+        var covered = payload.RootElement
+            .GetProperty("coveredRecommendationIntents")
+            .EnumerateArray()
+            .Select(element => element.GetString())
+            .ToArray();
+        Assert.Equal(
+            [
+                RecommendationIntentPolicy.PresentationClosingRecapActions,
+                RecommendationIntentPolicy.PresentationLifecycleExample,
+                RecommendationIntentPolicy.PresentationOpeningOutcome
+            ],
+            covered);
+        Assert.Contains(
+            "Never propose an intent listed in coveredRecommendationIntents",
+            FoundryAgentContract.Instructions,
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(
+        "Frame the audience outcome",
+        "Thank you for having me. What I want to talk about today is really so that.")]
+    [InlineData(
+        "Close with the intended action",
+        "Our next action is to set the approver to an external sponsor.")]
+    public async Task Analyze_PresentationChecklistClaimWithoutExplicitFraming_IsFiltered(
+        string checklistTitle,
+        string transcript)
+    {
+        var latest = CreateLatestSegment(transcript);
+        var context = CreateContext(
+            latest,
+            template: SessionTemplateKind.Presentation);
+        var item = context.Checklist.Single(candidate => candidate.Title == checklistTitle);
+        var response = JsonSerializer.Serialize(
+            new CoachAgentDecision(
+                [
+                    new ChecklistEvaluation(
+                        item.Id,
+                        ShouldComplete: true,
+                        Confidence: 0.96,
+                        "The model claimed the item was complete.",
+                        transcript,
+                        latest.Id)
+                ],
+                [],
+                []),
+            JsonOptions);
+
+        var decision = await new FoundryConversationCoachAgent(
+                new RecordingFoundryClient(response))
+            .AnalyzeAsync(context, latest, CancellationToken.None);
+
+        Assert.Empty(decision.ChecklistEvaluations);
+    }
+
     private static CoachAgentContext CreateContext(
         TranscriptSegment latestSegment,
         IReadOnlyList<RecommendedTaskState>? recommendations = null,
@@ -721,7 +801,8 @@ public sealed class FoundryConversationCoachAgentTests
     {
         var checklist = new MeetingChecklistPlanner().CreateChecklist(
             TestData.CreatePurpose(),
-            requestedChecklist: null);
+            requestedChecklist: null,
+            template);
         return new CoachAgentContext(
             TestData.CreatePurpose(),
             checklist,

@@ -514,6 +514,13 @@ Cards never assert unverified pricing, licensing, compliance, legal conclusions,
 availability, customer intent, or product selection.
 
 Recommendations that substantially repeat a checklist criterion are discarded.
+Presentation sessions also persist canonical intent keys for opening outcomes,
+closing recap/actions, and lifecycle examples. Semantic paraphrases collapse
+into one active recommendation, while checklist-covered, dismissed, accepted,
+or completed intents cannot be proposed again. Opening completion requires an
+explicit objective or audience outcome, and closing completion requires explicit
+recap or conclusion framing rather than a generic mention of an action or
+decision.
 Reviewed technical fallbacks cover Load Balancer design, cloud service-model
 responsibilities, Azure management scopes, regions and zones, and identity
 versus resource authorization when Foundry returns only a generic or

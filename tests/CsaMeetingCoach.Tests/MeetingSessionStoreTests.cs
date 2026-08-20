@@ -267,6 +267,139 @@ public sealed class MeetingSessionStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Get_VersionSixPresentation_InfersIntentAndConsolidatesParaphrases()
+    {
+        Directory.CreateDirectory(_directory);
+        var sessionId = Guid.NewGuid();
+        var firstRecommendationId = Guid.NewGuid();
+        var secondRecommendationId = Guid.NewGuid();
+        var firstSourceId = Guid.NewGuid();
+        var secondSourceId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var json = $$"""
+            {
+              "id": "{{sessionId}}",
+              "purpose": {
+                "title": "Microsoft Entra ID presentation",
+                "meetingType": "Presentation",
+                "objective": "Explain identity and access capabilities",
+                "successCriteria": []
+              },
+              "status": 0,
+              "createdAtUtc": "{{now.AddMinutes(-10):O}}",
+              "updatedAtUtc": "{{now:O}}",
+              "revision": 2,
+              "checklist": [],
+              "transcript": [],
+              "recommendedTasks": [{
+                "id": "{{firstRecommendationId}}",
+                "title": "Add an audience-relevant example illustrating lifecycle workflows",
+                "rationale": "Connect the concepts to a practical example.",
+                "confidence": 0.84,
+                "sourceTranscriptSegmentIds": ["{{firstSourceId}}"],
+                "status": 0,
+                "createdAtUtc": "{{now.AddMinutes(-5):O}}"
+              }, {
+                "id": "{{secondRecommendationId}}",
+                "title": "Add a concrete joiner-mover-leaver scenario with explicit access actions",
+                "rationale": "Show access changes across the employee lifecycle.",
+                "confidence": 0.96,
+                "sourceTranscriptSegmentIds": ["{{secondSourceId}}"],
+                "status": 0,
+                "createdAtUtc": "{{now.AddMinutes(-4):O}}"
+              }],
+              "warnings": [],
+              "template": 0,
+              "stateSchemaVersion": 6
+            }
+            """;
+        await File.WriteAllTextAsync(
+            Path.Combine(_directory, $"{sessionId:N}.json"),
+            json);
+
+        var loaded = await new JsonMeetingSessionStore(_directory).GetAsync(
+            sessionId,
+            CancellationToken.None);
+
+        Assert.NotNull(loaded);
+        var recommendation = Assert.Single(loaded.RecommendedTasks);
+        Assert.Equal(firstRecommendationId, recommendation.Id);
+        Assert.Equal(
+            "Add a concrete joiner-mover-leaver scenario with explicit access actions",
+            recommendation.Title);
+        Assert.Equal(0.96, recommendation.Confidence);
+        Assert.Equal(
+            RecommendationIntentPolicy.PresentationLifecycleExample,
+            recommendation.IntentKey);
+        Assert.Equal(
+            [secondSourceId],
+            recommendation.WordingSourceTranscriptSegmentIds);
+        Assert.Equal(
+            [secondSourceId, firstSourceId],
+            recommendation.SourceTranscriptSegmentIds);
+        Assert.Equal(MeetingSessionState.CurrentSchemaVersion, loaded.StateSchemaVersion);
+    }
+
+    [Fact]
+    public async Task Get_VersionSixMixedTerminalStates_PreservesAcceptedRecommendation()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var dismissed = new RecommendedTaskState(
+            Guid.NewGuid(),
+            "Add an audience-relevant example illustrating lifecycle workflows",
+            "Connect the concept to a practical example.",
+            0.84,
+            [Guid.NewGuid()],
+            RecommendationStatus.Dismissed,
+            now.AddMinutes(-5));
+        var accepted = new RecommendedTaskState(
+            Guid.NewGuid(),
+            "Add a concrete joiner-mover-leaver scenario with explicit access actions",
+            "Show access changes across the employee lifecycle.",
+            0.96,
+            [Guid.NewGuid()],
+            RecommendationStatus.Accepted,
+            now.AddMinutes(-4),
+            AcceptedAtUtc: now.AddMinutes(-3));
+        var session = new MeetingSessionState(
+            Guid.NewGuid(),
+            TestData.CreatePurpose(),
+            MeetingSessionStatus.Active,
+            now.AddMinutes(-10),
+            now,
+            Revision: 2,
+            Checklist: [],
+            Transcript: [],
+            RecommendedTasks: [dismissed, accepted],
+            Warnings: [],
+            StateSchemaVersion: 6)
+        {
+            Template = SessionTemplateKind.Presentation,
+            ExpiresAtUtc = now + SessionLifecycle.Lifetime
+        };
+        var store = new JsonMeetingSessionStore(_directory);
+        await store.SaveAsync(session, CancellationToken.None);
+
+        var loaded = await store.GetAsync(session.Id, CancellationToken.None);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(2, loaded.RecommendedTasks.Count);
+        var preserved = Assert.Single(loaded.RecommendedTasks.Where(
+            item => item.Status == RecommendationStatus.Accepted));
+        Assert.Equal(accepted.Id, preserved.Id);
+        Assert.Equal(accepted.AcceptedAtUtc, preserved.AcceptedAtUtc);
+        Assert.All(
+            loaded.RecommendedTasks,
+            item => Assert.Equal(
+                RecommendationIntentPolicy.PresentationLifecycleExample,
+                item.IntentKey));
+        Assert.All(
+            loaded.RecommendedTasks,
+            item => Assert.NotEmpty(item.WordingSourceTranscriptSegmentIds));
+        Assert.Equal(MeetingSessionState.CurrentSchemaVersion, loaded.StateSchemaVersion);
+    }
+
+    [Fact]
     public async Task ListAndDelete_RecoversCrashLeftTemporarySessionFile()
     {
         var store = new JsonMeetingSessionStore(_directory);

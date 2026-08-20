@@ -654,6 +654,134 @@ public sealed class HeuristicConversationCoachAgentTests
         Assert.Empty(decision.ChecklistEvaluations);
     }
 
+    [Theory]
+    [InlineData("Thank you for having me. What I want to talk about today is really so that.")]
+    [InlineData("Today we will discuss Entra ID roles and devices.")]
+    [InlineData("What are today's objectives?")]
+    [InlineData("The objective of this presentation is not clear yet.")]
+    [InlineData("The objective of this presentation is currently not defined.")]
+    [InlineData("The objective of this presentation is still being defined.")]
+    [InlineData("The objective of this presentation is under discussion.")]
+    [InlineData("The objective of this presentation is being discussed.")]
+    [InlineData("The objective of this presentation is pending discussion.")]
+    [InlineData("The objective of this presentation is yet to be discussed.")]
+    [InlineData("The objective of this presentation is yet to be reviewed.")]
+    [InlineData("The objective of this presentation isn't clear yet.")]
+    public async Task Analyze_DoesNotComplete_PresentationOpeningWithoutExplicitOutcome(
+        string transcript)
+    {
+        var item = CreatePresentationItem("Frame the audience outcome");
+        var latest = CreateFinalSegment(transcript);
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            CreatePresentationContext(item, latest),
+            latest,
+            CancellationToken.None);
+
+        Assert.Empty(decision.ChecklistEvaluations);
+    }
+
+    [Theory]
+    [InlineData("The objective of this presentation is to explain how Microsoft Entra ID controls access.")]
+    [InlineData("By the end of this session, you will understand identity, authentication, and governance.")]
+    [InlineData("Obiectivul acestei prezentari este sa explicam controlul accesului cu Microsoft Entra ID.")]
+    [InlineData("Pana la finalul prezentarii veti intelege optiunile de guvernanta a identitatii.")]
+    public async Task Analyze_Completes_PresentationOpeningFromExplicitAudienceOutcome(
+        string transcript)
+    {
+        var item = CreatePresentationItem("Frame the audience outcome");
+        var latest = CreateFinalSegment(transcript);
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            CreatePresentationContext(item, latest),
+            latest,
+            CancellationToken.None);
+
+        var evaluation = Assert.Single(decision.ChecklistEvaluations);
+        Assert.True(evaluation.ShouldComplete);
+        Assert.Equal(item.Id, evaluation.ChecklistItemId);
+        Assert.Equal(transcript, evaluation.EvidenceQuote);
+    }
+
+    [Theory]
+    [InlineData("Require approvals and use a manager as the approver.")]
+    [InlineData("Our next action is to set the approver to an external sponsor.")]
+    [InlineData("That decision requires manager approval.")]
+    [InlineData("The next step in entitlement management configures recurring access reviews.")]
+    [InlineData("We need to close these access gaps before the pilot.")]
+    [InlineData("To close these access gaps, we need a pilot.")]
+    [InlineData("The slide says in conclusion, the next action is a pilot.")]
+    [InlineData("In conclusion, thank you everyone for joining.")]
+    [InlineData("In conclusion, there are no decisions or next actions.")]
+    [InlineData("In conclusion, the next action has not been decided.")]
+    [InlineData("In conclusion, the takeaway is not clear yet.")]
+    [InlineData("In conclusion, we have not decided the next action.")]
+    [InlineData("In conclusion, we still need to decide the next step.")]
+    [InlineData("In conclusion, the next action remains to be decided.")]
+    [InlineData("In conclusion, we haven't decided the next action.")]
+    [InlineData("In conclusion, the takeaway isn't clear yet.")]
+    [InlineData("In conclusion, we don't have a next action.")]
+    [InlineData("In conclusion, we didn't decide the next action.")]
+    [InlineData("In conclusion, we can't decide the next action.")]
+    public async Task Analyze_DoesNotComplete_PresentationCloseFromMidPresentationAction(
+        string transcript)
+    {
+        var item = CreatePresentationItem("Close with the intended action");
+        var latest = CreateFinalSegment(transcript);
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            CreatePresentationContext(item, latest),
+            latest,
+            CancellationToken.None);
+
+        Assert.Empty(decision.ChecklistEvaluations);
+    }
+
+    [Theory]
+    [InlineData("In conclusion, Entra ID centralizes identity governance, and the next action is to pilot access reviews.")]
+    [InlineData("In conclusion, Entra ID centralizes identity governance for the organization.")]
+    [InlineData("To summarize, the key takeaway is to require MFA and pilot Conditional Access.")]
+    [InlineData("In concluzie, mesajul cheie este protectia identitatii, iar urmatorul pas este un pilot Conditional Access.")]
+    public async Task Analyze_Completes_PresentationCloseFromExplicitRecap(
+        string transcript)
+    {
+        var item = CreatePresentationItem("Close with the intended action");
+        var latest = CreateFinalSegment(transcript);
+
+        var decision = await new HeuristicConversationCoachAgent().AnalyzeAsync(
+            CreatePresentationContext(item, latest),
+            latest,
+            CancellationToken.None);
+
+        var evaluation = Assert.Single(decision.ChecklistEvaluations);
+        Assert.True(evaluation.ShouldComplete);
+        Assert.Equal(item.Id, evaluation.ChecklistItemId);
+        Assert.Equal(transcript, evaluation.EvidenceQuote);
+    }
+
+    private static ChecklistItemState CreatePresentationItem(string title)
+    {
+        var planner = new MeetingChecklistPlanner();
+        return planner.CreateChecklist(
+                new MeetingPurpose(
+                    "Microsoft Entra ID presentation",
+                    "Presentation",
+                    "Explain Entra ID identity and access capabilities",
+                    ["Audience understands the key governance options"]),
+                requestedChecklist: null,
+                SessionTemplateKind.Presentation)
+            .Single(item => item.Title == title);
+    }
+
+    private static CoachAgentContext CreatePresentationContext(
+        ChecklistItemState item,
+        TranscriptSegment latest) =>
+        new(
+            TestData.CreatePurpose(),
+            [item],
+            [latest],
+            Template: SessionTemplateKind.Presentation);
+
     private static ChecklistItemState CreatePendingItem(
         string title,
         string completionCriteria,
