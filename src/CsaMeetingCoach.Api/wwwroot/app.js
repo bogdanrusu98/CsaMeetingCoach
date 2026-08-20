@@ -160,6 +160,12 @@ const elements = {
   confirmMicrophone: document.querySelector("#confirm-microphone"),
   microphoneStatus: document.querySelector("#microphone-status"),
   microphonePreview: document.querySelector("#microphone-preview"),
+  speechStatePill: document.querySelector("#speech-state-pill"),
+  speechStateLabel: document.querySelector("#speech-state-label"),
+  audioSourceLabel: document.querySelector("#audio-source-label"),
+  hostLiveTranscript: document.querySelector("#host-live-transcript"),
+  hostContextSignal: document.querySelector("#host-context-signal"),
+  planProgressOrb: document.querySelector("#plan-progress-orb"),
   progressFill: document.querySelector("#progress-fill"),
   checklist: document.querySelector("#checklist"),
   recommendations: document.querySelector("#recommendations"),
@@ -177,7 +183,9 @@ const elements = {
   hostSessionCode: document.querySelector("#host-session-code"),
   sessionExpiry: document.querySelector("#session-expiry"),
   sessionTemplateLabel: document.querySelector("#session-template-label"),
+  meetingTypeContext: document.querySelector("#meeting-type-context"),
   hostMemberCount: document.querySelector("#host-member-count"),
+  hostParticipantAvatars: document.querySelector("#host-participant-avatars"),
   hostParticipantList: document.querySelector("#host-participant-list"),
   focusSectionLabel: document.querySelector("#focus-section-label"),
   nextDiscussionHeading: document.querySelector("#next-discussion-heading"),
@@ -197,6 +205,17 @@ const elements = {
   memberAlertLayerLabel: document.querySelector("#member-alert-layer-label"),
   memberAlertLayerHeading: document.querySelector("#member-alert-layer-heading"),
   memberAlertList: document.querySelector("#member-alert-list"),
+  hostAlertPreviewKind: document.querySelector("#host-alert-preview-kind"),
+  hostAlertPreviewTitle: document.querySelector("#host-alert-preview-title"),
+  hostAlertPreviewContent: document.querySelector("#host-alert-preview-content"),
+  hostMemberAlertCount: document.querySelector("#host-member-alert-count"),
+  memberPreviewDialog: document.querySelector("#member-preview-dialog"),
+  openMemberPreview: document.querySelector("#open-member-preview"),
+  closeMemberPreview: document.querySelector("#close-member-preview"),
+  memberPreviewTemplateLabel: document.querySelector("#member-preview-template-label"),
+  memberPreviewLayerLabel: document.querySelector("#member-preview-layer-label"),
+  memberPreviewAlertCount: document.querySelector("#member-preview-alert-count"),
+  memberPreviewAlertList: document.querySelector("#member-preview-alert-list"),
   toastFallback: document.querySelector("#toast-fallback")
 };
 
@@ -311,6 +330,17 @@ elements.closeDiagnostics.addEventListener("click", () => {
 elements.diagnosticsDialog.addEventListener("click", event => {
   if (event.target === elements.diagnosticsDialog) {
     elements.diagnosticsDialog.close();
+  }
+});
+elements.openMemberPreview.addEventListener("click", () => {
+  elements.memberPreviewDialog.showModal();
+});
+elements.closeMemberPreview.addEventListener("click", () => {
+  elements.memberPreviewDialog.close();
+});
+elements.memberPreviewDialog.addEventListener("click", event => {
+  if (event.target === elements.memberPreviewDialog) {
+    elements.memberPreviewDialog.close();
   }
 });
 elements.sessionForm.addEventListener("submit", async event => {
@@ -622,6 +652,13 @@ function renderHost() {
   elements.sessionTemplateLabel.textContent = templateProfile.label;
   document.querySelector("#meeting-type-label").textContent =
     session.purpose.meetingType;
+  const defaultMeetingType = templateProfile.meetingType
+    ?.trim()
+    .toLowerCase();
+  elements.meetingTypeContext.classList.toggle(
+    "hidden",
+    Boolean(defaultMeetingType)
+      && session.purpose.meetingType.trim().toLowerCase() === defaultMeetingType);
   document.querySelector("#purpose-title").textContent = session.purpose.title;
   document.querySelector("#purpose-objective").textContent = session.purpose.objective;
   const sessionClosed = session.status !== "active";
@@ -629,29 +666,37 @@ function renderHost() {
   document.querySelector("#transcript-form button").disabled = sessionClosed;
   elements.knowledgeFileForm.querySelector("button").disabled = sessionClosed;
   elements.knowledgeLinkForm.querySelector("button").disabled = sessionClosed;
-  elements.focusSectionLabel.innerHTML =
-    `<span class="spark" aria-hidden="true">✦</span>${templateProfile.focusLabel}`;
+  elements.focusSectionLabel.textContent = "Private AI guidance";
   elements.nextDiscussionHeading.textContent = templateProfile.focusLabel;
-  elements.planSectionLabel.textContent = templateProfile.planLabel;
-  elements.livePlanHeading.textContent = templateProfile.planHeading;
-  elements.alertReviewLabel.textContent = templateProfile.alertReviewLabel;
-  elements.alertReviewHeading.textContent = templateProfile.alertReviewHeading;
+  elements.planSectionLabel.textContent = templateProfile.planHeading;
+  elements.livePlanHeading.textContent = templateProfile.planLabel;
+  elements.alertReviewLabel.textContent = "Member alert";
+  elements.alertReviewHeading.textContent = templateProfile.memberLayerLabel;
   renderMicrophoneControls();
   const contextualCards = session.contextualCards ?? [];
+  const proposedRecommendations = (session.recommendedTasks ?? []).filter(
+    task => task.status === "proposed");
   renderContextualCards(contextualCards);
   renderContextualCardHistory(contextualCards);
+  renderHostMemberExperience(contextualCards, templateProfile);
   renderKnowledge(session.knowledgeSources ?? []);
   renderParticipantPresence(session.participants ?? []);
+  renderLiveSpeech(session, proposedRecommendations);
 
   const liveRecommendations = (session.recommendedTasks ?? []).filter(
     task => task.status === "accepted" || task.status === "completed");
   const completed = (session.checklist ?? []).filter(item => item.status === "completed").length
     + liveRecommendations.filter(task => task.status === "completed").length;
   const total = (session.checklist ?? []).length + liveRecommendations.length;
+  const progressPercent = total === 0
+    ? 0
+    : Math.round((completed / total) * 100);
   document.querySelector("#progress-label").textContent =
     `${completed}/${total}`;
-  elements.progressFill.style.width =
-    total === 0 ? "0" : `${Math.round((completed / total) * 100)}%`;
+  elements.progressFill.style.width = `${progressPercent}%`;
+  elements.planProgressOrb.style.setProperty(
+    "--plan-progress",
+    `${progressPercent}%`);
 
   elements.acceptedRecommendations.innerHTML = liveRecommendations.map(task => {
     const isComplete = task.status === "completed";
@@ -694,38 +739,46 @@ function renderHost() {
       </div>`;
   }).join("");
 
-  const proposedRecommendations = (session.recommendedTasks ?? []).filter(
-    task => task.status === "proposed");
   renderRecommendationToasts(proposedRecommendations);
   if (proposedRecommendations.length === 0) {
     elements.recommendations.className = session.isAnalyzing
-      ? "stack"
-      : "stack empty-state";
+      ? "recommendation-list"
+      : "recommendation-list empty-state";
     elements.recommendations.textContent = session.isAnalyzing
       ? "Analyzing meeting context\u2026"
       : templateProfile.guidanceEmpty;
   } else {
-    elements.recommendations.className = "stack";
+    elements.recommendations.className = "recommendation-list";
     elements.recommendations.innerHTML = proposedRecommendations
       .map(task => {
         const basedOn = resolveSourceTranscript(task, session.transcript);
+        const confidence = Math.round(Number(task.confidence) * 100);
         return `
-        <div class="recommendation">
+        <article class="recommendation">
           <h3>${escapeHtml(task.title)}</h3>
-          <p>${escapeHtml(task.rationale)}</p>
-          <div class="based-on">
-            <strong>Based on:</strong>
-            ${basedOn.map(segment => `
-              <blockquote>“${escapeHtml(segment.text)}”</blockquote>
-            `).join("")}
-          </div>
+          <p class="recommendation-rationale">${escapeHtml(task.rationale)}</p>
+          ${basedOn.length > 0 ? `
+            <details class="guidance-evidence">
+              <summary>Grounding evidence</summary>
+              <div class="based-on">
+                ${basedOn.map(segment => `
+                  <blockquote>“${escapeHtml(segment.text)}”</blockquote>
+                `).join("")}
+              </div>
+            </details>
+          ` : ""}
           <div class="actions">
             <button class="button primary" type="button"
-                    data-recommendation="${task.id}" data-status="accepted">Accept</button>
+                    data-recommendation="${task.id}" data-status="accepted">
+               <span aria-hidden="true">✓</span> Accept
+            </button>
             <button class="button subtle" type="button"
                     data-recommendation="${task.id}" data-status="dismissed">Dismiss</button>
+            <span class="recommendation-fit">
+              ${Number.isFinite(confidence) ? `${confidence}% fit` : "Grounded"}
+            </span>
           </div>
-        </div>`;
+        </article>`;
       }).join("");
   }
 
@@ -752,6 +805,94 @@ function renderHost() {
   renderWarningToasts(session.warnings ?? []);
   elements.warnings.innerHTML = (session.warnings ?? [])
     .map(warning => `<div class="warning">${escapeHtml(warning)}</div>`)
+    .join("");
+}
+
+function renderLiveSpeech(session, proposedRecommendations) {
+  const latestSegment = (session.transcript ?? [])
+    .slice()
+    .reverse()
+    .find(segment => segment.isFinal !== false);
+  if (!latestSegment) {
+    elements.hostLiveTranscript.className =
+      "host-live-transcript empty-state";
+    elements.hostLiveTranscript.innerHTML = `
+      <span class="speaker-avatar" aria-hidden="true">H</span>
+      <div>
+        <strong>Waiting for final speech</strong>
+        <p>The latest grounded transcript segment will appear here.</p>
+      </div>`;
+  } else {
+    const speaker = String(latestSegment.speaker || "Speaker");
+    elements.hostLiveTranscript.className = "host-live-transcript";
+    elements.hostLiveTranscript.innerHTML = `
+      <span class="speaker-avatar" aria-hidden="true">
+        ${escapeHtml(initialsForName(speaker))}
+      </span>
+      <div class="live-transcript-copy">
+        <div>
+          <strong>${escapeHtml(speaker)}</strong>
+          <time datetime="${escapeAttribute(latestSegment.occurredAtUtc ?? "")}">
+            ${escapeHtml(formatTranscriptMoment(latestSegment.occurredAtUtc))}
+          </time>
+        </div>
+        <p>“${escapeHtml(latestSegment.text)}”</p>
+      </div>`;
+  }
+
+  const recommendation = proposedRecommendations.at(0);
+  if (recommendation) {
+    const confidence = Math.round(Number(recommendation.confidence) * 100);
+    elements.hostContextSignal.textContent = Number.isFinite(confidence)
+      ? `Grounded recommendation ready · ${confidence}% confidence`
+      : "Grounded recommendation ready for Host review.";
+  } else if (session.isAnalyzing) {
+    elements.hostContextSignal.textContent =
+      "New final speech is being analyzed for grounded guidance.";
+  } else if (latestSegment) {
+    elements.hostContextSignal.textContent =
+      "No grounded recommendation signal is active.";
+  } else {
+    elements.hostContextSignal.textContent =
+      "Waiting for final speech evidence.";
+  }
+}
+
+function renderHostMemberExperience(cards, templateProfile) {
+  const publishedCards = cards
+    .filter(card => card.memberAlertStatus === "published")
+    .slice()
+    .reverse();
+  const latestCard = publishedCards.at(0);
+  const countLabel = `${publishedCards.length} ${publishedCards.length === 1
+    ? "alert"
+    : "alerts"}`;
+
+  elements.hostMemberAlertCount.textContent = countLabel;
+  elements.memberPreviewTemplateLabel.textContent = templateProfile.label;
+  elements.memberPreviewLayerLabel.textContent = templateProfile.memberLayerLabel;
+  elements.memberPreviewAlertCount.textContent = String(publishedCards.length);
+
+  if (!latestCard) {
+    elements.hostAlertPreviewKind.textContent = "Waiting";
+    elements.hostAlertPreviewTitle.textContent =
+      "No published Member alert yet";
+    elements.hostAlertPreviewContent.textContent =
+      "Eligible definitions and hints will appear here after delivery.";
+    elements.memberPreviewAlertList.className =
+      "member-preview-alert-list empty-state";
+    elements.memberPreviewAlertList.textContent =
+      "No published Member alerts yet.";
+    return;
+  }
+
+  elements.hostAlertPreviewKind.textContent =
+    contextualCardKindLabel(latestCard);
+  elements.hostAlertPreviewTitle.textContent = latestCard.title;
+  elements.hostAlertPreviewContent.textContent = latestCard.content;
+  elements.memberPreviewAlertList.className = "member-preview-alert-list";
+  elements.memberPreviewAlertList.innerHTML = publishedCards
+    .map(memberAlertMarkup)
     .join("");
 }
 
@@ -784,18 +925,32 @@ function renderMember() {
   elements.memberAlertList.innerHTML = alerts
     .slice()
     .reverse()
-    .map(card => {
-      const kind = String(card.kind).toLowerCase() === "definition"
-        ? "Definition"
-        : "Useful context";
-      return `
-        <article class="member-alert-card ${escapeHtml(String(card.kind).toLowerCase())}">
-          <span class="contextual-card-kind">${kind}</span>
-          <h3>${escapeHtml(card.title)}</h3>
-          <p>${escapeHtml(card.content)}</p>
-        </article>`;
-    })
+    .map(memberAlertMarkup)
     .join("");
+}
+
+function contextualCardKindLabel(card) {
+  return String(card.kind).toLowerCase() === "definition"
+    ? "Definition"
+    : "Useful context";
+}
+
+function memberAlertMarkup(card) {
+  return `
+    <article class="member-alert-card ${escapeHtml(String(card.kind).toLowerCase())}">
+      <span class="contextual-card-kind">${contextualCardKindLabel(card)}</span>
+      <h3>${escapeHtml(card.title)}</h3>
+      <p>${escapeHtml(card.content)}</p>
+    </article>`;
+}
+
+function initialsForName(displayName) {
+  return String(displayName || "")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(part => part.charAt(0).toUpperCase())
+    .join("") || "M";
 }
 
 function renderParticipantPresence(participants) {
@@ -818,6 +973,21 @@ function renderParticipantPresence(participants) {
   members.forEach(member => state.knownParticipantIds.add(member.id));
   state.participantTrackingInitialized = true;
   elements.hostMemberCount.textContent = String(members.length);
+  elements.hostParticipantAvatars.className = members.length === 0
+    ? "participant-avatar-list empty-state"
+    : "participant-avatar-list";
+  elements.hostParticipantAvatars.innerHTML = members.length === 0
+    ? "<span>No members yet</span>"
+    : `${members.slice(0, 4).map((member, index) => `
+        <span class="participant-avatar-chip avatar-${index + 1}"
+              title="${escapeAttribute(member.displayName)}"
+              aria-label="${escapeAttribute(member.displayName)}">
+          ${escapeHtml(initialsForName(member.displayName))}
+        </span>`).join("")}${members.length > 4 ? `
+        <span class="participant-avatar-chip avatar-more"
+              aria-label="${members.length - 4} more joined members">
+          +${members.length - 4}
+        </span>` : ""}`;
 
   if (members.length === 0) {
     elements.hostParticipantList.className = "participant-list empty-state";
@@ -834,14 +1004,10 @@ function renderParticipantPresence(participants) {
           hour: "2-digit",
           minute: "2-digit"
         })}`;
-    const initials = String(member.displayName)
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map(part => part.charAt(0).toUpperCase())
-      .join("") || "M";
+    const initials = initialsForName(member.displayName);
     return `
-      <div class="participant-item">
+      <div class="participant-item"
+           title="${escapeAttribute(member.displayName)} · ${escapeAttribute(joinedLabel)}">
         <span class="participant-avatar" aria-hidden="true">${escapeHtml(initials)}</span>
         <span class="participant-copy">
           <strong>${escapeHtml(member.displayName)}</strong>
@@ -1624,6 +1790,21 @@ function renderMicrophoneControls() {
   const mixedAudio = Boolean(state.microphoneCapture);
   const sessionCompleted = state.session?.status !== "active";
   elements.microphoneToggle.classList.toggle("listening", listening);
+  elements.speechStatePill.dataset.state = state.microphoneBusy
+    ? "starting"
+    : listening
+      ? "listening"
+      : "off";
+  elements.speechStateLabel.textContent = state.microphoneBusy
+    ? "Starting"
+    : listening
+      ? "Listening"
+      : sessionCompleted
+        ? "Ended"
+        : "Ready";
+  elements.audioSourceLabel.textContent = mixedAudio
+    ? "Microphone + shared audio"
+    : "Presenter microphone";
   elements.microphoneToggle.disabled = state.microphoneBusy
     || sessionCompleted
     || !state.browserSpeechAvailable;
@@ -1817,6 +1998,20 @@ function applySelectedTemplate() {
   document.querySelector("#success-criteria").placeholder = profile.criteriaPlaceholder;
 }
 
+function formatTranscriptMoment(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Latest";
+  }
+  if (Date.now() - date.getTime() < 60_000) {
+    return "Now";
+  }
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
 function formatExpiry(value) {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
@@ -1892,6 +2087,12 @@ function escapeHtml(value) {
   const element = document.createElement("span");
   element.textContent = value ?? "";
   return element.innerHTML;
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value)
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function resolveSourceTranscript(task, transcript) {

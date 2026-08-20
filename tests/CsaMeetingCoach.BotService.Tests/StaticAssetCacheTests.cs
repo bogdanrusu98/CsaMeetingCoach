@@ -18,8 +18,8 @@ public sealed class StaticAssetCacheTests
         indexResponse.EnsureSuccessStatusCode();
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
-        Assert.Contains("styles.css?v=20260820a", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260820a", html, StringComparison.Ordinal);
+        Assert.Contains("styles.css?v=20260820b", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260820b", html, StringComparison.Ordinal);
         Assert.Contains("id=\"toast-root\"", html, StringComparison.Ordinal);
         Assert.Contains(
             "vendor/react-toastify.bundle.js?v=11.1.0-20260819c",
@@ -32,6 +32,14 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("param || \"dark\"", html, StringComparison.Ordinal);
         Assert.Contains("data-theme", html, StringComparison.Ordinal);
         Assert.Contains("id=\"microphone-toggle\"", html, StringComparison.Ordinal);
+        Assert.Contains("class=\"audiogram\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"host-live-transcript\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"host-context-signal\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"plan-progress-orb\"", html, StringComparison.Ordinal);
+        Assert.Contains(
+            "id=\"purpose-objective\" class=\"session-objective-line\"",
+            html,
+            StringComparison.Ordinal);
         Assert.Contains("id=\"include-system-audio\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"microphone-access-status\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"recommendations\"", html, StringComparison.Ordinal);
@@ -49,9 +57,13 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("class=\"header-session-access\"", html, StringComparison.Ordinal);
         Assert.Contains("class=\"host-primary-row\"", html, StringComparison.Ordinal);
         Assert.Contains(
-            "aria-label=\"Session controls and member experience\"",
+            "aria-label=\"Session knowledge and status\"",
             html,
             StringComparison.Ordinal);
+        Assert.Contains("id=\"host-participant-avatars\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"member-preview-dialog\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"member-preview-alert-list\"", html, StringComparison.Ordinal);
+        Assert.Contains("Live Member View", html, StringComparison.Ordinal);
         Assert.Contains("id=\"knowledge-file-form\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"knowledge-link-form\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"knowledge-file-visibility\"", html, StringComparison.Ordinal);
@@ -59,6 +71,7 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("id=\"accepted-recommendations\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"checklist\"", html, StringComparison.Ordinal);
         Assert.Contains("Open diagnostics and transcript simulator", html, StringComparison.Ordinal);
+        Assert.Contains("aria-label=\"End session\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("value=\"Host\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Cloud modernization workshop", html, StringComparison.Ordinal);
         Assert.DoesNotContain(
@@ -74,7 +87,7 @@ public sealed class StaticAssetCacheTests
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260820a");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260820b");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
@@ -163,13 +176,28 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("protected access lasts up to 30 days", script, StringComparison.Ordinal);
         Assert.Contains("const templateProfiles", script, StringComparison.Ordinal);
         Assert.Contains("renderParticipantPresence", script, StringComparison.Ordinal);
+        Assert.Contains("renderLiveSpeech", script, StringComparison.Ordinal);
+        Assert.Contains("segment => segment.isFinal !== false", script, StringComparison.Ordinal);
+        Assert.Contains("function escapeAttribute", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "title=\"${escapeAttribute(member.displayName)}\"",
+            script,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "title=\"${escapeHtml(member.displayName)}\"",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains("Boolean(defaultMeetingType)", script, StringComparison.Ordinal);
+        Assert.Contains("--plan-progress", script, StringComparison.Ordinal);
+        Assert.Contains("renderHostMemberExperience", script, StringComparison.Ordinal);
+        Assert.Contains("card.memberAlertStatus === \"published\"", script, StringComparison.Ordinal);
         Assert.Contains("joined the session.", script, StringComparison.Ordinal);
         Assert.Contains("window.scrollTo(0, 0)", script, StringComparison.Ordinal);
         Assert.Contains("Workshop facilitation", script, StringComparison.Ordinal);
         Assert.Contains("Training guidance", script, StringComparison.Ordinal);
         Assert.Contains("customMeetingType.required", script, StringComparison.Ordinal);
 
-        using var styleResponse = await client.GetAsync("/styles.css?v=20260820a");
+        using var styleResponse = await client.GetAsync("/styles.css?v=20260820b");
         styleResponse.EnsureSuccessStatusCode();
         AssertNoStore(styleResponse);
         var styles = await styleResponse.Content.ReadAsStringAsync();
@@ -194,6 +222,18 @@ public sealed class StaticAssetCacheTests
         Assert.Contains(".template-option", styles, StringComparison.Ordinal);
         Assert.Contains("[data-template=\"training\"]", styles, StringComparison.Ordinal);
         Assert.Contains(".participant-list", styles, StringComparison.Ordinal);
+        Assert.Contains(".audiogram", styles, StringComparison.Ordinal);
+        Assert.Contains("@keyframes host-audiogram", styles, StringComparison.Ordinal);
+        Assert.Contains(".member-preview-dialog", styles, StringComparison.Ordinal);
+        Assert.Contains(
+            "var(--plan-progress, 0%)",
+            styles,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "html[data-theme=\"contrast\"] .member-preview-dialog",
+            styles,
+            StringComparison.Ordinal);
+        Assert.Contains("--host-cyan: #60cdff", styles, StringComparison.Ordinal);
 
         using var toastScriptResponse = await client.GetAsync(
             "/vendor/react-toastify.bundle.js?v=11.1.0-20260819c");

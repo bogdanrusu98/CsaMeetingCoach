@@ -14,7 +14,7 @@
   </script>
   <link rel="stylesheet"
         href="vendor/react-toastify.bundle.css?v=11.1.0-20260819c">
-  <link rel="stylesheet" href="styles.css?v=20260820a">
+  <link rel="stylesheet" href="styles.css?v=20260820b">
 </head>
 <body>
   <main class="app-shell">
@@ -187,7 +187,8 @@
       </p>
     </section>
 
-    <section id="session-view" class="session-view host-dashboard hidden">
+    <section id="session-view" class="session-view host-dashboard hidden"
+             aria-labelledby="host-workspace-heading">
       <header class="session-bar commercial-session-bar">
         <div class="host-product-mark" aria-label="Session Copilot">
           <span class="host-product-glyph" aria-hidden="true">C</span>
@@ -195,54 +196,93 @@
         <div class="session-identity">
           <span class="live-dot" aria-hidden="true"></span>
           <div>
-            <p class="role-kicker">Host workspace</p>
-            <div class="session-title-line">
-              <h1 id="purpose-title"></h1>
-              <span id="session-template-label" class="template-badge"></span>
-            </div>
+            <h1 id="host-workspace-heading">Host workspace</h1>
             <p class="session-meta-line">
-              <span id="meeting-type-label"></span> ·
-              <span id="connection-status" class="status neutral">Connecting</span>
+              <span id="session-template-label">Session</span>
+              <span id="meeting-type-context" class="hidden">
+                <span aria-hidden="true">·</span>
+                <span id="meeting-type-label">Session</span>
+              </span>
+              <span aria-hidden="true">·</span>
+              <span id="purpose-title">Meeting</span>
             </p>
-            <p id="purpose-objective" class="session-objective"></p>
           </div>
         </div>
-        <div class="header-session-access" aria-label="Member access">
-          <span class="header-access-label">Member code</span>
-          <output id="host-session-code" class="host-session-code"
-                  aria-label="Member session code"></output>
-          <p class="header-retention">
-            Expires <time id="session-expiry"></time> · Auto-deletes
-          </p>
-        </div>
         <div class="bar-actions">
-          <button id="open-diagnostics" type="button" class="button subtle utility-button"
+          <span id="connection-status" class="status neutral">Connecting</span>
+          <button id="open-diagnostics" class="header-action" type="button"
                   aria-label="Open diagnostics and transcript simulator"
                   title="Diagnostics and transcript simulator">
-            <span aria-hidden="true">•••</span><span class="utility-label">Tools</span>
+            <span aria-hidden="true">⌁</span>
+            <span>Tools</span>
           </button>
-          <button id="complete-meeting" type="button" class="button subtle">End session</button>
+          <button id="complete-meeting" class="header-action danger" type="button"
+                  aria-label="End session">
+            <span aria-hidden="true">□</span>
+            <span>End</span>
+          </button>
+          <span class="header-retention">
+            Deletes <time id="session-expiry">at the 24-hour limit</time>
+          </span>
+          <div class="header-session-access" aria-label="Member access">
+            <span class="visually-hidden">Member code</span>
+            <output id="host-session-code" class="host-session-code"
+                    aria-label="Member session code"></output>
+          </div>
         </div>
       </header>
 
       <div class="host-layout">
-        <section class="host-main">
+        <section class="host-main" aria-label="Live coaching workspace">
           <div class="host-primary-row">
             <article id="microphone-panel" class="microphone-card hidden"
                      aria-labelledby="microphone-heading">
-              <div class="microphone-main">
-                <button id="microphone-toggle" type="button" class="microphone-button"
-                        aria-label="Set up meeting audio" aria-pressed="false">
-                  <span class="microphone-icon" aria-hidden="true"></span>
-                </button>
-                <div class="microphone-copy">
-                  <div class="microphone-title-row">
-                    <h2 id="microphone-heading">Live speech</h2>
-                    <span id="microphone-status" class="status neutral">Off</span>
-                  </div>
-                  <p id="microphone-preview" class="live-caption" aria-live="polite">
-                    Start listening when participants have been notified.
-                  </p>
+              <div class="reference-card-heading">
+                <h2 id="microphone-heading" class="section-label">Live speech</h2>
+                <span id="speech-state-pill" class="listening-pill" data-state="off">
+                  <span aria-hidden="true"></span>
+                  <span id="speech-state-label">Ready</span>
+                </span>
+              </div>
+              <button id="microphone-toggle" class="audio-source-button" type="button"
+                      aria-pressed="false" aria-label="Set up meeting audio">
+                <span class="audiogram" aria-hidden="true">
+                  <span style="--bar-height: 11px; --bar-delay: -0.42s"></span>
+                  <span style="--bar-height: 22px; --bar-delay: -0.18s"></span>
+                  <span style="--bar-height: 31px; --bar-delay: -0.34s"></span>
+                  <span style="--bar-height: 39px; --bar-delay: -0.08s"></span>
+                  <span style="--bar-height: 24px; --bar-delay: -0.26s"></span>
+                  <span style="--bar-height: 17px; --bar-delay: -0.48s"></span>
+                  <span style="--bar-height: 28px; --bar-delay: -0.14s"></span>
+                  <span style="--bar-height: 35px; --bar-delay: -0.31s"></span>
+                  <span style="--bar-height: 18px; --bar-delay: -0.04s"></span>
+                  <span style="--bar-height: 25px; --bar-delay: -0.39s"></span>
+                  <span style="--bar-height: 33px; --bar-delay: -0.21s"></span>
+                  <span style="--bar-height: 20px; --bar-delay: -0.46s"></span>
+                  <span style="--bar-height: 37px; --bar-delay: -0.11s"></span>
+                  <span style="--bar-height: 27px; --bar-delay: -0.29s"></span>
+                  <span style="--bar-height: 13px; --bar-delay: -0.01s"></span>
+                </span>
+                <span class="audio-source-copy">
+                  <strong id="audio-source-label">Presenter microphone</strong>
+                  <span id="microphone-preview" aria-live="polite">
+                    Speech converted to context in real time
+                  </span>
+                </span>
+                <span id="microphone-status" class="status neutral">Off</span>
+              </button>
+              <div id="host-live-transcript" class="host-live-transcript empty-state">
+                <span class="speaker-avatar" aria-hidden="true">H</span>
+                <div>
+                  <strong>Waiting for final speech</strong>
+                  <p>The latest grounded transcript segment will appear here.</p>
+                </div>
+              </div>
+              <div class="context-signal">
+                <span class="context-signal-avatar" aria-hidden="true">AI</span>
+                <div>
+                  <span>Context signal</span>
+                  <p id="host-context-signal">Waiting for final speech evidence.</p>
                 </div>
               </div>
               <div id="microphone-unlock" class="microphone-unlock hidden">
@@ -263,29 +303,39 @@
                   <input id="include-system-audio" type="checkbox">
                   <span>
                     Include meeting audio played by this device.
-                    <span class="field-hint">Share the Teams tab or screen with system audio enabled.</span>
+                    <span class="field-hint">
+                      Share the Teams tab or screen with system audio enabled.
+                    </span>
                   </span>
                 </label>
                 <label>
                   Demo speech access code
                   <input id="microphone-access-key" type="password" autocomplete="off">
-                  <span id="microphone-access-status" class="field-hint" aria-live="polite"></span>
+                  <span id="microphone-access-status" class="field-hint"
+                        aria-live="polite"></span>
                 </label>
-                <button id="confirm-microphone" type="button" class="button primary full-width">
+                <button id="confirm-microphone" type="button"
+                        class="button primary full-width">
                   Start listening
                 </button>
               </div>
             </article>
 
             <article class="focus-card" aria-labelledby="next-discussion-heading">
-              <div class="focus-card-heading">
-                <div id="focus-section-label" class="section-label">
-                  <span class="spark" aria-hidden="true">✦</span>Host guidance
+              <div class="guidance-heading">
+                <span class="guidance-glyph" aria-hidden="true">✦</span>
+                <div>
+                  <p id="focus-section-label" class="section-label">
+                    Private AI guidance
+                  </p>
+                  <p class="guidance-privacy">
+                    Only the host can see this ·
+                    <span id="next-discussion-heading">Template guidance</span>
+                  </p>
                 </div>
-                <span class="guidance-privacy">Host only</span>
               </div>
-              <h2 id="next-discussion-heading" class="visually-hidden">Host guidance</h2>
-              <div id="recommendations" class="recommendation-list empty-state" aria-live="polite">
+              <div id="recommendations" class="recommendation-list empty-state"
+                   aria-live="polite">
                 Listening for explicit discussion to suggest what to cover next.
               </div>
             </article>
@@ -294,33 +344,92 @@
           <article id="live-plan" class="progress-card" aria-labelledby="live-plan-heading">
             <div class="progress-header">
               <div>
-                <p id="plan-section-label" class="eyebrow">Session progress</p>
-                <h2 id="live-plan-heading">Evidence-backed plan</h2>
+                <p id="plan-section-label" class="section-label">Evidence-backed plan</p>
+                <h2 id="live-plan-heading" class="visually-hidden">Live meeting plan</h2>
+                <p id="purpose-objective" class="session-objective-line"></p>
               </div>
-              <span id="progress-label" class="progress-count" aria-live="polite">0/0</span>
+              <div class="plan-progress-summary" aria-live="polite">
+                <span id="plan-progress-orb" class="plan-progress-orb"
+                      aria-hidden="true"></span>
+                <strong id="progress-label">0/0</strong>
+                <span>covered</span>
+              </div>
             </div>
-            <div class="progress-track" aria-hidden="true"><span id="progress-fill"></span></div>
-            <div id="accepted-recommendations" class="compact-list"></div>
-            <div id="checklist" class="compact-list goals-list"></div>
+            <div class="progress-track" aria-hidden="true">
+              <span id="progress-fill"></span>
+            </div>
+            <div class="learning-plan-layout">
+              <section class="plan-checklist" aria-label="Evidence-backed task progress">
+                <div id="accepted-recommendations" class="compact-list"></div>
+                <div id="checklist" class="compact-list goals-list"></div>
+              </section>
+
+              <aside class="plan-experience-rail" aria-label="Live Member experience">
+                <article class="session-access-card">
+                  <div class="member-strip-heading">
+                    <div>
+                      <p class="eyebrow">Members joined</p>
+                      <p class="member-count-copy">
+                        <strong id="host-member-count">0</strong>
+                        <span>joined</span>
+                      </p>
+                    </div>
+                    <span class="joined-state">
+                      Joined
+                      <span aria-hidden="true"></span>
+                    </span>
+                  </div>
+                  <div id="host-participant-avatars"
+                       class="participant-avatar-list"
+                       aria-label="Joined member initials"></div>
+                  <details class="member-roster">
+                    <summary>View member names</summary>
+                    <div id="host-participant-list" class="participant-list empty-state"
+                         aria-live="polite">No members have joined yet.</div>
+                  </details>
+                </article>
+
+                <article class="member-alert-review"
+                         aria-labelledby="alert-review-heading">
+                  <div class="member-alert-heading">
+                    <span class="member-alert-glyph" aria-hidden="true">＋</span>
+                    <div>
+                      <p id="alert-review-label" class="eyebrow">Member alert</p>
+                      <p id="alert-review-heading" class="member-layer-name">
+                        Member learning layer
+                      </p>
+                    </div>
+                  </div>
+                  <div class="member-alert-preview">
+                    <span id="host-alert-preview-kind" class="contextual-card-kind">
+                      Waiting
+                    </span>
+                    <h3 id="host-alert-preview-title">No published Member alert yet</h3>
+                    <p id="host-alert-preview-content">
+                      Eligible definitions and hints will appear here after delivery.
+                    </p>
+                  </div>
+                  <div class="member-preview-actions">
+                    <button id="open-member-preview"
+                            class="button member-preview-button" type="button">
+                      Open live Member view
+                    </button>
+                    <span id="host-member-alert-count">0 alerts</span>
+                  </div>
+                  <details class="alert-review-details">
+                    <summary>Review delivery queue</summary>
+                    <div id="contextual-card-history"
+                         class="contextual-card-history empty-state">
+                      No contextual cards yet.
+                    </div>
+                  </details>
+                </article>
+              </aside>
+            </div>
           </article>
         </section>
 
-        <aside class="host-sidebar" aria-label="Session controls and member experience">
-          <article class="session-access-card" aria-labelledby="participant-presence-title">
-            <div class="section-heading-row">
-              <div>
-                <p class="eyebrow">Session audience</p>
-                <h2 id="participant-presence-title">Members joined</h2>
-              </div>
-              <span id="host-member-count" class="count-badge">0</span>
-            </div>
-            <p class="section-description">
-              Members appear after they enter the session code.
-            </p>
-            <div id="host-participant-list" class="participant-list empty-state"
-                 aria-live="polite">No members have joined yet.</div>
-          </article>
-
+        <aside class="host-sidebar" aria-label="Session knowledge and status">
           <article class="knowledge-card" aria-labelledby="knowledge-title">
             <div class="section-heading-row">
               <div>
@@ -370,20 +479,40 @@
               No session knowledge added.
             </div>
           </article>
-
-          <article class="progress-card member-alert-review" aria-labelledby="alert-review-heading">
-            <div class="progress-header">
-              <div>
-                <p id="alert-review-label" class="eyebrow">Member experience</p>
-                <h2 id="alert-review-heading">Learning alert review</h2>
-              </div>
-            </div>
-            <div id="contextual-card-history"
-                 class="contextual-card-history empty-state">No learning alerts yet.</div>
-          </article>
         </aside>
       </div>
     </section>
+
+    <dialog id="member-preview-dialog" class="member-preview-dialog"
+            aria-labelledby="member-preview-title">
+      <header class="member-preview-header">
+        <span class="member-preview-mark" aria-hidden="true">M</span>
+        <div>
+          <h2 id="member-preview-title">Live Member View</h2>
+          <p>
+            <span id="member-preview-template-label">Session</span>
+            <span aria-hidden="true">·</span>
+            <span id="member-preview-layer-label">Member learning layer</span>
+          </p>
+        </div>
+        <button id="close-member-preview" class="icon-button" type="button"
+                aria-label="Close live Member View">×</button>
+      </header>
+      <div class="member-preview-body">
+        <div class="member-preview-status">
+          <span>Member-visible alerts</span>
+          <strong id="member-preview-alert-count">0</strong>
+        </div>
+        <div id="member-preview-alert-list"
+             class="member-preview-alert-list empty-state">
+          No published Member alerts yet.
+        </div>
+        <p class="member-preview-privacy">
+          Private Host guidance, transcript evidence, and Host-only knowledge are
+          never included in this preview.
+        </p>
+      </div>
+    </dialog>
 
     <section id="member-session-view" class="member-dashboard hidden"
              aria-labelledby="member-purpose-title">
@@ -460,6 +589,6 @@
   <script src="https://res.cdn.office.net/teams-js/2.31.0/js/MicrosoftTeams.min.js"></script>
   <script src="vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0"></script>
   <script src="vendor/react-toastify.bundle.js?v=11.1.0-20260819c"></script>
-  <script src="app.js?v=20260820a"></script>
+  <script src="app.js?v=20260820b"></script>
 </body>
 </html>
