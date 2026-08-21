@@ -18,10 +18,10 @@ public sealed class StaticAssetCacheTests
         indexResponse.EnsureSuccessStatusCode();
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
-        Assert.Contains("styles.css?v=20260821a", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260821a", html, StringComparison.Ordinal);
+        Assert.Contains("styles.css?v=20260821b", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260821b", html, StringComparison.Ordinal);
         Assert.Contains(
-            "assets/host-workspace-preview.png?v=20260821a",
+            "assets/host-workspace-preview.png?v=20260821b",
             html,
             StringComparison.Ordinal);
         Assert.Contains("id=\"toast-root\"", html, StringComparison.Ordinal);
@@ -33,8 +33,12 @@ public sealed class StaticAssetCacheTests
             "vendor/react-toastify.bundle.css?v=11.1.0-20260819c",
             html,
             StringComparison.Ordinal);
-        Assert.Contains("param || \"dark\"", html, StringComparison.Ordinal);
+        Assert.Contains("\"session-copilot-theme\"", html, StringComparison.Ordinal);
         Assert.Contains("data-theme", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"theme-toggle\"", html, StringComparison.Ordinal);
+        Assert.Contains("aria-label=\"Dark mode\"", html, StringComparison.Ordinal);
+        Assert.Contains("class=\"theme-icon theme-icon-sun\"", html, StringComparison.Ordinal);
+        Assert.Contains("class=\"theme-icon theme-icon-moon\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"microphone-toggle\"", html, StringComparison.Ordinal);
         Assert.Contains("class=\"audiogram\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"host-live-transcript\"", html, StringComparison.Ordinal);
@@ -91,13 +95,15 @@ public sealed class StaticAssetCacheTests
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260821a");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260821b");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
         var script = await scriptResponse.Content.ReadAsStringAsync();
         Assert.DoesNotContain("sessionStorage", script, StringComparison.Ordinal);
         Assert.DoesNotContain("navigator.clipboard", script, StringComparison.Ordinal);
+        Assert.Contains("THEME_STORAGE_KEY", script, StringComparison.Ordinal);
+        Assert.Contains("applyTheme(nextTheme, true)", script, StringComparison.Ordinal);
         Assert.Contains("Device authorized", script, StringComparison.Ordinal);
         Assert.Contains(
             "/api/browser-speech/access",
@@ -201,7 +207,7 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("Training guidance", script, StringComparison.Ordinal);
         Assert.Contains("customMeetingType.required", script, StringComparison.Ordinal);
 
-        using var styleResponse = await client.GetAsync("/styles.css?v=20260821a");
+        using var styleResponse = await client.GetAsync("/styles.css?v=20260821b");
         styleResponse.EnsureSuccessStatusCode();
         AssertNoStore(styleResponse);
         var styles = await styleResponse.Content.ReadAsStringAsync();
@@ -211,6 +217,13 @@ public sealed class StaticAssetCacheTests
         Assert.Contains(".session-toast--hint", styles, StringComparison.Ordinal);
         Assert.Contains(".session-toast--definition", styles, StringComparison.Ordinal);
         Assert.Contains(".role-card", styles, StringComparison.Ordinal);
+        Assert.Contains(".theme-toggle", styles, StringComparison.Ordinal);
+        Assert.Matches(@"\.app-shell\s*\{\s*width:\s*100%;\s*\}", styles);
+        Assert.Contains("min-height: 100svh", styles, StringComparison.Ordinal);
+        Assert.Contains(
+            "html[data-theme=\"dark\"] .commercial-entry",
+            styles,
+            StringComparison.Ordinal);
         Assert.Contains(".host-layout", styles, StringComparison.Ordinal);
         Assert.Contains(".host-primary-row", styles, StringComparison.Ordinal);
         Assert.Contains(".header-session-access", styles, StringComparison.Ordinal);
@@ -240,7 +253,7 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("--host-cyan: #60cdff", styles, StringComparison.Ordinal);
 
         using var previewResponse = await client.GetAsync(
-            "/assets/host-workspace-preview.png?v=20260821a");
+            "/assets/host-workspace-preview.png?v=20260821b");
         previewResponse.EnsureSuccessStatusCode();
         AssertNoStore(previewResponse);
         Assert.Equal("image/png", previewResponse.Content.Headers.ContentType?.MediaType);

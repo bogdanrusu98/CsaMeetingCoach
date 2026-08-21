@@ -46,6 +46,8 @@ const state = {
       && (window.AudioContext || window.webkitAudioContext))
 };
 
+const THEME_STORAGE_KEY = "session-copilot-theme";
+
 const templateProfiles = Object.freeze({
   presentation: {
     label: "Presentation",
@@ -216,17 +218,54 @@ const elements = {
   memberPreviewLayerLabel: document.querySelector("#member-preview-layer-label"),
   memberPreviewAlertCount: document.querySelector("#member-preview-alert-count"),
   memberPreviewAlertList: document.querySelector("#member-preview-alert-list"),
+  themeToggle: document.querySelector("#theme-toggle"),
   toastFallback: document.querySelector("#toast-fallback")
 };
 
-function applyTeamsTheme(theme) {
-  const normalizedTheme = theme === "dark"
+function normalizeTheme(theme) {
+  return theme === "dark"
     ? "dark"
     : theme === "contrast"
       ? "contrast"
       : "light";
-  document.documentElement.setAttribute("data-theme", normalizedTheme);
 }
+
+function updateThemeToggle(theme) {
+  const darkModeActive = theme === "dark" || theme === "contrast";
+  const title = darkModeActive
+    ? "Switch to light mode"
+    : "Switch to dark mode";
+  elements.themeToggle.setAttribute("aria-pressed", String(darkModeActive));
+  elements.themeToggle.title = title;
+}
+
+function applyTheme(theme, persistPreference = false) {
+  const normalizedTheme = normalizeTheme(theme);
+  document.documentElement.setAttribute("data-theme", normalizedTheme);
+  updateThemeToggle(normalizedTheme);
+  if (!persistPreference) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, normalizedTheme);
+  } catch (error) {
+    console.warn("Theme preference could not be saved.", error);
+  }
+}
+
+function applyTeamsTheme(theme) {
+  applyTheme(theme);
+}
+
+elements.themeToggle.addEventListener("click", () => {
+  const currentTheme = normalizeTheme(document.documentElement.dataset.theme);
+  const nextTheme = currentTheme === "dark" || currentTheme === "contrast"
+    ? "light"
+    : "dark";
+  applyTheme(nextTheme, true);
+});
+applyTheme(document.documentElement.dataset.theme);
 
 async function initializeTeamsContext() {
   const teamsHosted = new URLSearchParams(window.location.search).get("host") === "teams";
