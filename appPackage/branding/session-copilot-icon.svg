@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1024"
+     height="1024"
+     viewBox="0 0 1024 1024"
+     role="img"
+     aria-labelledby="title description">
+  <title id="title">Session Copilot application icon</title>
+  <desc id="description">
+    An AI spark framed by two opposing conversation arcs for the host and member roles.
+  </desc>
+
+  <defs>
+    <linearGradient id="surface" x1="148" y1="100" x2="876" y2="930"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3F82FF"/>
+      <stop offset="0.46" stop-color="#5368F4"/>
+      <stop offset="1" stop-color="#7953E5"/>
+    </linearGradient>
+    <radialGradient id="highlight" cx="0" cy="0" r="1"
+                    gradientTransform="translate(242 176) rotate(47) scale(820)"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rightArc" x1="665" y1="274" x2="764" y2="748"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.52"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.28"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="32" y="32" width="960" height="960" rx="224" fill="url(#surface)"/>
+  <rect x="32" y="32" width="960" height="960" rx="224" fill="url(#highlight)"/>
+
+  <path d="M382 277C270 326 214 410 214 512C214 615 270 699 382 747"
+        fill="none"
+        stroke="#FFFFFF"
+        stroke-width="58"
+        stroke-linecap="round"/>
+  <path d="M642 277C754 326 810 410 810 512C810 615 754 699 642 747"
+        fill="none"
+        stroke="url(#rightArc)"
+        stroke-width="58"
+        stroke-linecap="round"/>
+
+  <path d="M512 302
+           C532 420 592 480 710 500
+           C592 520 532 580 512 698
+           C492 580 432 520 314 500
+           C432 480 492 420 512 302Z"
+        fill="#FFFFFF"/>
+
+  <circle cx="764" cy="326" r="31" fill="#84F0CE"/>
+  <circle cx="764" cy="326" r="18" fill="#23C997"/>
+</svg>

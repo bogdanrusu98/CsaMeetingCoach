@@ -14,52 +14,114 @@
   </script>
   <link rel="stylesheet"
         href="vendor/react-toastify.bundle.css?v=11.1.0-20260819c">
-  <link rel="stylesheet" href="styles.css?v=20260820b">
+  <link rel="stylesheet" href="styles.css?v=20260821a">
 </head>
 <body>
   <main class="app-shell">
     <section id="setup-view" class="commercial-entry" aria-labelledby="entry-title">
       <header class="entry-header">
         <a class="product-brand" href="/" aria-label="Session Copilot home">
-          <span class="product-glyph" aria-hidden="true">S</span>
+          <span class="product-glyph" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 3.5 13.7 8l4.8 1.7-4.8 1.7L12 16l-1.7-4.6-4.8-1.7L10.3 8 12 3.5Z"
+                    fill="currentColor"></path>
+              <path d="m18.2 15 .8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8.8-2.1Z"
+                    fill="currentColor" opacity=".78"></path>
+            </svg>
+          </span>
           <span>Session Copilot</span>
         </a>
-        <span class="privacy-chip">Ephemeral by design · 24 hours</span>
+        <span class="privacy-chip">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 3 5.5 5.7v5.7c0 4.1 2.7 7.6 6.5 9.6 3.8-2 6.5-5.5 6.5-9.6V5.7L12 3Z"
+                  stroke="currentColor" stroke-width="1.8"></path>
+            <path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.8"></path>
+          </svg>
+          Private by design · deletes after 24h
+        </span>
       </header>
 
       <div id="role-picker" class="entry-hero">
         <div class="hero-copy">
-          <p class="eyebrow">Live, role-aware assistance</p>
-          <h1 id="entry-title">Guide the room without becoming another chatbot.</h1>
-          <p>
-            Run a presentation, workshop, training, or customer conversation with
-            private host guidance and focused learning alerts for members.
+          <p class="entry-eyebrow">
+            <span aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M12 3.5 13.7 8l4.8 1.7-4.8 1.7L12 16l-1.7-4.6-4.8-1.7L10.3 8 12 3.5Z"
+                      fill="currentColor"></path>
+              </svg>
+            </span>
+            AI guidance for live sessions
           </p>
+          <h1 id="entry-title">Lead the room.<span>Stay present.</span></h1>
+          <p class="hero-description">
+            Private, role-aware guidance that helps hosts move the conversation
+            forward and gives members only the context they need.
+          </p>
+
+          <div class="role-grid" aria-label="Choose how to enter">
+            <button type="button" class="role-card host-card" data-role-choice="host">
+              <span class="role-card-copy">
+                <strong>Start a session</strong>
+                <span class="visually-hidden">
+                  Create the plan, add trusted knowledge, and receive private guidance.
+                </span>
+              </span>
+              <svg class="role-arrow" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M5 12h14M13 6l6 6-6 6"
+                      stroke="currentColor" stroke-width="1.9"></path>
+              </svg>
+            </button>
+            <button type="button" class="role-card member-card" data-role-choice="member">
+              <svg class="role-leading-icon" viewBox="0 0 24 24" fill="none"
+                   aria-hidden="true">
+                <path d="M8 5H5v3M16 5h3v3M8 19H5v-3M16 19h3v-3"
+                      stroke="currentColor" stroke-width="1.8"></path>
+                <path d="M9 9h6v6H9z" stroke="currentColor" stroke-width="1.8"></path>
+              </svg>
+              <span class="role-card-copy">
+                <strong>Join with code</strong>
+                <span class="visually-hidden">
+                  Enter a session code and receive only approved learning alerts.
+                </span>
+              </span>
+            </button>
+          </div>
+
           <div class="trust-row" aria-label="Privacy features">
-            <span>No raw audio stored</span>
-            <span>Knowledge isolated per session</span>
-            <span>Automatic deletion after 24 hours</span>
+            <span>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 12h3l2-5 4 10 2-5h5"
+                      stroke="currentColor" stroke-width="1.9"></path>
+              </svg>
+              No raw audio stored
+            </span>
+            <span>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 3 5.5 5.7v5.7c0 4.1 2.7 7.6 6.5 9.6 3.8-2 6.5-5.5 6.5-9.6V5.7L12 3Z"
+                      stroke="currentColor" stroke-width="1.9"></path>
+              </svg>
+              Knowledge isolated per session
+            </span>
+            <span>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="8.5"
+                        stroke="currentColor" stroke-width="1.9"></circle>
+                <path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.9"></path>
+              </svg>
+              Automatic 24h deletion
+            </span>
           </div>
         </div>
 
-        <div class="role-grid" aria-label="Choose how to enter">
-          <button type="button" class="role-card host-card" data-role-choice="host">
-            <span class="role-icon" aria-hidden="true">H</span>
-            <span class="role-card-copy">
-              <strong>Host a session</strong>
-              <span>Create the plan, add trusted knowledge, and receive private guidance.</span>
-            </span>
-            <span class="role-arrow" aria-hidden="true">→</span>
-          </button>
-          <button type="button" class="role-card member-card" data-role-choice="member">
-            <span class="role-icon" aria-hidden="true">M</span>
-            <span class="role-card-copy">
-              <strong>Join as member</strong>
-              <span>Enter a session code and receive only approved learning alerts.</span>
-            </span>
-            <span class="role-arrow" aria-hidden="true">→</span>
-          </button>
-        </div>
+        <figure class="entry-product-preview">
+          <img src="assets/host-workspace-preview.png?v=20260821a"
+               width="1600" height="1000"
+               alt="Actual Session Copilot host workspace showing live speech, private AI guidance, and the evidence-backed action plan."
+               fetchpriority="high" decoding="async">
+          <figcaption class="visually-hidden">
+            Real product view using demonstration content.
+          </figcaption>
+        </figure>
       </div>
 
       <section id="host-setup-panel" class="setup-panel hidden" aria-labelledby="host-setup-title">
@@ -589,6 +651,6 @@
   <script src="https://res.cdn.office.net/teams-js/2.31.0/js/MicrosoftTeams.min.js"></script>
   <script src="vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0"></script>
   <script src="vendor/react-toastify.bundle.js?v=11.1.0-20260819c"></script>
-  <script src="app.js?v=20260820b"></script>
+  <script src="app.js?v=20260821a"></script>
 </body>
 </html>

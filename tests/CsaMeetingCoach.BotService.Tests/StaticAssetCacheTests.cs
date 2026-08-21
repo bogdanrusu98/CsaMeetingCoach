@@ -18,8 +18,12 @@ public sealed class StaticAssetCacheTests
         indexResponse.EnsureSuccessStatusCode();
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
-        Assert.Contains("styles.css?v=20260820b", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260820b", html, StringComparison.Ordinal);
+        Assert.Contains("styles.css?v=20260821a", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260821a", html, StringComparison.Ordinal);
+        Assert.Contains(
+            "assets/host-workspace-preview.png?v=20260821a",
+            html,
+            StringComparison.Ordinal);
         Assert.Contains("id=\"toast-root\"", html, StringComparison.Ordinal);
         Assert.Contains(
             "vendor/react-toastify.bundle.js?v=11.1.0-20260819c",
@@ -44,8 +48,8 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("id=\"microphone-access-status\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"recommendations\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"live-plan\"", html, StringComparison.Ordinal);
-        Assert.Contains("Host a session", html, StringComparison.Ordinal);
-        Assert.Contains("Join as member", html, StringComparison.Ordinal);
+        Assert.Contains("Start a session", html, StringComparison.Ordinal);
+        Assert.Contains("Join with code", html, StringComparison.Ordinal);
         Assert.Contains("Session knowledge", html, StringComparison.Ordinal);
         Assert.Contains("Host guidance", html, StringComparison.Ordinal);
         Assert.Contains("Evidence-backed plan", html, StringComparison.Ordinal);
@@ -87,7 +91,7 @@ public sealed class StaticAssetCacheTests
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260820b");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260821a");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
@@ -197,7 +201,7 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("Training guidance", script, StringComparison.Ordinal);
         Assert.Contains("customMeetingType.required", script, StringComparison.Ordinal);
 
-        using var styleResponse = await client.GetAsync("/styles.css?v=20260820b");
+        using var styleResponse = await client.GetAsync("/styles.css?v=20260821a");
         styleResponse.EnsureSuccessStatusCode();
         AssertNoStore(styleResponse);
         var styles = await styleResponse.Content.ReadAsStringAsync();
@@ -234,6 +238,12 @@ public sealed class StaticAssetCacheTests
             styles,
             StringComparison.Ordinal);
         Assert.Contains("--host-cyan: #60cdff", styles, StringComparison.Ordinal);
+
+        using var previewResponse = await client.GetAsync(
+            "/assets/host-workspace-preview.png?v=20260821a");
+        previewResponse.EnsureSuccessStatusCode();
+        AssertNoStore(previewResponse);
+        Assert.Equal("image/png", previewResponse.Content.Headers.ContentType?.MediaType);
 
         using var toastScriptResponse = await client.GetAsync(
             "/vendor/react-toastify.bundle.js?v=11.1.0-20260819c");
