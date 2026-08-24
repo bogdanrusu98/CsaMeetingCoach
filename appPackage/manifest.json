@@ -1,10 +1,10 @@
 {
   "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.19/MicrosoftTeams.schema.json",
   "manifestVersion": "1.19",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "id": "ea741c0d-2d8e-43c9-a59d-e16679f41eb3",
   "developer": {
-    "name": "CSA Meeting Coach",
+    "name": "Session Copilot",
     "websiteUrl": "https://csa-meeting-coach-demo.westus2.cloudapp.azure.com",
     "privacyUrl": "https://csa-meeting-coach-demo.westus2.cloudapp.azure.com/privacy.html",
     "termsOfUseUrl": "https://csa-meeting-coach-demo.westus2.cloudapp.azure.com/terms.html"
@@ -14,12 +14,12 @@
     "color": "color.png"
   },
   "name": {
-    "short": "CSA Meeting Coach",
-    "full": "CSA Meeting Coach for VBD and technical customer meetings"
+    "short": "Session Copilot",
+    "full": "Session Copilot for live customer conversations"
   },
   "description": {
-    "short": "Private, evidence-backed meeting checklist and task coach.",
-    "full": "Uses the meeting purpose and approved transcript input to maintain an evidence-backed checklist and recommend follow-up tasks for CSA meetings."
+    "short": "Private live guidance with progress proven by transcript evidence.",
+    "full": "Provides role-aware guidance for live customer conversations: private next steps for hosts, clear context for members, and checklist progress backed by exact transcript evidence."
   },
   "accentColor": "#5B5FC7",
   "configurableTabs": [

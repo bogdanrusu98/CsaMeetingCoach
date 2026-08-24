@@ -26,7 +26,7 @@ window.microsoftTeams.app.initialize()
       window.microsoftTeams.pages.config.setConfig({
         entityId: "csa-meeting-coach",
         contentUrl: `${window.location.origin}/?host=teams`,
-        suggestedDisplayName: "CSA Meeting Coach",
+        suggestedDisplayName: "Session Copilot",
         websiteUrl: window.location.origin
       })
         .then(() => saveEvent.notifySuccess())

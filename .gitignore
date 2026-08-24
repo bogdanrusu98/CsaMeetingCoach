@@ -9,6 +9,12 @@
 # Local meeting transcripts and session state
 src/CsaMeetingCoach.Api/data/
 
+# Local hackathon production files (the web-ready project card is versioned)
+appPackage/branding/Session-Copilot-Hackathon-Video-Storyboard.pptx
+appPackage/branding/session-copilot-hackathon-poster.*
+appPackage/branding/session-copilot-project-card-2400x1260.png
+appPackage/branding/session-copilot-project-card.svg
+
 # User-specific files
 *.rsuser
 *.suo
