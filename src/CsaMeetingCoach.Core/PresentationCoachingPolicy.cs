@@ -425,6 +425,23 @@ internal static partial class PresentationCoachingPolicy
                 match.Mention!);
         }
 
+        foreach (var knowledgeCard in SessionKnowledgeDefinitionPolicy.Select(
+                     context,
+                     analysisWindow))
+        {
+            var normalizedTitle = HeuristicConversationCoachAgent.Normalize(
+                knowledgeCard.Title);
+            if (knownTitles.Any(title => HasSubstantialOverlap(
+                    normalizedTitle,
+                    title)))
+            {
+                continue;
+            }
+
+            knownTitles.Add(normalizedTitle);
+            result.Insert(0, knowledgeCard);
+        }
+
         return result.Take(2).ToArray();
     }
 

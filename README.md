@@ -118,6 +118,7 @@ certification.
 | Standalone live web demo | Available |
 | Host and Member role separation | Implemented |
 | Beginner, familiar, and expert member explanations | Implemented |
+| Domain definitions grounded in member-eligible session documents | Implemented |
 | Host and Member session restoration after refresh | Implemented |
 | Consent-based browser speech | Implemented |
 | Private AI recommendations | Implemented |

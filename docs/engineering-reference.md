@@ -26,6 +26,9 @@ evidence-backed checklist and recommend private talking points to the host.
   evidence ingested after acceptance and can be reopened.
 - Shows only client-facing educational alerts in dismissible lower-right cards:
   transcript-grounded **Definition** cards and follow-on **Hint** cards.
+- Detects glossary-style definitions in member-eligible session documents and
+  publishes them only when the exact term appears in final transcript evidence;
+  host-private documents remain excluded from Member alerts.
 - Lets the host select session-wide audience familiarity. Beginner sessions include
   foundational concepts, familiar sessions prioritize specialized terms, and expert
   sessions reserve alerts for non-obvious technical detail.

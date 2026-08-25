@@ -314,9 +314,13 @@ public sealed class FoundryConversationCoachAgentTests
             "presentation",
             FoundryAgentContract.Instructions,
             StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(
+        Assert.DoesNotContain(
             "sourceKnowledgeIds",
             FoundryAgentContract.ResponseJsonSchema,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "deterministic member-knowledge policy",
+            FoundryAgentContract.Instructions,
             StringComparison.Ordinal);
     }
 

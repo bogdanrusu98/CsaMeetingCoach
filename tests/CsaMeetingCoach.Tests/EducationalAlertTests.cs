@@ -180,6 +180,142 @@ public sealed class EducationalAlertTests
     }
 
     [Fact]
+    public void SelectContextualCards_UsesMemberEligibleSessionGlossary()
+    {
+        var sourceId = Guid.NewGuid();
+        var latest = CreateFinalSegment(
+            "Mantecatura is required during the final stage of the risotto.");
+        var context = new CoachAgentContext(
+            TestData.CreatePurpose(),
+            [],
+            [latest],
+            Template: SessionTemplateKind.Custom,
+            Knowledge:
+            [
+                new SessionKnowledgeSnippet(
+                    sourceId,
+                    "culinary-guide.pdf",
+                    KnowledgeSourceVisibility.MemberEligible,
+                    """
+                    Mini glossary
+                    Mantecatura
+                    Off-heat finishing of risotto with fat and cheese for a creamy texture.
+                    """)
+            ],
+            AudienceFamiliarity: AudienceFamiliarity.Beginner);
+
+        var cards = PresentationCoachingPolicy.SelectContextualCards(
+            context,
+            [],
+            [latest]);
+
+        var card = Assert.Single(cards);
+        Assert.Equal("Mantecatura", card.Title);
+        Assert.Contains("Off-heat finishing", card.Content, StringComparison.Ordinal);
+        Assert.Equal([sourceId], card.SourceKnowledgeIds);
+        Assert.Equal(
+            "Off-heat finishing of risotto with fat and cheese for a creamy texture.",
+            card.KnowledgeEvidenceQuote);
+    }
+
+    [Fact]
+    public void SelectContextualCards_DoesNotExposeHostPrivateGlossary()
+    {
+        var latest = CreateFinalSegment(
+            "Mantecatura is required during the final stage of the risotto.");
+        var context = new CoachAgentContext(
+            TestData.CreatePurpose(),
+            [],
+            [latest],
+            Template: SessionTemplateKind.Custom,
+            Knowledge:
+            [
+                new SessionKnowledgeSnippet(
+                    Guid.NewGuid(),
+                    "private-notes.pdf",
+                    KnowledgeSourceVisibility.HostPrivate,
+                    "Mantecatura\nPrivate host-only definition that must not appear.")
+            ],
+            AudienceFamiliarity: AudienceFamiliarity.Beginner);
+
+        var cards = PresentationCoachingPolicy.SelectContextualCards(
+            context,
+            [],
+            [latest]);
+
+        Assert.Empty(cards);
+    }
+
+    [Fact]
+    public void SelectContextualCards_ExtractsDefinitionFromFlattenedPdfText()
+    {
+        var sourceId = Guid.NewGuid();
+        var latest = CreateFinalSegment(
+            "Mantecatura is required during the final stage of the risotto.");
+        var context = new CoachAgentContext(
+            TestData.CreatePurpose(),
+            [],
+            [latest],
+            Template: SessionTemplateKind.Custom,
+            Knowledge:
+            [
+                new SessionKnowledgeSnippet(
+                    sourceId,
+                    "culinary-guide.pdf",
+                    KnowledgeSourceVisibility.MemberEligible,
+                    "Mini glossary Term Meaning Deglaze Add liquid to a hot pan and dissolve browned deposits "
+                    + "Fond Browned proteins attached to the cooking surface "
+                    + "Mantecatura Off-heat finishing of risotto with fat and cheese for a creamy texture "
+                    + "Carryover cooking Temperature rise after food leaves the heat")
+            ],
+            AudienceFamiliarity: AudienceFamiliarity.Beginner);
+
+        var cards = PresentationCoachingPolicy.SelectContextualCards(
+            context,
+            [],
+            [latest]);
+
+        var card = Assert.Single(cards);
+        Assert.Equal("Mantecatura", card.Title);
+        Assert.Equal(
+            "Off-heat finishing of risotto with fat and cheese for a creamy texture",
+            card.Content);
+        Assert.Equal(card.Content, card.KnowledgeEvidenceQuote);
+    }
+
+    [Theory]
+    [InlineData(AudienceFamiliarity.Beginner, true)]
+    [InlineData(AudienceFamiliarity.Familiar, false)]
+    [InlineData(AudienceFamiliarity.Expert, false)]
+    public void SelectContextualCards_AppliesFamiliarityToShortKnowledgeTerms(
+        AudienceFamiliarity familiarity,
+        bool expected)
+    {
+        var latest = CreateFinalSegment("Miso appears in this recipe.");
+        var context = new CoachAgentContext(
+            TestData.CreatePurpose(),
+            [],
+            [latest],
+            Template: SessionTemplateKind.Custom,
+            Knowledge:
+            [
+                new SessionKnowledgeSnippet(
+                    Guid.NewGuid(),
+                    "culinary-guide.txt",
+                    KnowledgeSourceVisibility.MemberEligible,
+                    "Miso Fermented soybean paste used for savory depth and seasoning.")
+            ],
+            AudienceFamiliarity: familiarity);
+
+        var cards = PresentationCoachingPolicy.SelectContextualCards(
+            context,
+            [],
+            [latest]);
+
+        Assert.Equal(expected, cards.Count > 0);
+    }
+
+    [Fact]
     public async Task Coordinator_AcceptsDomainDefinitionGroundedInMemberEligibleKnowledge()
     {
         var sourceId = Guid.NewGuid();

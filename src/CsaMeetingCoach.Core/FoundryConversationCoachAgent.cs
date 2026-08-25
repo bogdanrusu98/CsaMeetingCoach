@@ -154,12 +154,10 @@ public static class FoundryAgentContract
         presenter-directed action, or a task for members. File search or reviewed
         knowledge alone is never sufficient; transcript grounding in analysisWindow
         is mandatory.
-        For a term outside the built-in reviewed catalog, return a card only when a
-        MemberEligible reviewedSessionKnowledge source explicitly supports it. Copy
-        the supporting source ID into sourceKnowledgeIds and one exact, contiguous
-        supporting quote into knowledgeEvidenceQuote. HostPrivate sources must never
-        support member cards. For catalog-grounded cards, return an empty
-        sourceKnowledgeIds array and an empty knowledgeEvidenceQuote.
+        Contextual cards from uploaded session documents are handled by a separate
+        deterministic member-knowledge policy. Do not return a contextual card for a
+        term that exists only in reviewedSessionKnowledge and is outside the built-in
+        educational catalog.
         During a session that introduces a concrete domain term, apply
         templateBehavior.memberAlertFocus and return at least one useful card unless
         that term is already present in existingContextualCards. If the speaker already
@@ -239,14 +237,6 @@ public static class FoundryAgentContract
                   "sourceTranscriptSegmentIds": {
                     "type": "array",
                     "items": { "type": "string" }
-                  },
-                  "sourceKnowledgeIds": {
-                    "type": "array",
-                    "items": { "type": "string" }
-                  },
-                  "knowledgeEvidenceQuote": {
-                    "type": "string",
-                    "maxLength": 600
                   }
                 },
                 "required": [
@@ -310,9 +300,7 @@ public static class FoundryAgentContract
                   "title",
                   "content",
                   "confidence",
-                  "sourceTranscriptSegmentIds",
-                  "sourceKnowledgeIds",
-                  "knowledgeEvidenceQuote"
+                  "sourceTranscriptSegmentIds"
                 ],
                 "additionalProperties": false
               }
