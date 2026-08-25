@@ -567,6 +567,14 @@ app.MapPost(
         var shouldGrantPersistentAccess = authorized.Grant.Role == SessionRole.Host
             && speechAuthorizer.Authorize(context);
         var token = await speechTokens.IssueTokenAsync(cancellationToken);
+        if (!SpeechVocabularyPolicy.UseAzureVocabulary(session))
+        {
+            token = token with
+            {
+                Phrases = [],
+                EndpointId = null
+            };
+        }
         if (shouldGrantPersistentAccess)
         {
             speechAuthorizer.GrantPersistentAccess(context);

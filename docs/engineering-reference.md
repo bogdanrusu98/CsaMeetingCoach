@@ -128,10 +128,18 @@ Member controls can mute the local audio track without stopping the Speech
 session; mute never controls another participant's microphone.
 
 Continuous recognition uses Azure Speech's `Time` segmentation strategy, with a
-1.2-second silence boundary and a 20-second maximum phrase length. This ensures
-that uninterrupted presentation audio still produces final recognition events.
+0.8-second silence boundary and a 30-second maximum phrase length. This favors
+complete natural phrases while ensuring uninterrupted speech still produces final
+recognition events. The Host display combines up to three adjacent fragments from
+the same speaker, while evidence retains the original server-ordered segments.
 Diagnostics exposes separate interim, final, queued, published, and failed
 publish counts; interim text remains preview-only and can never become evidence.
+
+The Azure-specific Custom Speech endpoint and phrase vocabulary are enabled only
+when the session purpose is Azure-focused or uses the CSA/VBD template. General
+domains such as culinary training use the base Speech model without Azure phrase
+bias, preventing ordinary words such as "to" from being promoted to acronyms such
+as "TCO".
 
 Final Member segments use a dedicated endpoint that ignores any browser-supplied
 speaker label and assigns the active participant's server-side display name.

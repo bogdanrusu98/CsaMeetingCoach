@@ -352,6 +352,46 @@ public sealed class EducationalAlertTests
             card => string.Equals(card.Title, rejectedTitle, StringComparison.OrdinalIgnoreCase));
     }
 
+    [Theory]
+    [InlineData(
+        "Dawn Market Buckwheat Galette is the selected recipe.",
+        "Market Buckwheat")]
+    [InlineData(
+        "It is important to check the guide.",
+        "It is")]
+    public void SelectContextualCards_UsesExplicitMiniGlossaryNotCoverMention(
+        string transcript,
+        string rejectedTitle)
+    {
+        var latest = CreateFinalSegment(transcript);
+        var context = new CoachAgentContext(
+            TestData.CreatePurpose(),
+            [],
+            [latest],
+            Template: SessionTemplateKind.Custom,
+            Knowledge:
+            [
+                new SessionKnowledgeSnippet(
+                    Guid.NewGuid(),
+                    "culinary-guide.pdf",
+                    KnowledgeSourceVisibility.MemberEligible,
+                    "The guide contains recipes and a glossary. It is not a substitute for professional advice. "
+                    + "Dawn Market Buckwheat Galette Recipe code DMG-08 serves four people. "
+                    + "Mini glossary Term Meaning Mantecatura Off-heat finishing of risotto with fat and cheese. "
+                    + "Grounding verification checklist")
+            ],
+            AudienceFamiliarity: AudienceFamiliarity.Beginner);
+
+        var cards = PresentationCoachingPolicy.SelectContextualCards(
+            context,
+            [],
+            [latest]);
+
+        Assert.DoesNotContain(
+            cards,
+            card => string.Equals(card.Title, rejectedTitle, StringComparison.OrdinalIgnoreCase));
+    }
+
     [Fact]
     public async Task Coordinator_AcceptsDomainDefinitionGroundedInMemberEligibleKnowledge()
     {

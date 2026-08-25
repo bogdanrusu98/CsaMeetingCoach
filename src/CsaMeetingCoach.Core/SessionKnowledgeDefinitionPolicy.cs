@@ -182,7 +182,8 @@ internal static partial class SessionKnowledgeDefinitionPolicy
         title = string.Empty;
         content = string.Empty;
         evidenceQuote = string.Empty;
-        var searchContent = GetDefinitionSearchRegion(sourceContent);
+        var searchRegion = GetDefinitionSearchRegion(sourceContent);
+        var searchContent = searchRegion.Content;
         var transcriptWords = WordRegex().Matches(segment.Text)
             .Select(match => match.Value)
             .ToArray();
@@ -207,6 +208,7 @@ internal static partial class SessionKnowledgeDefinitionPolicy
                         || !TryExtractFollowingDefinition(
                             searchContent,
                             match.Index + match.Length,
+                            requireExplicitCue: !searchRegion.IsExplicitGlossary,
                             out var definition,
                             out var quote))
                     {
@@ -244,17 +246,25 @@ internal static partial class SessionKnowledgeDefinitionPolicy
         return true;
     }
 
-    private static string GetDefinitionSearchRegion(string sourceContent)
+    private static DefinitionSearchRegion GetDefinitionSearchRegion(string sourceContent)
     {
-        var glossaryIndex = sourceContent.IndexOf(
-            "glossary",
+        var glossaryIndex = sourceContent.LastIndexOf(
+            "Mini glossary",
             StringComparison.OrdinalIgnoreCase);
+        var markerLength = "Mini glossary".Length;
         if (glossaryIndex < 0)
         {
-            return sourceContent;
+            glossaryIndex = sourceContent.LastIndexOf(
+                "Glossary Term Meaning",
+                StringComparison.OrdinalIgnoreCase);
+            markerLength = "Glossary".Length;
+        }
+        if (glossaryIndex < 0)
+        {
+            return new DefinitionSearchRegion(sourceContent, false);
         }
 
-        var start = glossaryIndex + "glossary".Length;
+        var start = glossaryIndex + markerLength;
         var termMeaningIndex = sourceContent.IndexOf(
             "Term Meaning",
             start,
@@ -284,21 +294,33 @@ internal static partial class SessionKnowledgeDefinitionPolicy
             }
         }
 
-        return sourceContent[start..end];
+        return new DefinitionSearchRegion(sourceContent[start..end], true);
     }
 
     private static bool TryExtractFollowingDefinition(
         string sourceContent,
         int startIndex,
+        bool requireExplicitCue,
         out string content,
         out string evidenceQuote)
     {
         content = string.Empty;
         evidenceQuote = string.Empty;
         var available = sourceContent.AsSpan(startIndex);
+        var afterWhitespace = available.TrimStart();
+        var hasSeparator = afterWhitespace.Length > 0
+            && afterWhitespace[0] is ':' or ';' or '-' or '–' or '—';
         var trimCharacters = ":;,.()-–—[] \t".AsSpan();
         var trimmed = available.TrimStart(trimCharacters);
         var skipped = available.Length - trimmed.Length;
+        var hasDefinitionCue =
+            trimmed.StartsWith("is ", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("means ", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("refers to ", StringComparison.OrdinalIgnoreCase);
+        if (requireExplicitCue && !hasSeparator && !hasDefinitionCue)
+        {
+            return false;
+        }
         if (trimmed.Length < 20)
         {
             return false;
@@ -419,4 +441,8 @@ internal static partial class SessionKnowledgeDefinitionPolicy
         string Content,
         string EvidenceQuote,
         int Score);
+
+    private sealed record DefinitionSearchRegion(
+        string Content,
+        bool IsExplicitGlossary);
 }

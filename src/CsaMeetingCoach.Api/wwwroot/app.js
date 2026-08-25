@@ -944,10 +944,9 @@ function renderHost() {
 }
 
 function renderLiveSpeech(session, proposedRecommendations) {
-  const latestSegment = (session.transcript ?? [])
-    .slice()
-    .reverse()
-    .find(segment => segment.isFinal !== false);
+  const finalSegments = (session.transcript ?? [])
+    .filter(segment => segment.isFinal !== false);
+  const latestSegment = finalSegments.at(-1);
   if (!latestSegment) {
     elements.hostLiveTranscript.className =
       "host-live-transcript empty-state";
@@ -959,6 +958,7 @@ function renderLiveSpeech(session, proposedRecommendations) {
       </div>`;
   } else {
     const speaker = String(latestSegment.speaker || "Speaker");
+    const utterance = selectLatestSpeechUtterance(finalSegments);
     elements.hostLiveTranscript.className = "host-live-transcript";
     elements.hostLiveTranscript.innerHTML = `
       <span class="speaker-avatar" aria-hidden="true">
@@ -971,8 +971,34 @@ function renderLiveSpeech(session, proposedRecommendations) {
             ${escapeHtml(formatTranscriptMoment(latestSegment.occurredAtUtc))}
           </time>
         </div>
-        <p>“${escapeHtml(latestSegment.text)}”</p>
+        <p>“${escapeHtml(utterance)}”</p>
       </div>`;
+  }
+
+  function selectLatestSpeechUtterance(finalSegments) {
+    const latest = finalSegments.at(-1);
+    if (!latest) {
+      return "";
+    }
+
+    const latestTime = Date.parse(latest.occurredAtUtc);
+    const fragments = [];
+    for (let index = finalSegments.length - 1;
+         index >= 0 && fragments.length < 3;
+         index--) {
+      const segment = finalSegments[index];
+      if (segment.speaker !== latest.speaker) {
+        break;
+      }
+      const segmentTime = Date.parse(segment.occurredAtUtc);
+      if (Number.isFinite(latestTime)
+          && Number.isFinite(segmentTime)
+          && latestTime - segmentTime > 45_000) {
+        break;
+      }
+      fragments.unshift(segment.text.trim());
+    }
+    return fragments.join(" ");
   }
 
   const recommendation = proposedRecommendations.at(0);
@@ -1410,16 +1436,16 @@ async function startMicrophone() {
     speechConfig.speechRecognitionLanguage = token.language;
     speechConfig.setProperty(
       window.SpeechSDK.PropertyId.Speech_SegmentationSilenceTimeoutMs,
-      "1200");
+      "800");
     speechConfig.setProperty(
       window.SpeechSDK.PropertyId.Speech_SegmentationStrategy,
       "Time");
     speechConfig.setProperty(
       window.SpeechSDK.PropertyId.Speech_SegmentationMaximumTimeMs,
-      "20000");
+      "30000");
     speechConfig.setProperty(
       window.SpeechSDK.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs,
-      "1200");
+      "800");
     audioConfig = window.SpeechSDK.AudioConfig.fromStreamInput(capture.stream);
     recognizer = new window.SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
 

@@ -148,6 +148,8 @@ public sealed class StaticAssetCacheTests
             script,
             StringComparison.Ordinal);
         Assert.Contains("\"Time\"", script, StringComparison.Ordinal);
+        Assert.Contains("\"30000\"", script, StringComparison.Ordinal);
+        Assert.Contains("selectLatestSpeechUtterance", script, StringComparison.Ordinal);
         Assert.Contains("Interim speech received.", script, StringComparison.Ordinal);
         Assert.Contains("Final speech received.", script, StringComparison.Ordinal);
         Assert.Contains("Final speech queued for the Coach API.", script, StringComparison.Ordinal);
