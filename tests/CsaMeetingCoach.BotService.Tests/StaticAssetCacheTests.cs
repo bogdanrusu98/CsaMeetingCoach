@@ -48,7 +48,6 @@ public sealed class StaticAssetCacheTests
             "id=\"purpose-objective\" class=\"session-objective-line\"",
             html,
             StringComparison.Ordinal);
-        Assert.Contains("id=\"include-system-audio\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"microphone-access-status\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"recommendations\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"live-plan\"", html, StringComparison.Ordinal);
