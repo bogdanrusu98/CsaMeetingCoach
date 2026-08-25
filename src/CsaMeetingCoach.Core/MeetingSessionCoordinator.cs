@@ -154,6 +154,35 @@ public sealed class MeetingSessionCoordinator : IDisposable
         return (updated, participant!);
     }
 
+    public Task<MeetingSessionState> LeaveParticipantAsync(
+        Guid sessionId,
+        Guid participantId,
+        CancellationToken cancellationToken) =>
+        MutateAsync(
+            sessionId,
+            session =>
+            {
+                var participant = session.Participants.SingleOrDefault(candidate =>
+                    candidate.Id == participantId
+                    && candidate.Role == SessionRole.Member
+                    && candidate.Status == SessionParticipantStatus.Active);
+                if (participant is null)
+                {
+                    throw new UnauthorizedAccessException(
+                        "Only an active session member can leave this view.");
+                }
+
+                return Task.FromResult(session with
+                {
+                    Participants = session.Participants
+                        .Select(candidate => candidate.Id == participantId
+                            ? candidate with { Status = SessionParticipantStatus.Removed }
+                            : candidate)
+                        .ToArray()
+                });
+            },
+            cancellationToken);
+
     public async Task<MeetingSessionState> AddTranscriptAsync(
         Guid sessionId,
         AddTranscriptSegmentRequest request,

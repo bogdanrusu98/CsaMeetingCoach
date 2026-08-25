@@ -86,6 +86,33 @@ public sealed class CommercialSessionTests
     }
 
     [Fact]
+    public async Task LeaveParticipant_RemovesOnlyTheActiveMember()
+    {
+        using var coordinator = CreateCoordinator(TimeProvider.System);
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        var (joined, member) = await coordinator.JoinParticipantAsync(
+            session.Id,
+            "Jordan",
+            CancellationToken.None);
+
+        var updated = await coordinator.LeaveParticipantAsync(
+            joined.Id,
+            member.Id,
+            CancellationToken.None);
+
+        Assert.Contains(
+            updated.Participants,
+            participant => participant.Id == member.Id
+                && participant.Status == SessionParticipantStatus.Removed);
+        Assert.Single(
+            updated.Participants,
+            participant => participant.Role == SessionRole.Host
+                && participant.Status == SessionParticipantStatus.Active);
+    }
+
+    [Fact]
     public void MemberProjection_ExcludesPrivateStateAndUnpublishedAlerts()
     {
         var now = DateTimeOffset.UtcNow;

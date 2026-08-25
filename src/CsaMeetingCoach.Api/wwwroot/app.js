@@ -47,6 +47,7 @@ const state = {
 };
 
 const THEME_STORAGE_KEY = "session-copilot-theme";
+const SESSION_HISTORY_KEY = "sessionCopilot";
 
 const templateProfiles = Object.freeze({
   presentation: {
@@ -203,7 +204,15 @@ const elements = {
   memberPurposeObjective: document.querySelector("#member-purpose-objective"),
   memberTemplateLabel: document.querySelector("#member-template-label"),
   memberSessionExpiry: document.querySelector("#member-session-expiry"),
+  memberSessionStatus: document.querySelector("#member-session-status"),
+  memberAudienceFamiliarity: document.querySelector("#member-audience-familiarity"),
+  memberAudienceDescription: document.querySelector("#member-audience-description"),
+  memberSuccessCriteria: document.querySelector("#member-success-criteria"),
   memberAlertCount: document.querySelector("#member-alert-count"),
+  memberAlertUpdated: document.querySelector("#member-alert-updated"),
+  memberRefreshSession: document.querySelector("#member-refresh-session"),
+  memberLeaveSession: document.querySelector("#member-leave-session"),
+  memberShowLatest: document.querySelector("#member-show-latest"),
   memberAlertLayerLabel: document.querySelector("#member-alert-layer-label"),
   memberAlertLayerHeading: document.querySelector("#member-alert-layer-heading"),
   memberAlertList: document.querySelector("#member-alert-list"),
@@ -382,6 +391,25 @@ elements.memberPreviewDialog.addEventListener("click", event => {
     elements.memberPreviewDialog.close();
   }
 });
+elements.memberRefreshSession.addEventListener("click", async event => {
+  await runWithButton(event.currentTarget, async () => {
+    state.session = await api(`/api/sessions/${state.session.id}`);
+    render();
+    showToast("Member view refreshed.", "success");
+  });
+});
+elements.memberLeaveSession.addEventListener("click", async event => {
+  await runWithButton(event.currentTarget, async () => {
+    await api(`/api/sessions/${state.session.id}/leave`, { method: "POST" });
+    await returnToEntry();
+    showToast("You left the session view.", "success");
+  });
+});
+elements.memberShowLatest.addEventListener("click", () => {
+  const latest = elements.memberAlertList.querySelector(".member-alert-card");
+  latest?.scrollIntoView({ behavior: "smooth", block: "center" });
+  latest?.focus({ preventScroll: true });
+});
 elements.sessionForm.addEventListener("submit", async event => {
   event.preventDefault();
   const template = selectedTemplate();
@@ -425,6 +453,7 @@ elements.sessionForm.addEventListener("submit", async event => {
     state.role = "host";
     state.session = created.session;
     state.joinCode = created.joinCode;
+    persistSessionHistory();
     elements.setupView.classList.add("hidden");
     elements.sessionView.classList.remove("hidden");
     elements.memberSessionView.classList.add("hidden");
@@ -448,6 +477,7 @@ elements.memberJoinForm.addEventListener("submit", async event => {
     state.role = "member";
     state.session = joined.session;
     state.joinCode = null;
+    persistSessionHistory();
     elements.setupView.classList.add("hidden");
     elements.sessionView.classList.add("hidden");
     elements.memberSessionView.classList.remove("hidden");
@@ -949,10 +979,27 @@ function renderMember() {
   elements.memberTemplateLabel.textContent = `${templateProfile.label} · member`;
   elements.memberAlertLayerLabel.textContent = templateProfile.memberLayerLabel;
   elements.memberAlertLayerHeading.textContent = templateProfile.memberLayerHeading;
+  const familiarity = describeAudienceFamiliarity(session.audienceFamiliarity);
+  elements.memberAudienceFamiliarity.textContent = familiarity.label;
+  elements.memberAudienceDescription.textContent = familiarity.description;
+  elements.memberSessionStatus.textContent = session.status === "active"
+    ? "Live"
+    : session.status === "completed"
+      ? "Completed"
+      : "Expired";
+  elements.memberSessionStatus.dataset.status = session.status;
+  elements.memberSuccessCriteria.innerHTML = (session.purpose.successCriteria ?? [])
+    .map(item => `<li>${escapeHtml(item)}</li>`)
+    .join("") || "<li>No explicit criteria were provided.</li>";
   elements.memberSessionExpiry.textContent = formatExpiry(session.expiresAtUtc);
   elements.memberSessionExpiry.dateTime = session.expiresAtUtc;
   const alerts = session.alerts ?? [];
   elements.memberAlertCount.textContent = String(alerts.length);
+  elements.memberShowLatest.disabled = alerts.length === 0;
+  const latestAlert = alerts.at(-1);
+  elements.memberAlertUpdated.textContent = latestAlert
+    ? `Latest approved alert ${formatRelativeMoment(latestAlert.createdAtUtc)}.`
+    : "Waiting for the first approved alert.";
   renderContextualCards(alerts);
   if (alerts.length === 0) {
     elements.memberAlertList.className = "member-alert-list empty-state";
@@ -965,7 +1012,7 @@ function renderMember() {
   elements.memberAlertList.innerHTML = alerts
     .slice()
     .reverse()
-    .map(memberAlertMarkup)
+    .map((card, index) => memberAlertMarkup(card, index === 0))
     .join("");
 }
 
@@ -975,9 +1022,10 @@ function contextualCardKindLabel(card) {
     : "Useful context";
 }
 
-function memberAlertMarkup(card) {
+function memberAlertMarkup(card, isLatest = false) {
   return `
-    <article class="member-alert-card ${escapeHtml(String(card.kind).toLowerCase())}">
+    <article class="member-alert-card ${escapeHtml(String(card.kind).toLowerCase())}${isLatest ? " latest" : ""}"
+             tabindex="-1">
       <span class="contextual-card-kind">${contextualCardKindLabel(card)}</span>
       <h3>${escapeHtml(card.title)}</h3>
       <p>${escapeHtml(card.content)}</p>
@@ -1958,7 +2006,7 @@ async function api(url, options = {}) {
     throw error;
   }
 
-  return response.json();
+  return response.status === 204 ? null : response.json();
 }
 
 function scheduleSessionExpiry(expiresAtUtc) {
@@ -1979,6 +2027,7 @@ async function handleSessionExpired() {
     return;
   }
   state.sessionExpiryHandling = true;
+  clearSessionHistory();
   window.clearTimeout(state.sessionExpiryTimer);
   state.sessionExpiryTimer = null;
   state.eventSource?.close();
@@ -1987,6 +2036,7 @@ async function handleSessionExpired() {
   if (state.microphoneRecognizer || state.microphoneBusy) {
     await queueMicrophoneOperation(stopMicrophone).catch(() => {});
   }
+
   if (state.session) {
     state.session = { ...state.session, status: "expired" };
     render();
@@ -1995,6 +2045,108 @@ async function handleSessionExpired() {
   showToast(
     "This session reached its 24-hour limit and access is closed.",
     "warning");
+}
+
+function getSessionHistory() {
+  const value = window.history.state?.[SESSION_HISTORY_KEY];
+  if (!value
+      || typeof value.sessionId !== "string"
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+        .test(value.sessionId)) {
+    return null;
+  }
+
+  return {
+    sessionId: value.sessionId,
+    joinCode: typeof value.joinCode === "string"
+        && /^[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}$/.test(value.joinCode)
+      ? value.joinCode
+      : null
+  };
+}
+
+function persistSessionHistory() {
+  if (!state.session?.id) {
+    return;
+  }
+
+  window.history.replaceState(
+    {
+      ...(window.history.state ?? {}),
+      [SESSION_HISTORY_KEY]: {
+        sessionId: state.session.id,
+        joinCode: state.role === "host" ? state.joinCode : null
+      }
+    },
+    "");
+}
+
+function clearSessionHistory() {
+  const nextState = { ...(window.history.state ?? {}) };
+  delete nextState[SESSION_HISTORY_KEY];
+  window.history.replaceState(nextState, "");
+}
+
+async function restoreSessionAfterRefresh() {
+  const locator = getSessionHistory();
+  if (!locator) {
+    return;
+  }
+
+  try {
+    const session = await api(`/api/sessions/${locator.sessionId}`);
+    const role = Array.isArray(session.transcript)
+      ? "host"
+      : Array.isArray(session.alerts)
+        ? "member"
+        : null;
+    if (!role) {
+      throw new Error("The restored session view was not recognized.");
+    }
+
+    resetContextualCards();
+    state.role = role;
+    state.session = session;
+    state.joinCode = role === "host" ? locator.joinCode : null;
+    elements.setupView.classList.add("hidden");
+    elements.sessionView.classList.toggle("hidden", role !== "host");
+    elements.memberSessionView.classList.toggle("hidden", role !== "member");
+    render();
+    connectEvents(session.id);
+    showToast(
+      role === "host"
+        ? "Host session restored after refresh."
+        : "Member session restored after refresh.",
+      "success");
+  } catch (error) {
+    clearSessionHistory();
+    if (![401, 404, 410].includes(error.status)) {
+      showToast(`Session restore failed: ${error.message}`, "error");
+    }
+  }
+}
+
+async function returnToEntry() {
+  state.eventSource?.close();
+  state.eventSource = null;
+  window.clearTimeout(state.sessionExpiryTimer);
+  state.sessionExpiryTimer = null;
+  cancelMicrophoneTokenRequests();
+  state.speechPublishAbortController?.abort();
+  if (state.microphoneRecognizer || state.microphoneBusy) {
+    await queueMicrophoneOperation(stopMicrophone).catch(() => {});
+  }
+  clearSessionHistory();
+  state.session = null;
+  state.role = null;
+  state.joinCode = null;
+  state.sessionExpiryHandling = false;
+  resetContextualCards();
+  elements.sessionView.classList.add("hidden");
+  elements.memberSessionView.classList.add("hidden");
+  elements.setupView.classList.remove("hidden");
+  showEntryPanel(null);
+  window.scrollTo(0, 0);
 }
 
 function showEntryPanel(role) {
@@ -2062,6 +2214,44 @@ function formatExpiry(value) {
         hour: "2-digit",
         minute: "2-digit"
       });
+}
+
+function formatRelativeMoment(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "recently";
+  }
+  const elapsedSeconds = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
+  if (elapsedSeconds < 60) {
+    return "just now";
+  }
+  const elapsedMinutes = Math.round(elapsedSeconds / 60);
+  return elapsedMinutes < 60
+    ? `${elapsedMinutes} ${elapsedMinutes === 1 ? "minute" : "minutes"} ago`
+    : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function describeAudienceFamiliarity(value) {
+  switch (String(value).toLowerCase()) {
+    case "beginner":
+      return {
+        label: "Beginner",
+        description:
+          "Foundational terms, acronyms, and specialized concepts receive plain-language support."
+      };
+    case "expert":
+      return {
+        label: "Expert",
+        description:
+          "Only rare, ambiguous, or non-obvious technical details should interrupt the session."
+      };
+    default:
+      return {
+        label: "Familiar",
+        description:
+          "Specialized terms receive concise definitions, mechanisms, implications, and limitations."
+      };
+  }
 }
 
 function formatEnumLabel(value) {
@@ -2153,3 +2343,5 @@ window.addEventListener("pagehide", () => {
   state.microphoneAudioConfig?.close();
   void closeMixedMeetingAudioCapture(state.microphoneCapture);
 });
+
+void restoreSessionAfterRefresh();

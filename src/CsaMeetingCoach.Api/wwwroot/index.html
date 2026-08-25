@@ -26,7 +26,7 @@
   </script>
   <link rel="stylesheet"
         href="vendor/react-toastify.bundle.css?v=11.1.0-20260819c">
-  <link rel="stylesheet" href="styles.css?v=20260825a">
+  <link rel="stylesheet" href="styles.css?v=20260825b">
 </head>
 <body>
   <main class="app-shell">
@@ -146,7 +146,7 @@
         </div>
 
         <figure class="entry-product-preview">
-          <img src="assets/host-workspace-preview.png?v=20260825a"
+          <img src="assets/host-workspace-preview.png?v=20260825b"
                width="1600" height="1000"
                alt="Actual Session Copilot host workspace showing live speech, private AI guidance, and the evidence-backed action plan."
                fetchpriority="high" decoding="async">
@@ -634,22 +634,77 @@
           <span class="product-glyph member-glyph" aria-hidden="true">M</span>
           <span>Live member view</span>
         </div>
-        <span id="member-connection-status" class="status neutral">Connecting</span>
+        <div class="member-header-actions">
+          <span id="member-connection-status" class="status neutral">Connecting</span>
+          <button id="member-refresh-session" class="button member-header-button"
+                  type="button" aria-label="Refresh member session"
+                  title="Refresh member session">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M20 7v5h-5M4 17v-5h5"
+                    stroke="currentColor" stroke-width="1.8"
+                    stroke-linecap="round" stroke-linejoin="round"></path>
+              <path d="M6.1 9a7 7 0 0 1 11.6-2.6L20 9M4 15l2.3 2.6A7 7 0 0 0 17.9 15"
+                    stroke="currentColor" stroke-width="1.8"
+                    stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+            <span>Refresh</span>
+          </button>
+          <button id="member-leave-session"
+                  class="button member-header-button danger" type="button"
+                  aria-label="Leave member session" title="Leave member session">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M10 5H5v14h5M14 8l4 4-4 4M18 12H9"
+                    stroke="currentColor" stroke-width="1.8"
+                    stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+            <span>Leave</span>
+          </button>
+        </div>
       </header>
       <div class="member-stage">
-        <p id="member-template-label" class="eyebrow"></p>
-        <h1 id="member-purpose-title"></h1>
-        <p id="member-purpose-objective" class="member-objective"></p>
-        <p class="retention-copy">
-          This view expires <time id="member-session-expiry"></time>. It does not expose
-          the host transcript, private guidance, checklist, or private knowledge.
-        </p>
+        <div class="member-hero">
+          <div>
+            <p id="member-template-label" class="eyebrow"></p>
+            <h1 id="member-purpose-title"></h1>
+            <p id="member-purpose-objective" class="member-objective"></p>
+          </div>
+          <span id="member-session-status" class="member-session-status">Live</span>
+        </div>
+        <div class="member-session-summary" aria-label="Session information">
+          <article>
+            <span>Audience familiarity</span>
+            <strong id="member-audience-familiarity">Familiar</strong>
+            <p id="member-audience-description">
+              Specialized terms receive concise definitions and practical context.
+            </p>
+          </article>
+          <article>
+            <span>Session success</span>
+            <strong>What the host is working toward</strong>
+            <ul id="member-success-criteria"></ul>
+          </article>
+          <article>
+            <span>Privacy and retention</span>
+            <strong>Role-scoped by design</strong>
+            <p>
+              Expires <time id="member-session-expiry"></time>. Host transcript,
+              private guidance, checklist, and private knowledge stay hidden.
+            </p>
+          </article>
+        </div>
         <div class="member-alert-heading">
           <div>
             <p id="member-alert-layer-label" class="eyebrow">Live learning layer</p>
             <h2 id="member-alert-layer-heading">Definitions and useful context</h2>
+            <p id="member-alert-updated" class="member-alert-updated">
+              Waiting for the first approved alert.
+            </p>
           </div>
-          <span id="member-alert-count" class="count-badge">0</span>
+          <div class="member-alert-actions">
+            <span id="member-alert-count" class="count-badge">0</span>
+            <button id="member-show-latest" class="button subtle" type="button"
+                    disabled>Show latest</button>
+          </div>
         </div>
         <div id="member-alert-list" class="member-alert-list empty-state" aria-live="polite">
           Approved alerts will appear here as the session progresses.
@@ -702,6 +757,6 @@
   <script src="https://res.cdn.office.net/teams-js/2.31.0/js/MicrosoftTeams.min.js"></script>
   <script src="vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0"></script>
   <script src="vendor/react-toastify.bundle.js?v=11.1.0-20260819c"></script>
-  <script src="app.js?v=20260825a"></script>
+  <script src="app.js?v=20260825b"></script>
 </body>
 </html>

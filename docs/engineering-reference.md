@@ -29,6 +29,9 @@ evidence-backed checklist and recommend private talking points to the host.
 - Lets the host select session-wide audience familiarity. Beginner sessions include
   foundational concepts, familiar sessions prioritize specialized terms, and expert
   sessions reserve alerts for non-obvious technical detail.
+- Restores an authorized Host or Member view after refresh using a minimal browser
+  history locator plus the existing role-scoped HttpOnly session cookie; transcript,
+  guidance, and authorization tokens are never written to browser storage.
 - Pushes session updates to the side panel with Server-Sent Events.
 - Protects each session with a scoped HttpOnly access cookie so another local
   caller cannot read or alter a transcript by guessing its session ID.

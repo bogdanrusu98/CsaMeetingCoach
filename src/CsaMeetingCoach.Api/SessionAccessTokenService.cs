@@ -74,6 +74,20 @@ public sealed class SessionAccessTokenService(
         }
     }
 
+    public void RevokeAccess(HttpContext context, Guid sessionId)
+    {
+        context.Response.Cookies.Delete(
+            GetCookieName(sessionId),
+            new CookieOptions
+            {
+                HttpOnly = true,
+                IsEssential = true,
+                Path = "/api/sessions",
+                SameSite = SameSiteMode.Strict,
+                Secure = context.Request.IsHttps
+            });
+    }
+
     private static string GetCookieName(Guid sessionId)
     {
         return string.Concat(CookiePrefix, sessionId.ToString("N"));

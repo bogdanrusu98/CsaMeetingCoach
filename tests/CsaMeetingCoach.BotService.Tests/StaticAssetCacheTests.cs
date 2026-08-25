@@ -18,10 +18,10 @@ public sealed class StaticAssetCacheTests
         indexResponse.EnsureSuccessStatusCode();
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
-        Assert.Contains("styles.css?v=20260825a", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260825a", html, StringComparison.Ordinal);
+        Assert.Contains("styles.css?v=20260825b", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260825b", html, StringComparison.Ordinal);
         Assert.Contains(
-            "assets/host-workspace-preview.png?v=20260825a",
+            "assets/host-workspace-preview.png?v=20260825b",
             html,
             StringComparison.Ordinal);
         Assert.Contains("id=\"toast-root\"", html, StringComparison.Ordinal);
@@ -71,6 +71,10 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("id=\"host-participant-avatars\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"member-preview-dialog\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"member-preview-alert-list\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"member-refresh-session\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"member-leave-session\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"member-success-criteria\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"member-show-latest\"", html, StringComparison.Ordinal);
         Assert.Contains("Live Member View", html, StringComparison.Ordinal);
         Assert.Contains("id=\"knowledge-file-form\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"knowledge-link-form\"", html, StringComparison.Ordinal);
@@ -95,7 +99,7 @@ public sealed class StaticAssetCacheTests
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260825a");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260825b");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
@@ -103,6 +107,10 @@ public sealed class StaticAssetCacheTests
         Assert.DoesNotContain("sessionStorage", script, StringComparison.Ordinal);
         Assert.DoesNotContain("navigator.clipboard", script, StringComparison.Ordinal);
         Assert.Contains("THEME_STORAGE_KEY", script, StringComparison.Ordinal);
+        Assert.Contains("SESSION_HISTORY_KEY", script, StringComparison.Ordinal);
+        Assert.Contains("window.history.replaceState", script, StringComparison.Ordinal);
+        Assert.Contains("restoreSessionAfterRefresh", script, StringComparison.Ordinal);
+        Assert.Contains("/leave", script, StringComparison.Ordinal);
         Assert.Contains("applyTheme(nextTheme, true)", script, StringComparison.Ordinal);
         Assert.Contains("Device authorized", script, StringComparison.Ordinal);
         Assert.Contains(
@@ -213,7 +221,7 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("Training guidance", script, StringComparison.Ordinal);
         Assert.Contains("customMeetingType.required", script, StringComparison.Ordinal);
 
-        using var styleResponse = await client.GetAsync("/styles.css?v=20260825a");
+        using var styleResponse = await client.GetAsync("/styles.css?v=20260825b");
         styleResponse.EnsureSuccessStatusCode();
         AssertNoStore(styleResponse);
         var styles = await styleResponse.Content.ReadAsStringAsync();
@@ -259,7 +267,7 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("--host-cyan: #60cdff", styles, StringComparison.Ordinal);
 
         using var previewResponse = await client.GetAsync(
-            "/assets/host-workspace-preview.png?v=20260825a");
+            "/assets/host-workspace-preview.png?v=20260825b");
         previewResponse.EnsureSuccessStatusCode();
         AssertNoStore(previewResponse);
         Assert.Equal("image/png", previewResponse.Content.Headers.ContentType?.MediaType);

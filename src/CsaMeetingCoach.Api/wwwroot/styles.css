@@ -2298,6 +2298,35 @@ html[data-theme="contrast"] .entry-product-preview {
   background: var(--cp-surface);
 }
 
+.member-header-actions,
+.member-alert-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.member-header-button {
+  display: inline-flex;
+  min-height: 34px;
+  padding: 6px 10px;
+  align-items: center;
+  gap: 6px;
+  border-color: var(--cp-border);
+  color: var(--cp-text);
+  background: var(--cp-panel);
+  font-size: 11px;
+}
+
+.member-header-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.member-header-button.danger {
+  color: #b42318;
+  background: rgba(180, 35, 24, .06);
+}
+
 .member-dashboard .member-header {
   border-top: 3px solid var(--session-accent, var(--cp-link));
 }
@@ -2320,7 +2349,14 @@ html[data-theme="contrast"] .entry-product-preview {
   padding: clamp(28px, 6vw, 70px);
 }
 
-.member-stage > h1 {
+.member-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.member-hero h1 {
   max-width: 760px;
   margin-bottom: 14px;
   font-size: clamp(32px, 5vw, 50px);
@@ -2328,10 +2364,73 @@ html[data-theme="contrast"] .entry-product-preview {
   line-height: 1.1;
 }
 
+.member-session-status {
+  display: inline-flex;
+  min-height: 30px;
+  padding: 6px 12px;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--session-accent, var(--cp-link)) 40%, transparent);
+  border-radius: 999px;
+  color: var(--session-accent, var(--cp-link));
+  background: color-mix(in srgb, var(--session-accent, var(--cp-link)) 10%, transparent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .member-objective {
   max-width: 720px;
   margin-bottom: 14px;
   font-size: 16px;
+}
+
+.member-session-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 28px;
+  gap: 12px;
+}
+
+.member-session-summary article {
+  min-height: 150px;
+  padding: 18px;
+  border: 1px solid var(--cp-border);
+  border-radius: 10px;
+  background: var(--cp-surface);
+}
+
+.member-session-summary article > span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--session-accent, var(--cp-link));
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.member-session-summary strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--cp-text);
+  font-size: 14px;
+}
+
+.member-session-summary p,
+.member-session-summary li {
+  color: var(--cp-text-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.member-session-summary p {
+  margin: 0;
+}
+
+.member-session-summary ul {
+  display: grid;
+  margin: 0;
+  padding-left: 17px;
+  gap: 4px;
 }
 
 .member-alert-heading {
@@ -2341,6 +2440,18 @@ html[data-theme="contrast"] .entry-product-preview {
 .member-alert-heading h2 {
   margin: 0;
   font-size: 22px;
+}
+
+.member-alert-updated {
+  margin: 5px 0 0;
+  color: var(--cp-text-soft);
+  font-size: 11px;
+}
+
+.member-alert-actions .button {
+  min-height: 28px;
+  padding: 5px 9px;
+  font-size: 10px;
 }
 
 .member-alert-list {
@@ -2373,6 +2484,11 @@ html[data-theme="contrast"] .entry-product-preview {
   color: var(--cp-text-soft);
   font-size: 14px;
   line-height: 1.6;
+}
+
+.member-alert-card.latest {
+  outline: 3px solid color-mix(in srgb, var(--session-accent, var(--cp-link)) 30%, transparent);
+  outline-offset: 3px;
 }
 
 .microphone-card,
@@ -2620,6 +2736,7 @@ html[data-theme="contrast"] .entry-product-preview {
   .commercial-fields,
   .knowledge-form,
   .member-alert-list,
+  .member-session-summary,
   .template-grid {
     grid-template-columns: 1fr;
   }
@@ -2653,6 +2770,39 @@ html[data-theme="contrast"] .entry-product-preview {
 
   .member-stage {
     padding: 28px 20px;
+  }
+
+  .member-header {
+    padding: 12px;
+  }
+
+  .member-header .product-brand > span:last-child,
+  .member-header-button > span {
+    display: none;
+  }
+
+  .member-header-button {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .member-hero {
+    display: grid;
+  }
+
+  .member-session-status {
+    justify-self: start;
+  }
+
+  .member-alert-heading {
+    display: grid;
+    align-items: end;
+    gap: 12px;
+  }
+
+  .member-alert-actions {
+    justify-self: start;
   }
 }
 

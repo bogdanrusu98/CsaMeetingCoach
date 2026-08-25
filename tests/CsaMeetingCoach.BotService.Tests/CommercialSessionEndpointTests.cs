@@ -137,6 +137,58 @@ public sealed class CommercialSessionEndpointTests
     }
 
     [Fact]
+    public async Task MemberCanLeaveAndItsSessionCookieStopsAuthorizingRefresh()
+    {
+        using var factory = new CoachApiFactory();
+        using var host = CreateClient(factory);
+        using var member = CreateClient(factory);
+        var created = await CreateHostSessionAsync(host);
+        using var joinResponse = await member.PostAsJsonAsync(
+            "/api/sessions/join",
+            new JoinMeetingSessionRequest(created.JoinCode, "Member"),
+            JsonOptions);
+        joinResponse.EnsureSuccessStatusCode();
+
+        using var leaveResponse = await member.PostAsync(
+            $"/api/sessions/{created.Session.Id:D}/leave",
+            content: null);
+
+        Assert.Equal(HttpStatusCode.NoContent, leaveResponse.StatusCode);
+        using var memberRefresh = await member.GetAsync(
+            $"/api/sessions/{created.Session.Id:D}");
+        Assert.Equal(HttpStatusCode.Unauthorized, memberRefresh.StatusCode);
+        var hostState = await host.GetFromJsonAsync<MeetingSessionState>(
+            $"/api/sessions/{created.Session.Id:D}",
+            JsonOptions);
+        Assert.NotNull(hostState);
+        Assert.Contains(
+            hostState.Participants,
+            participant => participant.Role == SessionRole.Member
+                && participant.Status == SessionParticipantStatus.Removed);
+    }
+
+    [Fact]
+    public async Task MemberLeaveRequiresCsrfResistantHeader()
+    {
+        using var factory = new CoachApiFactory();
+        using var host = CreateClient(factory);
+        using var member = CreateClient(factory);
+        var created = await CreateHostSessionAsync(host);
+        using var joinResponse = await member.PostAsJsonAsync(
+            "/api/sessions/join",
+            new JoinMeetingSessionRequest(created.JoinCode, "Member"),
+            JsonOptions);
+        joinResponse.EnsureSuccessStatusCode();
+        member.DefaultRequestHeaders.Remove("X-Session-Request");
+
+        using var response = await member.PostAsync(
+            $"/api/sessions/{created.Session.Id:D}/leave",
+            content: null);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task HostCanUploadReadablePdfKnowledge()
     {
         using var factory = new CoachApiFactory();

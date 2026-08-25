@@ -620,6 +620,30 @@ app.MapGet(
     });
 
 app.MapPost(
+    "/api/sessions/{sessionId:guid}/leave",
+    async (
+        Guid sessionId,
+        HttpContext context,
+        SessionAuthorizationService sessionAuthorization,
+        SessionAccessTokenService accessTokens,
+        MeetingSessionCoordinator coordinator,
+        CancellationToken cancellationToken) =>
+    {
+        RequireSessionMutationHeader(context);
+        var authorized = await sessionAuthorization.RequireAsync(
+            context,
+            sessionId,
+            SessionRole.Member,
+            cancellationToken);
+        await coordinator.LeaveParticipantAsync(
+            sessionId,
+            authorized.Participant.Id,
+            cancellationToken);
+        accessTokens.RevokeAccess(context, sessionId);
+        return Results.NoContent();
+    });
+
+app.MapPost(
     "/api/sessions/{sessionId:guid}/transcript",
     async (
         Guid sessionId,
