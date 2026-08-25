@@ -3646,6 +3646,18 @@ html:not([data-theme="contrast"]) .host-dashboard[data-template="csaVbd"] {
   font-weight: 650;
 }
 
+.host-dashboard .header-action svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+
+.host-dashboard .header-action.danger {
+  border-color: rgba(216, 100, 112, .38);
+  color: #ffb0b8;
+  background: rgba(154, 54, 68, .16);
+}
+
 .host-dashboard .header-action:hover {
   border-color: #46536a;
   color: #ffffff;
@@ -3655,6 +3667,7 @@ html:not([data-theme="contrast"]) .host-dashboard[data-template="csaVbd"] {
 .host-dashboard .header-action.danger:hover {
   border-color: #8b5360;
   color: #ffb0b8;
+  background: rgba(154, 54, 68, .28);
 }
 
 .host-dashboard .header-retention {
@@ -4603,6 +4616,7 @@ html:not([data-theme="contrast"]) .host-dashboard[data-template="csaVbd"] {
 .host-dashboard .member-alert-heading {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
+  margin: 0;
   align-items: center;
   gap: 10px;
 }
