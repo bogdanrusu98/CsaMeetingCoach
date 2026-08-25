@@ -631,10 +631,19 @@ elements.sessionView.addEventListener("click", async event => {
 
 function connectEvents(sessionId) {
   state.eventSource?.close();
+  state.eventSource = null;
+  if (setTerminalConnectionStatus()) {
+    return;
+  }
   setConnectionStatus("Connecting", "neutral");
 
   state.eventSource = new EventSource(`/api/sessions/${sessionId}/events`);
   state.eventSource.addEventListener("open", async () => {
+    if (setTerminalConnectionStatus()) {
+      state.eventSource?.close();
+      state.eventSource = null;
+      return;
+    }
     setConnectionStatus("Live", "connected");
     try {
       const current = await api(`/api/sessions/${sessionId}`);
@@ -697,9 +706,25 @@ function setConnectionStatus(text, className) {
   element.className = `status ${className}`;
 }
 
+function setTerminalConnectionStatus() {
+  if (state.session?.status === "completed") {
+    setConnectionStatus("Ended", "ended");
+    return true;
+  }
+  if (state.session?.status === "expired") {
+    setConnectionStatus("Expired", "disconnected");
+    return true;
+  }
+  return false;
+}
+
 function render() {
   if (state.session?.expiresAtUtc && state.session.status !== "expired") {
     scheduleSessionExpiry(state.session.expiresAtUtc);
+  }
+  if (setTerminalConnectionStatus()) {
+    state.eventSource?.close();
+    state.eventSource = null;
   }
   if (state.role === "member") {
     renderMember();

@@ -18,10 +18,10 @@ public sealed class StaticAssetCacheTests
         indexResponse.EnsureSuccessStatusCode();
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
-        Assert.Contains("styles.css?v=20260825b", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260825b", html, StringComparison.Ordinal);
+        Assert.Contains("styles.css?v=20260825c", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260825c", html, StringComparison.Ordinal);
         Assert.Contains(
-            "assets/host-workspace-preview.png?v=20260825b",
+            "assets/host-workspace-preview.png?v=20260825c",
             html,
             StringComparison.Ordinal);
         Assert.Contains("id=\"toast-root\"", html, StringComparison.Ordinal);
@@ -84,6 +84,11 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("id=\"checklist\"", html, StringComparison.Ordinal);
         Assert.Contains("Open diagnostics and transcript simulator", html, StringComparison.Ordinal);
         Assert.Contains("aria-label=\"End session\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("class=\"live-dot\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "class=\"host-product-glyph\" aria-hidden=\"true\">C",
+            html,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("value=\"Host\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Cloud modernization workshop", html, StringComparison.Ordinal);
         Assert.DoesNotContain(
@@ -99,7 +104,7 @@ public sealed class StaticAssetCacheTests
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260825b");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260825c");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
@@ -110,6 +115,8 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("SESSION_HISTORY_KEY", script, StringComparison.Ordinal);
         Assert.Contains("window.history.replaceState", script, StringComparison.Ordinal);
         Assert.Contains("restoreSessionAfterRefresh", script, StringComparison.Ordinal);
+        Assert.Contains("setTerminalConnectionStatus", script, StringComparison.Ordinal);
+        Assert.Contains("setConnectionStatus(\"Ended\", \"ended\")", script, StringComparison.Ordinal);
         Assert.Contains("/leave", script, StringComparison.Ordinal);
         Assert.Contains("applyTheme(nextTheme, true)", script, StringComparison.Ordinal);
         Assert.Contains("Device authorized", script, StringComparison.Ordinal);
@@ -221,7 +228,7 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("Training guidance", script, StringComparison.Ordinal);
         Assert.Contains("customMeetingType.required", script, StringComparison.Ordinal);
 
-        using var styleResponse = await client.GetAsync("/styles.css?v=20260825b");
+        using var styleResponse = await client.GetAsync("/styles.css?v=20260825c");
         styleResponse.EnsureSuccessStatusCode();
         AssertNoStore(styleResponse);
         var styles = await styleResponse.Content.ReadAsStringAsync();
@@ -267,7 +274,7 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("--host-cyan: #60cdff", styles, StringComparison.Ordinal);
 
         using var previewResponse = await client.GetAsync(
-            "/assets/host-workspace-preview.png?v=20260825b");
+            "/assets/host-workspace-preview.png?v=20260825c");
         previewResponse.EnsureSuccessStatusCode();
         AssertNoStore(previewResponse);
         Assert.Equal("image/png", previewResponse.Content.Headers.ContentType?.MediaType);

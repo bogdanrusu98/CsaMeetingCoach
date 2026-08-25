@@ -26,7 +26,7 @@
   </script>
   <link rel="stylesheet"
         href="vendor/react-toastify.bundle.css?v=11.1.0-20260819c">
-  <link rel="stylesheet" href="styles.css?v=20260825b">
+  <link rel="stylesheet" href="styles.css?v=20260825c">
 </head>
 <body>
   <main class="app-shell">
@@ -146,7 +146,7 @@
         </div>
 
         <figure class="entry-product-preview">
-          <img src="assets/host-workspace-preview.png?v=20260825b"
+          <img src="assets/host-workspace-preview.png?v=20260825c"
                width="1600" height="1000"
                alt="Actual Session Copilot host workspace showing live speech, private AI guidance, and the evidence-backed action plan."
                fetchpriority="high" decoding="async">
@@ -297,10 +297,16 @@
              aria-labelledby="host-workspace-heading">
       <header class="session-bar commercial-session-bar">
         <div class="host-product-mark" aria-label="Session Copilot">
-          <span class="host-product-glyph" aria-hidden="true">C</span>
+          <span class="host-product-glyph" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 3.5 13.7 8l4.8 1.7-4.8 1.7L12 16l-1.7-4.6-4.8-1.7L10.3 8 12 3.5Z"
+                    fill="currentColor"></path>
+              <path d="m18.2 15 .8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8.8-2.1Z"
+                    fill="currentColor" opacity=".78"></path>
+            </svg>
+          </span>
         </div>
         <div class="session-identity">
-          <span class="live-dot" aria-hidden="true"></span>
           <div>
             <h1 id="host-workspace-heading">Host workspace</h1>
             <p class="session-meta-line">
@@ -757,6 +763,6 @@
   <script src="https://res.cdn.office.net/teams-js/2.31.0/js/MicrosoftTeams.min.js"></script>
   <script src="vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0"></script>
   <script src="vendor/react-toastify.bundle.js?v=11.1.0-20260819c"></script>
-  <script src="app.js?v=20260825b"></script>
+  <script src="app.js?v=20260825c"></script>
 </body>
 </html>
