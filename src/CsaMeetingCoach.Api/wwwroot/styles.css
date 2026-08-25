@@ -1416,6 +1416,24 @@ body {
   background: #ffffff;
 }
 
+.session-theme-toggle {
+  position: relative;
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+  justify-content: center;
+}
+
+.session-theme-toggle .theme-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.host-dashboard .session-theme-toggle .theme-icon {
+  width: 15px;
+  height: 15px;
+}
+
 .theme-icon {
   position: absolute;
   width: 18px;
@@ -2802,9 +2820,19 @@ html[data-theme="contrast"] .entry-product-preview {
   --host-header: rgba(250, 252, 255, 0.96);
   --host-card: #ffffff;
   --host-card-raised: #f7f9fc;
+  --host-plan: #f4f7fb;
+  --host-guidance: #eef6ff;
   --host-border: #d5deea;
   --host-border-strong: #bdc9d8;
   --host-shadow: rgba(33, 48, 73, 0.12);
+  --host-text: #182230;
+  --host-text-soft: #42526a;
+  --host-text-muted: #65758b;
+  --host-cyan: #176cc4;
+  --host-cyan-soft: rgba(23, 108, 196, .1);
+  --host-purple: #7554c9;
+  --host-purple-soft: rgba(117, 84, 201, .1);
+  --host-green: #2f7d32;
   --host-accent: #176cc4;
   --host-accent-soft: #e8f2ff;
   box-sizing: border-box;
@@ -3564,7 +3592,7 @@ html[data-theme="contrast"] .host-dashboard .knowledge-card {
 }
 
 /* Reference-matched Host workspace. */
-html:not([data-theme="contrast"]) .host-dashboard {
+html[data-theme="dark"] .host-dashboard {
   --host-shell: #1c222f;
   --host-header: #29303d;
   --host-card: #1b222e;
@@ -3583,6 +3611,9 @@ html:not([data-theme="contrast"]) .host-dashboard {
   --host-green: #6ccb5f;
   --host-template-accent: var(--host-cyan);
   --host-template-soft: var(--host-cyan-soft);
+}
+
+html:not([data-theme="contrast"]) .host-dashboard {
   position: relative;
   isolation: isolate;
   box-sizing: border-box;
@@ -5098,6 +5129,129 @@ html:not([data-theme="contrast"]) .host-dashboard[data-template="csaVbd"] {
   color: #847a94;
   font-size: 8.5px;
   line-height: 1.45;
+}
+
+html[data-theme="light"]:has(.host-dashboard:not(.hidden)),
+html[data-theme="light"] body:has(.host-dashboard:not(.hidden)) {
+  background: #edf2f8;
+}
+
+html[data-theme="light"] .host-dashboard::before {
+  background: #e6eef8;
+}
+
+html[data-theme="light"] .host-dashboard .commercial-session-bar {
+  border-bottom-color: var(--host-border);
+}
+
+html[data-theme="light"] .host-dashboard .host-product-mark,
+html[data-theme="light"] .host-dashboard .header-session-access,
+html[data-theme="light"] .host-dashboard .commercial-session-bar #connection-status,
+html[data-theme="light"] .host-dashboard .listening-pill,
+html[data-theme="light"] .host-dashboard .audio-source-button .status,
+html[data-theme="light"] .host-dashboard .microphone-unlock,
+html[data-theme="light"] .host-dashboard .knowledge-form,
+html[data-theme="light"] .host-dashboard .knowledge-list.empty-state,
+html[data-theme="light"] .host-dashboard .knowledge-item,
+html[data-theme="light"] .host-dashboard .participant-list.empty-state,
+html[data-theme="light"] .host-dashboard .participant-item,
+html[data-theme="light"] .host-dashboard .member-roster[open] {
+  background: var(--host-card-raised);
+}
+
+html[data-theme="light"] .host-dashboard .session-identity h1,
+html[data-theme="light"] .host-dashboard .audio-source-copy strong,
+html[data-theme="light"] .host-dashboard .host-live-transcript strong,
+html[data-theme="light"] .host-dashboard .recommendation h3,
+html[data-theme="light"] .host-dashboard .member-alert-preview h3 {
+  color: var(--host-text);
+}
+
+html[data-theme="light"] .host-dashboard .session-meta-line,
+html[data-theme="light"] .host-dashboard .header-retention,
+html[data-theme="light"] .host-dashboard .audio-source-copy span,
+html[data-theme="light"] .host-dashboard .host-live-transcript p,
+html[data-theme="light"] .host-dashboard .context-signal p,
+html[data-theme="light"] .host-dashboard .recommendation-rationale,
+html[data-theme="light"] .host-dashboard .member-alert-preview p,
+html[data-theme="light"] .host-dashboard .section-description,
+html[data-theme="light"] .host-dashboard .participant-copy span,
+html[data-theme="light"] .host-dashboard .participant-state {
+  color: var(--host-text-soft);
+}
+
+html[data-theme="light"] .host-dashboard .section-label,
+html[data-theme="light"] .host-dashboard .eyebrow {
+  color: var(--host-accent);
+}
+
+html[data-theme="light"] .host-dashboard .header-action {
+  color: var(--host-text-soft);
+}
+
+html[data-theme="light"] .host-dashboard .header-action:hover {
+  border-color: var(--host-border-strong);
+  color: var(--host-text);
+  background: var(--host-card-raised);
+}
+
+html[data-theme="light"] .host-dashboard .header-action.danger:hover {
+  border-color: rgba(180, 35, 24, .4);
+  color: #b42318;
+  background: rgba(180, 35, 24, .08);
+}
+
+html[data-theme="light"] .host-dashboard .header-session-access .host-session-code {
+  color: var(--host-text);
+}
+
+html[data-theme="light"] .host-dashboard .commercial-session-bar #connection-status.connected {
+  border-color: rgba(47, 125, 50, .35);
+  color: var(--host-green);
+  background: rgba(47, 125, 50, .08);
+}
+
+html[data-theme="light"] .host-dashboard .commercial-session-bar #connection-status.ended {
+  border-color: var(--host-border-strong);
+  color: var(--host-text-soft);
+  background: var(--host-card-raised);
+}
+
+html[data-theme="light"] .host-dashboard .audio-source-button:hover:not(:disabled),
+html[data-theme="light"] .host-dashboard .microphone-unlock input,
+html[data-theme="light"] .host-dashboard .knowledge-form input,
+html[data-theme="light"] .host-dashboard .knowledge-form select {
+  color: var(--host-text);
+  border-color: var(--host-border-strong);
+  background: #ffffff;
+}
+
+html[data-theme="light"] .host-dashboard .speaker-avatar,
+html[data-theme="light"] .host-dashboard .context-signal-avatar,
+html[data-theme="light"] .host-dashboard .guidance-glyph {
+  color: var(--host-accent);
+  background: var(--host-accent-soft);
+}
+
+html[data-theme="light"] .host-dashboard .focus-card {
+  border-color: color-mix(in srgb, var(--host-accent) 35%, var(--host-border));
+}
+
+html[data-theme="light"] .host-dashboard .member-alert-review {
+  border-color: var(--host-border);
+  background: #f7f4ff;
+}
+
+html[data-theme="light"] .host-dashboard .member-preview-button {
+  border-color: #c9b7e9;
+  color: #56349a;
+  background: #f0eaff;
+}
+
+html[data-theme="light"] .host-dashboard .knowledge-card .count-badge {
+  border-color: var(--host-border-strong);
+  color: var(--host-accent);
+  background: var(--host-card-raised);
 }
 
 html[data-theme="contrast"] .host-dashboard {

@@ -227,7 +227,8 @@ const elements = {
   memberPreviewLayerLabel: document.querySelector("#member-preview-layer-label"),
   memberPreviewAlertCount: document.querySelector("#member-preview-alert-count"),
   memberPreviewAlertList: document.querySelector("#member-preview-alert-list"),
-  themeToggle: document.querySelector("#theme-toggle"),
+  themeToggles: document.querySelectorAll("[data-theme-toggle]"),
+  hostLeaveSession: document.querySelector("#host-leave-session"),
   toastFallback: document.querySelector("#toast-fallback")
 };
 
@@ -244,8 +245,13 @@ function updateThemeToggle(theme) {
   const title = darkModeActive
     ? "Switch to light mode"
     : "Switch to dark mode";
-  elements.themeToggle.setAttribute("aria-pressed", String(darkModeActive));
-  elements.themeToggle.title = title;
+  elements.themeToggles.forEach(toggle => {
+    toggle.setAttribute("aria-pressed", String(darkModeActive));
+    toggle.setAttribute(
+      "aria-label",
+      darkModeActive ? "Light mode" : "Dark mode");
+    toggle.title = title;
+  });
 }
 
 function applyTheme(theme, persistPreference = false) {
@@ -267,12 +273,14 @@ function applyTeamsTheme(theme) {
   applyTheme(theme);
 }
 
-elements.themeToggle.addEventListener("click", () => {
-  const currentTheme = normalizeTheme(document.documentElement.dataset.theme);
-  const nextTheme = currentTheme === "dark" || currentTheme === "contrast"
-    ? "light"
-    : "dark";
-  applyTheme(nextTheme, true);
+elements.themeToggles.forEach(toggle => {
+  toggle.addEventListener("click", () => {
+    const currentTheme = normalizeTheme(document.documentElement.dataset.theme);
+    const nextTheme = currentTheme === "dark" || currentTheme === "contrast"
+      ? "light"
+      : "dark";
+    applyTheme(nextTheme, true);
+  });
 });
 applyTheme(document.documentElement.dataset.theme);
 
@@ -403,6 +411,12 @@ elements.memberLeaveSession.addEventListener("click", async event => {
     await api(`/api/sessions/${state.session.id}/leave`, { method: "POST" });
     await returnToEntry();
     showToast("You left the session view.", "success");
+  });
+});
+elements.hostLeaveSession.addEventListener("click", async event => {
+  await runWithButton(event.currentTarget, async () => {
+    await returnToEntry();
+    showToast("You left the completed Host session.", "success");
   });
 });
 elements.memberShowLatest.addEventListener("click", () => {
@@ -757,7 +771,9 @@ function renderHost() {
   document.querySelector("#purpose-title").textContent = session.purpose.title;
   document.querySelector("#purpose-objective").textContent = session.purpose.objective;
   const sessionClosed = session.status !== "active";
+  document.querySelector("#complete-meeting").classList.toggle("hidden", sessionClosed);
   document.querySelector("#complete-meeting").disabled = sessionClosed;
+  elements.hostLeaveSession.classList.toggle("hidden", !sessionClosed);
   document.querySelector("#transcript-form button").disabled = sessionClosed;
   elements.knowledgeFileForm.querySelector("button").disabled = sessionClosed;
   elements.knowledgeLinkForm.querySelector("button").disabled = sessionClosed;
@@ -1067,11 +1083,13 @@ function initialsForName(displayName) {
 }
 
 function renderParticipantPresence(participants) {
-  const members = participants
+  const allMembers = participants
     .filter(participant =>
       String(participant.role).toLowerCase() === "member")
     .sort((left, right) =>
       Date.parse(left.joinedAtUtc) - Date.parse(right.joinedAtUtc));
+  const members = allMembers.filter(member =>
+    String(member.status).toLowerCase() === "active");
 
   if (state.participantTrackingInitialized) {
     members
@@ -1081,9 +1099,21 @@ function renderParticipantPresence(participants) {
           title: "Member joined"
         });
       });
+    allMembers
+      .filter(member =>
+        String(member.status).toLowerCase() !== "active"
+        && state.knownParticipantIds.has(member.id))
+      .forEach(member => {
+        showToast(`${member.displayName} left the session.`, "info", {
+          id: `member-left-${member.id}`,
+          source: "member-presence",
+          sourceId: member.id,
+          title: "Member left"
+        });
+      });
   }
 
-  members.forEach(member => state.knownParticipantIds.add(member.id));
+  state.knownParticipantIds = new Set(members.map(member => member.id));
   state.participantTrackingInitialized = true;
   elements.hostMemberCount.textContent = String(members.length);
   elements.hostParticipantAvatars.className = members.length === 0
@@ -1278,6 +1308,27 @@ function resetContextualCards() {
   state.knownParticipantIds.clear();
   state.participantTrackingInitialized = false;
   window.sessionToast?.clear();
+}
+
+function initializeNotificationHistory(session) {
+  const cards = session.contextualCards ?? session.alerts ?? [];
+  cards
+    .filter(card => card.memberAlertStatus !== "hidden")
+    .forEach(card => state.dismissedContextualCardIds.add(card.id));
+  (session.recommendedTasks ?? [])
+    .forEach(recommendation =>
+      state.notifiedRecommendationIds.add(recommendation.id));
+  (session.warnings ?? [])
+    .forEach(warning => state.notifiedWarningMessages.add(warning));
+  if (Array.isArray(session.participants)) {
+    state.knownParticipantIds = new Set(
+      session.participants
+        .filter(participant =>
+          String(participant.role).toLowerCase() === "member"
+          && String(participant.status).toLowerCase() === "active")
+        .map(participant => participant.id));
+    state.participantTrackingInitialized = true;
+  }
 }
 
 async function startMicrophone() {
@@ -2130,6 +2181,7 @@ async function restoreSessionAfterRefresh() {
     }
 
     resetContextualCards();
+    initializeNotificationHistory(session);
     state.role = role;
     state.session = session;
     state.joinCode = role === "host" ? locator.joinCode : null;
