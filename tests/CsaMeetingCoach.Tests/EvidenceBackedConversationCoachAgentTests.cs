@@ -152,7 +152,11 @@ public sealed class EvidenceBackedConversationCoachAgentTests
             new HeuristicConversationCoachAgent());
 
         var decision = await agent.AnalyzeAsync(
-            new CoachAgentContext(TestData.CreatePurpose(), [], [latest]),
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [],
+                [latest],
+                AudienceFamiliarity: AudienceFamiliarity.Beginner),
             latest,
             CancellationToken.None);
 
@@ -263,7 +267,11 @@ public sealed class EvidenceBackedConversationCoachAgentTests
             new HeuristicConversationCoachAgent());
 
         var decision = await agent.AnalyzeAsync(
-            new CoachAgentContext(TestData.CreatePurpose(), [], [latest]),
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [],
+                [latest],
+                AudienceFamiliarity: AudienceFamiliarity.Beginner),
             latest,
             CancellationToken.None);
 

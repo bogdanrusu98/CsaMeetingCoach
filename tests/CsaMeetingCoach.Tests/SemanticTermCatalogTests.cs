@@ -47,7 +47,11 @@ public sealed class SemanticTermCatalogTests
         };
 
         var cards = PresentationCoachingPolicy.SelectContextualCards(
-            new CoachAgentContext(purpose, [], [latest]),
+            new CoachAgentContext(
+                purpose,
+                [],
+                [latest],
+                AudienceFamiliarity: AudienceFamiliarity.Beginner),
             [],
             [latest]);
 

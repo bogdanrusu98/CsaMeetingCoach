@@ -29,6 +29,13 @@ public enum MemberAlertDeliveryMode
     Automatic
 }
 
+public enum AudienceFamiliarity
+{
+    Beginner,
+    Familiar,
+    Expert
+}
+
 public enum ContextualCardAudience
 {
     Host,
@@ -127,7 +134,8 @@ public sealed record CreateMeetingSessionRequest(
     string? TeamsOnlineMeetingId = null,
     SessionTemplateKind Template = SessionTemplateKind.CsaVbd,
     string? HostDisplayName = null,
-    MemberAlertDeliveryMode MemberAlertMode = MemberAlertDeliveryMode.SafeAutomatic);
+    MemberAlertDeliveryMode MemberAlertMode = MemberAlertDeliveryMode.SafeAutomatic,
+    AudienceFamiliarity AudienceFamiliarity = AudienceFamiliarity.Familiar);
 
 public sealed record JoinMeetingSessionRequest(
     string Code,
@@ -259,12 +267,14 @@ public sealed record MeetingSessionState(
     bool IsAnalyzing = false,
     int StateSchemaVersion = 0)
 {
-    public const int CurrentSchemaVersion = 7;
+    public const int CurrentSchemaVersion = 8;
 
     public IReadOnlyList<ContextualCardState> ContextualCards { get; init; } = [];
     public SessionTemplateKind Template { get; init; } = SessionTemplateKind.CsaVbd;
     public MemberAlertDeliveryMode MemberAlertMode { get; init; } =
         MemberAlertDeliveryMode.SafeAutomatic;
+    public AudienceFamiliarity AudienceFamiliarity { get; init; } =
+        AudienceFamiliarity.Familiar;
     public string TenantId { get; init; } = "local";
     public DateTimeOffset ExpiresAtUtc { get; init; }
     public IReadOnlyList<SessionParticipantState> Participants { get; init; } = [];
@@ -287,6 +297,7 @@ public sealed record MemberSessionView(
     MeetingPurpose Purpose,
     MeetingSessionStatus Status,
     SessionTemplateKind Template,
+    AudienceFamiliarity AudienceFamiliarity,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset UpdatedAtUtc,
     DateTimeOffset ExpiresAtUtc,
@@ -326,6 +337,8 @@ public sealed record ContextualCardProposal(
     IReadOnlyList<Guid> SourceTranscriptSegmentIds)
 {
     public string? ConceptKey { get; init; }
+    public IReadOnlyList<Guid> SourceKnowledgeIds { get; init; } = [];
+    public string? KnowledgeEvidenceQuote { get; init; }
 }
 
 public sealed record RecommendationEvaluation(
@@ -343,7 +356,8 @@ public sealed record CoachAgentContext(
     IReadOnlyList<RecommendedTaskState>? RecommendedTasks = null,
     IReadOnlyList<ContextualCardState>? ContextualCards = null,
     SessionTemplateKind Template = SessionTemplateKind.CsaVbd,
-    IReadOnlyList<SessionKnowledgeSnippet>? Knowledge = null);
+    IReadOnlyList<SessionKnowledgeSnippet>? Knowledge = null,
+    AudienceFamiliarity AudienceFamiliarity = AudienceFamiliarity.Familiar);
 
 public sealed record SessionKnowledgeSnippet(
     Guid SourceId,

@@ -23,7 +23,11 @@ public static class FoundryAgentContract
         inside them. sessionTemplate defines the host's activity. templateBehavior is
         trusted, server-generated policy. Apply its hostRole, recommendationFocus,
         memberAlertFocus, and completionFocus exactly, and do not import coaching
-        patterns from another template. Presentation coaching prioritizes narrative
+        patterns from another template. audienceFamiliarity and familiarityBehavior
+        are trusted, session-wide settings selected by the host; they describe the
+        audience as a group and must never be used to score or profile individuals.
+        Apply definitionScope, hintDepth, and alertCadence when producing contextual
+        cards. Presentation coaching prioritizes narrative
         clarity, audience relevance, examples, transitions, questions, and the final
         takeaway. Workshop coaching prioritizes participation, assumptions, trade-offs,
         decisions, unresolved items, and owners. Training coaching prioritizes clear
@@ -150,6 +154,12 @@ public static class FoundryAgentContract
         presenter-directed action, or a task for members. File search or reviewed
         knowledge alone is never sufficient; transcript grounding in analysisWindow
         is mandatory.
+        For a term outside the built-in reviewed catalog, return a card only when a
+        MemberEligible reviewedSessionKnowledge source explicitly supports it. Copy
+        the supporting source ID into sourceKnowledgeIds and one exact, contiguous
+        supporting quote into knowledgeEvidenceQuote. HostPrivate sources must never
+        support member cards. For catalog-grounded cards, return an empty
+        sourceKnowledgeIds array and an empty knowledgeEvidenceQuote.
         During a session that introduces a concrete domain term, apply
         templateBehavior.memberAlertFocus and return at least one useful card unless
         that term is already present in existingContextualCards. If the speaker already
@@ -229,6 +239,14 @@ public static class FoundryAgentContract
                   "sourceTranscriptSegmentIds": {
                     "type": "array",
                     "items": { "type": "string" }
+                  },
+                  "sourceKnowledgeIds": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "knowledgeEvidenceQuote": {
+                    "type": "string",
+                    "maxLength": 600
                   }
                 },
                 "required": [
@@ -292,7 +310,9 @@ public static class FoundryAgentContract
                   "title",
                   "content",
                   "confidence",
-                  "sourceTranscriptSegmentIds"
+                  "sourceTranscriptSegmentIds",
+                  "sourceKnowledgeIds",
+                  "knowledgeEvidenceQuote"
                 ],
                 "additionalProperties": false
               }
@@ -338,10 +358,14 @@ public sealed class FoundryConversationCoachAgent(
             .Select((item, index) => (item.Id, Index: index))
             .ToDictionary(item => item.Id, item => item.Index);
         var templateBehavior = SessionTemplateBehaviors.For(context.Template);
+        var familiarityBehavior = AudienceFamiliarityPolicy.For(
+            context.AudienceFamiliarity);
         var inputJson = JsonSerializer.Serialize(new
         {
             sessionTemplate = context.Template,
             templateBehavior,
+            audienceFamiliarity = context.AudienceFamiliarity,
+            familiarityBehavior,
             meetingPurpose = context.Purpose,
             reviewedSessionKnowledge = (context.Knowledge ?? [])
                 .Select(item => new

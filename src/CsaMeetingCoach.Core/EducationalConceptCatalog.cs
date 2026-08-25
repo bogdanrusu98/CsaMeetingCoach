@@ -2,6 +2,7 @@ namespace CsaMeetingCoach.Core;
 
 public enum ConceptCategory
 {
+    DomainSpecific,
     FoundationalCloud,
     ManagementGovernance,
     IdentitySecurity,

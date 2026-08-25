@@ -138,6 +138,7 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("window.sessionToast", script, StringComparison.Ordinal);
         Assert.Contains("\"recommendation\"", script, StringComparison.Ordinal);
         Assert.Contains("/api/sessions/host", script, StringComparison.Ordinal);
+        Assert.Contains("audienceFamiliarity", script, StringComparison.Ordinal);
         Assert.Contains("/api/sessions/join", script, StringComparison.Ordinal);
         Assert.Contains("/knowledge/files", script, StringComparison.Ordinal);
         Assert.Contains("X-Session-Request", script, StringComparison.Ordinal);

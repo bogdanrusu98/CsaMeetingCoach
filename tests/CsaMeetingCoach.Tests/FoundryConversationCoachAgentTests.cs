@@ -270,7 +270,10 @@ public sealed class FoundryConversationCoachAgentTests
             "The frontend IP can be internal or external.");
         var context = CreateContext(
             latestSegment,
-            transcript: [topicSegment, latestSegment]);
+            transcript: [topicSegment, latestSegment]) with
+        {
+            AudienceFamiliarity = AudienceFamiliarity.Familiar
+        };
         var decisionPayload = new CoachAgentDecision([], [], [])
         {
             ContextualCards =
@@ -297,10 +300,24 @@ public sealed class FoundryConversationCoachAgentTests
         Assert.Equal(topicSegment.Id, Assert.Single(card.SourceTranscriptSegmentIds));
         using var payload = JsonDocument.Parse(client.InputJson!);
         Assert.Equal(2, payload.RootElement.GetProperty("analysisWindow").GetArrayLength());
+        Assert.Equal(
+            "familiar",
+            payload.RootElement.GetProperty("audienceFamiliarity").GetString());
+        Assert.Contains(
+            "specialized",
+            payload.RootElement
+                .GetProperty("familiarityBehavior")
+                .GetProperty("definitionScope")
+                .GetString(),
+            StringComparison.OrdinalIgnoreCase);
         Assert.Contains(
             "presentation",
             FoundryAgentContract.Instructions,
             StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "sourceKnowledgeIds",
+            FoundryAgentContract.ResponseJsonSchema,
+            StringComparison.Ordinal);
     }
 
     [Fact]

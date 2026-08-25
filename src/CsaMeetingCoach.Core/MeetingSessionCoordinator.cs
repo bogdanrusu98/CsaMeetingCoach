@@ -75,6 +75,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
         ValidatePurpose(request.Purpose);
         ValidateTemplate(request.Template);
         ValidateMemberAlertMode(request.MemberAlertMode);
+        ValidateAudienceFamiliarity(request.AudienceFamiliarity);
         var now = _timeProvider.GetUtcNow();
         var host = new SessionParticipantState(
             Guid.NewGuid(),
@@ -101,6 +102,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
         {
             Template = request.Template,
             MemberAlertMode = request.MemberAlertMode,
+            AudienceFamiliarity = request.AudienceFamiliarity,
             ExpiresAtUtc = now + SessionLifecycle.Lifetime,
             Participants = [host]
         };
@@ -269,7 +271,8 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 transcriptUpdate.RecommendedTasks,
                 FilterClientReadyCards(transcriptUpdate.ContextualCards),
                 transcriptUpdate.Template,
-                knowledge);
+                knowledge,
+                transcriptUpdate.AudienceFamiliarity);
             var deterministicDecision = await _deterministicAgent.AnalyzeAsync(
                 context, segment, cancellationToken);
             var fastLaneDecision = (_aiAgent is null
@@ -322,7 +325,8 @@ public sealed class MeetingSessionCoordinator : IDisposable
             var contextualCardResult = ApplyContextualCards(
                 transcriptUpdate,
                 decision.ContextualCards,
-                analysisWindow);
+                analysisWindow,
+                knowledge);
             var analyzedAtUtc = DateTimeOffset.UtcNow;
             var analyzedTranscript = transcript
                 .Select(item => item.Id == segment.Id
@@ -579,7 +583,8 @@ public sealed class MeetingSessionCoordinator : IDisposable
                     session.RecommendedTasks,
                     FilterClientReadyCards(session.ContextualCards),
                     session.Template,
-                    knowledge);
+                    knowledge,
+                    session.AudienceFamiliarity);
             }
             finally
             {
@@ -699,7 +704,8 @@ public sealed class MeetingSessionCoordinator : IDisposable
             var contextualCardResult = ApplyContextualCards(
                 current,
                 aiDecision.ContextualCards,
-                analysisWindow);
+                analysisWindow,
+                context.Knowledge ?? []);
 
             state.MarkCompleted(analysisGeneration);
             var mergedSession = current with
@@ -1410,7 +1416,8 @@ public sealed class MeetingSessionCoordinator : IDisposable
     private ContextualCardApplicationResult ApplyContextualCards(
         MeetingSessionState session,
         IReadOnlyList<ContextualCardProposal> proposals,
-        IReadOnlyList<TranscriptSegment> analysisWindow)
+        IReadOnlyList<TranscriptSegment> analysisWindow,
+        IReadOnlyList<SessionKnowledgeSnippet> knowledge)
     {
         var analysisWindowById = analysisWindow.ToDictionary(segment => segment.Id);
         var result = FilterClientReadyCards(session.ContextualCards)
@@ -1502,27 +1509,76 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 continue;
             }
 
-            if (!PresentationCoachingPolicy.TryResolveEducationalProposal(
-                    proposal,
-                    analysisWindow,
-                    session.Purpose,
-                    out var concept,
-                    out var reason,
-                    out var details))
-            {
-                diagnostics.Add(new AlertDiagnostic(
-                    proposal.Kind,
+            EducationalConcept? concept = null;
+            var sourceKnowledgeIds = Array.Empty<Guid>();
+            string conceptKey;
+            ConceptCategory category;
+            bool requiresAzureVendorScope;
+            AlertRejectionReason reason;
+            string details;
+            if (EducationalConceptCatalog.TryResolveByAliasOrTitle(
                     proposal.ConceptKey ?? proposal.Title,
-                    reason == AlertRejectionReason.None
-                        ? AlertRejectionReason.MentionNotFound
-                        : reason,
-                    string.IsNullOrWhiteSpace(details)
-                        ? "proposal could not be mapped to a grounded educational concept"
-                        : details));
-                continue;
+                    out _))
+            {
+                if (!PresentationCoachingPolicy.TryResolveEducationalProposal(
+                        proposal,
+                        analysisWindow,
+                        session.Purpose,
+                        out concept,
+                        out reason,
+                        out details))
+                {
+                    diagnostics.Add(new AlertDiagnostic(
+                        proposal.Kind,
+                        proposal.ConceptKey ?? proposal.Title,
+                        reason == AlertRejectionReason.None
+                            ? AlertRejectionReason.MentionNotFound
+                            : reason,
+                        string.IsNullOrWhiteSpace(details)
+                            ? "proposal could not be mapped to a grounded educational concept"
+                            : details));
+                    continue;
+                }
+
+                conceptKey = concept!.ConceptKey;
+                category = concept.Category;
+                requiresAzureVendorScope = concept.RequiresAzureVendorScope;
+                if (!AudienceFamiliarityPolicy.IncludeCatalogConcept(
+                        concept,
+                        session.AudienceFamiliarity)
+                    && !(session.AudienceFamiliarity == AudienceFamiliarity.Expert
+                        && proposal.Kind == ContextualCardKind.Hint))
+                {
+                    diagnostics.Add(new AlertDiagnostic(
+                        proposal.Kind,
+                        conceptKey,
+                        AlertRejectionReason.MentionNotFound,
+                        "catalog concept is suppressed for the current audience familiarity"));
+                    continue;
+                }
+            }
+            else
+            {
+                if (!TryValidateKnowledgeGrounding(
+                        proposal,
+                        session,
+                        knowledge,
+                        out sourceKnowledgeIds,
+                        out details))
+                {
+                    diagnostics.Add(new AlertDiagnostic(
+                        proposal.Kind,
+                        proposal.ConceptKey ?? proposal.Title,
+                        AlertRejectionReason.MissingEvidence,
+                        details));
+                    continue;
+                }
+
+                conceptKey = CreateKnowledgeConceptKey(proposal.Title);
+                category = ConceptCategory.DomainSpecific;
+                requiresAzureVendorScope = false;
             }
 
-            var conceptKey = concept!.ConceptKey;
             var fingerprint = CreateContentFingerprint(
                 proposal.Title,
                 proposal.Content,
@@ -1546,6 +1602,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
                     shownDefinitionKeys,
                     definitionCooldowns,
                     hintCooldowns,
+                    session.AudienceFamiliarity,
                     out reason,
                     out details))
             {
@@ -1570,9 +1627,10 @@ public sealed class MeetingSessionCoordinator : IDisposable
                         .First(item => item.Id == id).Index)
                     .DefaultIfEmpty(0)
                     .Max(),
-                concept.Category,
-                concept.RequiresAzureVendorScope,
-                "proposal"));
+                category,
+                requiresAzureVendorScope,
+                sourceKnowledgeIds.Length == 0 ? "catalog" : "session-knowledge",
+                sourceKnowledgeIds));
         }
 
         var ranked = AlertRanker.Rank(
@@ -1608,12 +1666,9 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 ConceptKey = winner.Candidate.ConceptKey,
                 MemberAlertStatus = ResolveMemberAlertStatus(
                     session,
-                    winner.Candidate.Kind),
-                KnowledgeSourceIds = session.KnowledgeSources
-                    .Where(source => source.Status == KnowledgeSourceStatus.Ready)
-                    .Select(source => source.Id)
-                    .Distinct()
-                    .ToArray()
+                    winner.Candidate.Kind,
+                    winner.Candidate.SourceKnowledgeIds),
+                KnowledgeSourceIds = winner.Candidate.SourceKnowledgeIds
             });
 
             if (winner.Candidate.Kind == ContextualCardKind.Definition)
@@ -1650,7 +1705,8 @@ public sealed class MeetingSessionCoordinator : IDisposable
 
     private static MemberAlertStatus ResolveMemberAlertStatus(
         MeetingSessionState session,
-        ContextualCardKind kind)
+        ContextualCardKind kind,
+        IReadOnlyList<Guid> sourceKnowledgeIds)
     {
         return session.MemberAlertMode switch
         {
@@ -1658,8 +1714,14 @@ public sealed class MeetingSessionCoordinator : IDisposable
             MemberAlertDeliveryMode.Automatic => MemberAlertStatus.Published,
             MemberAlertDeliveryMode.SafeAutomatic
                 when kind == ContextualCardKind.Definition
-                && session.KnowledgeSources.All(source =>
-                    source.Visibility == KnowledgeSourceVisibility.MemberEligible) =>
+                && (sourceKnowledgeIds.Count == 0
+                    ? session.KnowledgeSources.All(source =>
+                        source.Visibility == KnowledgeSourceVisibility.MemberEligible)
+                    : sourceKnowledgeIds.All(sourceId =>
+                        session.KnowledgeSources.Any(source =>
+                            source.Id == sourceId
+                            && source.Status == KnowledgeSourceStatus.Ready
+                            && source.Visibility == KnowledgeSourceVisibility.MemberEligible))) =>
                 MemberAlertStatus.Published,
             MemberAlertDeliveryMode.SafeAutomatic => MemberAlertStatus.PendingApproval,
             _ => MemberAlertStatus.PendingApproval
@@ -1698,6 +1760,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
         IReadOnlySet<string> shownDefinitionKeys,
         IReadOnlyDictionary<string, DateTimeOffset> definitionCooldowns,
         IReadOnlyDictionary<string, DateTimeOffset> hintCooldowns,
+        AudienceFamiliarity audienceFamiliarity,
         out AlertRejectionReason reason,
         out string details)
     {
@@ -1722,7 +1785,8 @@ public sealed class MeetingSessionCoordinator : IDisposable
             return true;
         }
 
-        if (!shownDefinitionKeys.Contains(conceptKey))
+        if (!shownDefinitionKeys.Contains(conceptKey)
+            && audienceFamiliarity != AudienceFamiliarity.Expert)
         {
             reason = AlertRejectionReason.CooldownActive;
             details = "hint cards require a previously shown definition for the same concept";
@@ -1771,6 +1835,71 @@ public sealed class MeetingSessionCoordinator : IDisposable
             $"{kind} {title} {content}");
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
         return Convert.ToHexString(hash);
+    }
+
+    private static bool TryValidateKnowledgeGrounding(
+        ContextualCardProposal proposal,
+        MeetingSessionState session,
+        IReadOnlyList<SessionKnowledgeSnippet> knowledge,
+        out Guid[] sourceKnowledgeIds,
+        out string details)
+    {
+        sourceKnowledgeIds = [];
+        var requestedIds = (proposal.SourceKnowledgeIds ?? [])
+            .Distinct()
+            .ToArray();
+        if (requestedIds.Length == 0
+            || string.IsNullOrWhiteSpace(proposal.KnowledgeEvidenceQuote))
+        {
+            details = "domain-specific cards require member-eligible knowledge IDs and an exact supporting quote";
+            return false;
+        }
+
+        var memberEligibleIds = session.KnowledgeSources
+            .Where(source => source.Status == KnowledgeSourceStatus.Ready
+                && source.Visibility == KnowledgeSourceVisibility.MemberEligible)
+            .Select(source => source.Id)
+            .ToHashSet();
+        if (requestedIds.Any(id => !memberEligibleIds.Contains(id)))
+        {
+            details = "a domain-specific card referenced knowledge that was not member-eligible";
+            return false;
+        }
+
+        var snippets = knowledge
+            .Where(item => requestedIds.Contains(item.SourceId)
+                && item.Visibility == KnowledgeSourceVisibility.MemberEligible)
+            .ToDictionary(item => item.SourceId);
+        if (snippets.Count != requestedIds.Length)
+        {
+            details = "a domain-specific card referenced unavailable session knowledge";
+            return false;
+        }
+
+        var evidence = NormalizeEvidenceText(proposal.KnowledgeEvidenceQuote);
+        if (evidence.Length < 12
+            || !snippets.Values.Any(item => NormalizeEvidenceText(item.Content)
+                .Contains(evidence, StringComparison.OrdinalIgnoreCase)))
+        {
+            details = "the knowledge evidence quote was not an exact excerpt from a member-eligible source";
+            return false;
+        }
+
+        sourceKnowledgeIds = requestedIds;
+        details = string.Empty;
+        return true;
+    }
+
+    private static string NormalizeEvidenceText(string value) =>
+        string.Join(' ', value.Split(
+            (char[]?)null,
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+    private static string CreateKnowledgeConceptKey(string title)
+    {
+        var normalized = HeuristicConversationCoachAgent.Normalize(title);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
+        return $"knowledge:{Convert.ToHexString(hash)[..16]}";
     }
 
     private void LogAlertDiagnostics(
@@ -1984,6 +2113,14 @@ public sealed class MeetingSessionCoordinator : IDisposable
         if (!Enum.IsDefined(mode))
         {
             throw new ArgumentException("A supported member alert mode is required.");
+        }
+    }
+
+    private static void ValidateAudienceFamiliarity(AudienceFamiliarity familiarity)
+    {
+        if (!Enum.IsDefined(familiarity))
+        {
+            throw new ArgumentException("A supported audience familiarity is required.");
         }
     }
 

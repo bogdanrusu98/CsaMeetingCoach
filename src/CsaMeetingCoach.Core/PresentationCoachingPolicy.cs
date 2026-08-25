@@ -395,6 +395,9 @@ internal static partial class PresentationCoachingPolicy
         }
 
         var educationalMatches = EducationalConceptCatalog.All
+            .Where(concept => AudienceFamiliarityPolicy.IncludeCatalogConcept(
+                concept,
+                context.AudienceFamiliarity))
             .Select(concept => (
                 Concept: concept,
                 Mention: TryFindEducationalMention(

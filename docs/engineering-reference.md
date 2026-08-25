@@ -26,6 +26,9 @@ evidence-backed checklist and recommend private talking points to the host.
   evidence ingested after acceptance and can be reopened.
 - Shows only client-facing educational alerts in dismissible lower-right cards:
   transcript-grounded **Definition** cards and follow-on **Hint** cards.
+- Lets the host select session-wide audience familiarity. Beginner sessions include
+  foundational concepts, familiar sessions prioritize specialized terms, and expert
+  sessions reserve alerts for non-obvious technical detail.
 - Pushes session updates to the side panel with Server-Sent Events.
 - Protects each session with a scoped HttpOnly access cookie so another local
   caller cannot read or alter a transcript by guessing its session ID.

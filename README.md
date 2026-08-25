@@ -35,6 +35,7 @@ only the support it needs.
 | Host experience | Member experience |
 |---|---|
 | Private, context-aware next-step guidance | Plain-language definitions and contextual hints |
+| Audience familiarity selected for the whole session | Beginner, familiar, or expert-level explanation depth |
 | Recommendations that can become trackable tasks | No exposure to private host coaching |
 | Evidence-backed progress against session outcomes | Approved, role-scoped content only |
 
@@ -56,7 +57,7 @@ Every automatic completion remains visible, attributable, and reversible.
 ## How it works
 
 1. **Configure the outcome** — the host selects a session type, objective,
-   observable success criteria, and optional trusted knowledge.
+   observable success criteria, audience familiarity, and optional trusted knowledge.
 2. **Start with consent** — browser audio capture starts only after explicit user
    action and participant notice.
 3. **Understand live context** — Azure AI Speech produces final text; raw audio is
@@ -99,6 +100,8 @@ flowchart LR
 - No hidden recording or automatic microphone start.
 - Raw audio is not persisted by the application.
 - Host guidance is never exposed in Member View.
+- Audience familiarity applies to the session as a whole; it does not score or
+  profile individual members.
 - Session state, transcript text, join codes, and uploaded knowledge are temporary.
 - In this prototype, session data is deleted automatically 24 hours after creation.
 - Transcript content is treated as untrusted input, not as instructions to the agent.
@@ -114,6 +117,7 @@ certification.
 |---|---|
 | Standalone live web demo | Available |
 | Host and Member role separation | Implemented |
+| Beginner, familiar, and expert member explanations | Implemented |
 | Consent-based browser speech | Implemented |
 | Private AI recommendations | Implemented |
 | Evidence-backed checklist and tasks | Implemented |

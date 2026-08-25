@@ -416,7 +416,8 @@ elements.sessionForm.addEventListener("submit", async event => {
         teamsOnlineMeetingId: state.teamsMeetingId,
         template,
         hostDisplayName: document.querySelector("#host-display-name").value.trim(),
-        memberAlertMode: document.querySelector("#member-alert-mode").value
+        memberAlertMode: document.querySelector("#member-alert-mode").value,
+        audienceFamiliarity: document.querySelector("#audience-familiarity").value
       })
     });
 

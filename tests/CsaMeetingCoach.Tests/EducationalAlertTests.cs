@@ -22,7 +22,11 @@ public sealed class EducationalAlertTests
         };
 
         var cards = PresentationCoachingPolicy.SelectContextualCards(
-            new CoachAgentContext(purpose, [], [latest]),
+            new CoachAgentContext(
+                purpose,
+                [],
+                [latest],
+                AudienceFamiliarity: AudienceFamiliarity.Beginner),
             [],
             [latest]);
 
@@ -137,13 +141,248 @@ public sealed class EducationalAlertTests
         var second = CreateFinalSegment("Zones in the Azure design.");
 
         var cards = PresentationCoachingPolicy.SelectContextualCards(
-            new CoachAgentContext(TestData.CreatePurpose(), [], [first, second]),
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [],
+                [first, second],
+                AudienceFamiliarity: AudienceFamiliarity.Beginner),
             [],
             [first, second]);
 
         Assert.Contains(
             cards,
             card => string.Equals(card.ConceptKey, "availability-zone", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void SelectContextualCards_FamiliarAudienceOmitsFoundationalCatalogDefinitions()
+    {
+        var latest = CreateFinalSegment("Cloud computing is part of the architecture.");
+        var beginner = PresentationCoachingPolicy.SelectContextualCards(
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [],
+                [latest],
+                AudienceFamiliarity: AudienceFamiliarity.Beginner),
+            [],
+            [latest]);
+        var familiar = PresentationCoachingPolicy.SelectContextualCards(
+            new CoachAgentContext(
+                TestData.CreatePurpose(),
+                [],
+                [latest],
+                AudienceFamiliarity: AudienceFamiliarity.Familiar),
+            [],
+            [latest]);
+
+        Assert.Contains(beginner, card => card.ConceptKey == "cloud-computing");
+        Assert.DoesNotContain(familiar, card => card.ConceptKey == "cloud-computing");
+    }
+
+    [Fact]
+    public async Task Coordinator_AcceptsDomainDefinitionGroundedInMemberEligibleKnowledge()
+    {
+        var sourceId = Guid.NewGuid();
+        const string evidence =
+            "Deglazing means adding liquid to a hot pan to loosen the flavorful browned pieces.";
+        var store = new InMemoryMeetingSessionStore();
+        var proposal = new ContextualCardProposal(
+            ContextualCardKind.Definition,
+            "Deglazing",
+            evidence,
+            0.92,
+            [])
+        {
+            SourceKnowledgeIds = [sourceId],
+            KnowledgeEvidenceQuote = evidence
+        };
+        using var coordinator = CreateCoordinator(
+            store,
+            new StaticCardAgent(proposal),
+            knowledgeReader: new StaticKnowledgeReader(
+                new SessionKnowledgeSnippet(
+                    sourceId,
+                    "culinary-guide.pdf",
+                    KnowledgeSourceVisibility.MemberEligible,
+                    $"Kitchen glossary. {evidence} Use stock, wine, or water.")));
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(
+                TestData.CreatePurpose(),
+                AudienceFamiliarity: AudienceFamiliarity.Beginner),
+            CancellationToken.None);
+        await store.SaveAsync(
+            session with
+            {
+                KnowledgeSources =
+                [
+                    new KnowledgeSourceState(
+                        sourceId,
+                        KnowledgeSourceKind.File,
+                        "culinary-guide.pdf",
+                        KnowledgeSourceVisibility.MemberEligible,
+                        KnowledgeSourceStatus.Ready,
+                        DateTimeOffset.UtcNow)
+                ]
+            },
+            CancellationToken.None);
+
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Presenter",
+                "We use deglazing before finishing the sauce."),
+            CancellationToken.None);
+
+        var card = Assert.Single(updated.ContextualCards);
+        Assert.Equal("Deglazing", card.Title);
+        Assert.Equal([sourceId], card.KnowledgeSourceIds);
+        Assert.Equal(MemberAlertStatus.Published, card.MemberAlertStatus);
+    }
+
+    [Fact]
+    public async Task Coordinator_SafeAutomaticUsesOnlyCitedKnowledgeVisibility()
+    {
+        var memberSourceId = Guid.NewGuid();
+        var privateSourceId = Guid.NewGuid();
+        const string evidence =
+            "Deglazing means adding liquid to a hot pan to loosen browned pieces.";
+        var store = new InMemoryMeetingSessionStore();
+        var proposal = new ContextualCardProposal(
+            ContextualCardKind.Definition,
+            "Deglazing",
+            evidence,
+            0.92,
+            [])
+        {
+            SourceKnowledgeIds = [memberSourceId],
+            KnowledgeEvidenceQuote = evidence
+        };
+        using var coordinator = CreateCoordinator(
+            store,
+            new StaticCardAgent(proposal),
+            knowledgeReader: new StaticKnowledgeReader(
+                new SessionKnowledgeSnippet(
+                    memberSourceId,
+                    "member-guide.pdf",
+                    KnowledgeSourceVisibility.MemberEligible,
+                    evidence)));
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(
+                TestData.CreatePurpose(),
+                AudienceFamiliarity: AudienceFamiliarity.Beginner),
+            CancellationToken.None);
+        await store.SaveAsync(
+            session with
+            {
+                KnowledgeSources =
+                [
+                    new KnowledgeSourceState(
+                        memberSourceId,
+                        KnowledgeSourceKind.File,
+                        "member-guide.pdf",
+                        KnowledgeSourceVisibility.MemberEligible,
+                        KnowledgeSourceStatus.Ready,
+                        DateTimeOffset.UtcNow),
+                    new KnowledgeSourceState(
+                        privateSourceId,
+                        KnowledgeSourceKind.File,
+                        "host-notes.pdf",
+                        KnowledgeSourceVisibility.HostPrivate,
+                        KnowledgeSourceStatus.Ready,
+                        DateTimeOffset.UtcNow)
+                ]
+            },
+            CancellationToken.None);
+
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest("Presenter", "Deglazing happens now."),
+            CancellationToken.None);
+
+        Assert.Equal(
+            MemberAlertStatus.Published,
+            Assert.Single(updated.ContextualCards).MemberAlertStatus);
+    }
+
+    [Fact]
+    public async Task Coordinator_RejectsDomainDefinitionWithoutExactKnowledgeEvidence()
+    {
+        var sourceId = Guid.NewGuid();
+        var store = new InMemoryMeetingSessionStore();
+        var proposal = new ContextualCardProposal(
+            ContextualCardKind.Definition,
+            "Deglazing",
+            "Deglazing adds liquid to a hot pan.",
+            0.92,
+            [])
+        {
+            SourceKnowledgeIds = [sourceId],
+            KnowledgeEvidenceQuote = "This quote is not in the uploaded guide."
+        };
+        using var coordinator = CreateCoordinator(
+            store,
+            new StaticCardAgent(proposal),
+            knowledgeReader: new StaticKnowledgeReader(
+                new SessionKnowledgeSnippet(
+                    sourceId,
+                    "culinary-guide.pdf",
+                    KnowledgeSourceVisibility.MemberEligible,
+                    "Deglazing means adding liquid to a hot pan.")));
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            CancellationToken.None);
+        await store.SaveAsync(
+            session with
+            {
+                KnowledgeSources =
+                [
+                    new KnowledgeSourceState(
+                        sourceId,
+                        KnowledgeSourceKind.File,
+                        "culinary-guide.pdf",
+                        KnowledgeSourceVisibility.MemberEligible,
+                        KnowledgeSourceStatus.Ready,
+                        DateTimeOffset.UtcNow)
+                ]
+            },
+            CancellationToken.None);
+
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Presenter",
+                "Deglazing is the next technique."),
+            CancellationToken.None);
+
+        Assert.Empty(updated.ContextualCards);
+    }
+
+    [Fact]
+    public async Task Coordinator_ExpertAudienceCanReceiveTechnicalHintWithoutBasicDefinition()
+    {
+        using var coordinator = CreateCoordinator(
+            new InMemoryMeetingSessionStore(),
+            new StaticCardAgent(
+                new ContextualCardProposal(
+                    ContextualCardKind.Hint,
+                    "RTO",
+                    "A shorter RTO can require automated failover and reserved recovery capacity.",
+                    0.9,
+                    [])));
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(
+                TestData.CreatePurpose(),
+                AudienceFamiliarity: AudienceFamiliarity.Expert),
+            CancellationToken.None);
+
+        var updated = await coordinator.AddTranscriptAsync(
+            session.Id,
+            new AddTranscriptSegmentRequest(
+                "Presenter",
+                "The RTO target changes our failover design."),
+            CancellationToken.None);
+
+        Assert.Equal(ContextualCardKind.Hint, Assert.Single(updated.ContextualCards).Kind);
     }
 
     [Fact]
@@ -473,7 +712,8 @@ public sealed class EducationalAlertTests
             .Distinct()
             .ToHashSet();
 
-        foreach (ConceptCategory category in Enum.GetValues(typeof(ConceptCategory)))
+        foreach (var category in Enum.GetValues<ConceptCategory>()
+                     .Where(category => category != ConceptCategory.DomainSpecific))
         {
             Assert.Contains(category, presentCategories);
         }
@@ -535,14 +775,27 @@ public sealed class EducationalAlertTests
     private static MeetingSessionCoordinator CreateCoordinator(
         InMemoryMeetingSessionStore store,
         IConversationCoachAgent agent,
-        ILogger<MeetingSessionCoordinator>? logger = null) =>
+        ILogger<MeetingSessionCoordinator>? logger = null,
+        ISessionKnowledgeReader? knowledgeReader = null) =>
         new(
             store,
             new MeetingChecklistPlanner(),
             agent,
             null,
             new NullSessionUpdatePublisher(),
-            logger);
+            logger,
+            knowledgeReader: knowledgeReader);
+
+    private sealed class StaticKnowledgeReader(SessionKnowledgeSnippet snippet)
+        : ISessionKnowledgeReader
+    {
+        public Task<IReadOnlyList<SessionKnowledgeSnippet>> ReadAsync(
+            Guid sessionId,
+            IReadOnlyCollection<Guid> allowedSourceIds,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<SessionKnowledgeSnippet>>(
+                allowedSourceIds.Contains(snippet.SourceId) ? [snippet] : []);
+    }
 
     private sealed class StaticCardAgent(ContextualCardProposal proposal) : IConversationCoachAgent
     {

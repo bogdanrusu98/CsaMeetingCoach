@@ -10,6 +10,7 @@ public static class SessionViewProjector
             session.Purpose,
             session.Status,
             session.Template,
+            session.AudienceFamiliarity,
             session.CreatedAtUtc,
             session.UpdatedAtUtc,
             session.ExpiresAtUtc,

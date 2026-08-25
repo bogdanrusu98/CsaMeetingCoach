@@ -55,6 +55,7 @@ internal static class AlertRanker
 
     private static double EducationalValue(ConceptCategory category) => category switch
     {
+        ConceptCategory.DomainSpecific => 14,
         ConceptCategory.IdentitySecurity => 16,
         ConceptCategory.DataAiIntegration => 15,
         ConceptCategory.ManagementGovernance => 14,
@@ -104,6 +105,7 @@ internal sealed record AlertCandidate(
     int LastSourceSegmentIndex,
     ConceptCategory Category,
     bool RequiresAzureVendorScope,
-    string Source);
+    string Source,
+    IReadOnlyList<Guid> SourceKnowledgeIds);
 
 internal sealed record RankedAlertCandidate(AlertCandidate Candidate, double Score);

@@ -32,6 +32,23 @@ public sealed class CommercialSessionTests
     }
 
     [Fact]
+    public async Task CreateSession_PersistsAudienceFamiliarityInHostAndMemberViews()
+    {
+        using var coordinator = CreateCoordinator(TimeProvider.System);
+
+        var session = await coordinator.CreateAsync(
+            new CreateMeetingSessionRequest(
+                TestData.CreatePurpose(),
+                AudienceFamiliarity: AudienceFamiliarity.Beginner),
+            CancellationToken.None);
+
+        Assert.Equal(AudienceFamiliarity.Beginner, session.AudienceFamiliarity);
+        Assert.Equal(
+            AudienceFamiliarity.Beginner,
+            SessionViewProjector.ForMember(session).AudienceFamiliarity);
+    }
+
+    [Fact]
     public async Task ExpiredSession_RejectsNewTranscriptImmediately()
     {
         var now = DateTimeOffset.UtcNow;

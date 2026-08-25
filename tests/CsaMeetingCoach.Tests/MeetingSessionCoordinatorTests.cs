@@ -1685,7 +1685,9 @@ public sealed class MeetingSessionCoordinatorTests
     {
         using var coordinator = CreateCoordinator(new HeuristicConversationCoachAgent());
         var session = await coordinator.CreateAsync(
-            new CreateMeetingSessionRequest(TestData.CreatePurpose()),
+            new CreateMeetingSessionRequest(
+                TestData.CreatePurpose(),
+                AudienceFamiliarity: AudienceFamiliarity.Beginner),
             CancellationToken.None);
         MeetingSessionState current = session;
         var transcripts = new[]
