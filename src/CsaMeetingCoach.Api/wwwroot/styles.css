@@ -2287,6 +2287,9 @@ html[data-theme="contrast"] .entry-product-preview {
 }
 
 .member-dashboard {
+  --session-accent: #5b5fc7;
+  --session-accent-soft: rgba(91, 95, 199, .1);
+  --session-accent-fg: #ffffff;
   width: min(100% - 28px, 920px);
   min-height: calc(100vh - 28px);
   margin: 14px auto;
@@ -2295,6 +2298,12 @@ html[data-theme="contrast"] .entry-product-preview {
   background: var(--cp-panel-strong);
   box-shadow: var(--cp-shadow);
   overflow: hidden;
+}
+
+html[data-theme="dark"] .member-dashboard {
+  --session-accent: #a6a7ff;
+  --session-accent-soft: rgba(166, 167, 255, .12);
+  --session-accent-fg: #171724;
 }
 
 .member-header {
@@ -5242,6 +5251,12 @@ html[data-theme="light"] .host-dashboard .member-alert-review {
   background: #f7f4ff;
 }
 
+html[data-theme="light"] .host-dashboard .member-alert-glyph,
+html[data-theme="light"] .host-dashboard .member-alert-heading .eyebrow,
+html[data-theme="light"] .host-dashboard .member-alert-preview .contextual-card-kind {
+  color: var(--host-accent);
+}
+
 html[data-theme="light"] .host-dashboard .member-preview-button {
   border-color: #c9b7e9;
   color: #56349a;
@@ -5252,6 +5267,54 @@ html[data-theme="light"] .host-dashboard .knowledge-card .count-badge {
   border-color: var(--host-border-strong);
   color: var(--host-accent);
   background: var(--host-card-raised);
+}
+
+html[data-theme="light"] .host-dashboard #live-plan .section-label,
+html[data-theme="light"] .host-dashboard .listening-pill,
+html[data-theme="light"] .host-dashboard .guidance-privacy,
+html[data-theme="light"] .host-dashboard .recommendation-list.empty-state,
+html[data-theme="light"] .host-dashboard .guidance-evidence,
+html[data-theme="light"] .host-dashboard .member-layer-name,
+html[data-theme="light"] .host-dashboard #host-member-alert-count,
+html[data-theme="light"] .host-dashboard .member-roster,
+html[data-theme="light"] .host-dashboard .alert-review-details,
+html[data-theme="light"] .host-dashboard .participant-avatar-list.empty-state,
+html[data-theme="light"] .host-dashboard .knowledge-list.empty-state,
+html[data-theme="light"] .host-dashboard .contextual-card-history.empty-state {
+  color: var(--host-text-soft);
+}
+
+html[data-theme="light"] .host-dashboard .session-objective-line,
+html[data-theme="light"] .host-dashboard .item-meta,
+html[data-theme="light"] .host-dashboard .compact-item.ready .item-meta {
+  color: var(--host-text-soft);
+}
+
+html[data-theme="light"] .host-dashboard .plan-progress-summary,
+html[data-theme="light"] .host-dashboard .plan-progress-summary strong,
+html[data-theme="light"] .host-dashboard .item-title,
+html[data-theme="light"] .host-dashboard .compact-item.ready .item-title,
+html[data-theme="light"] .host-dashboard .member-count-copy,
+html[data-theme="light"] .host-dashboard .member-count-copy strong,
+html[data-theme="light"] .host-dashboard .joined-state {
+  color: var(--host-text);
+}
+
+html[data-theme="light"] .host-dashboard .plan-progress-orb {
+  background:
+    radial-gradient(circle at center, #ffffff 0 58%, transparent 60%),
+    conic-gradient(
+      var(--host-template-accent) 0 var(--plan-progress, 0%),
+      #d5deea var(--plan-progress, 0%) 100%);
+}
+
+html[data-theme="light"] .host-dashboard .session-access-card,
+html[data-theme="light"] .host-dashboard .contextual-card-history.empty-state {
+  background: var(--host-card-raised);
+}
+
+html[data-theme="light"] .host-dashboard .participant-avatar-chip {
+  border-color: var(--host-card-raised);
 }
 
 html[data-theme="contrast"] .host-dashboard {

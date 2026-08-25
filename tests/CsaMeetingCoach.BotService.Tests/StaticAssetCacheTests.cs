@@ -18,10 +18,10 @@ public sealed class StaticAssetCacheTests
         indexResponse.EnsureSuccessStatusCode();
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
-        Assert.Contains("styles.css?v=20260825d", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260825d", html, StringComparison.Ordinal);
+        Assert.Contains("styles.css?v=20260825e", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260825e", html, StringComparison.Ordinal);
         Assert.Contains(
-            "assets/host-workspace-preview.png?v=20260825d",
+            "assets/host-workspace-preview.png?v=20260825e",
             html,
             StringComparison.Ordinal);
         Assert.Contains("id=\"toast-root\"", html, StringComparison.Ordinal);
@@ -108,7 +108,7 @@ public sealed class StaticAssetCacheTests
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260825d");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260825e");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
@@ -234,7 +234,7 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("Training guidance", script, StringComparison.Ordinal);
         Assert.Contains("customMeetingType.required", script, StringComparison.Ordinal);
 
-        using var styleResponse = await client.GetAsync("/styles.css?v=20260825d");
+        using var styleResponse = await client.GetAsync("/styles.css?v=20260825e");
         styleResponse.EnsureSuccessStatusCode();
         AssertNoStore(styleResponse);
         var styles = await styleResponse.Content.ReadAsStringAsync();
@@ -280,7 +280,7 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("--host-cyan: #60cdff", styles, StringComparison.Ordinal);
 
         using var previewResponse = await client.GetAsync(
-            "/assets/host-workspace-preview.png?v=20260825d");
+            "/assets/host-workspace-preview.png?v=20260825e");
         previewResponse.EnsureSuccessStatusCode();
         AssertNoStore(previewResponse);
         Assert.Equal("image/png", previewResponse.Content.Headers.ContentType?.MediaType);
