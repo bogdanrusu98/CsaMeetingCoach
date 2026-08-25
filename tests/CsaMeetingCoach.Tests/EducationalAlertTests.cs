@@ -303,7 +303,7 @@ public sealed class EducationalAlertTests
                     Guid.NewGuid(),
                     "culinary-guide.txt",
                     KnowledgeSourceVisibility.MemberEligible,
-                    "Miso Fermented soybean paste used for savory depth and seasoning.")
+                    "Miso: Fermented soybean paste used for savory depth and seasoning.")
             ],
             AudienceFamiliarity: familiarity);
 
@@ -313,6 +313,43 @@ public sealed class EducationalAlertTests
             [latest]);
 
         Assert.Equal(expected, cards.Count > 0);
+    }
+
+    [Theory]
+    [InlineData("Finish the dish with acid.", "Finish")]
+    [InlineData("Texture matters in the final dish.", "Texture")]
+    public void SelectContextualCards_RejectsGenericWordsOutsideFlattenedGlossary(
+        string transcript,
+        string rejectedTitle)
+    {
+        var latest = CreateFinalSegment(transcript);
+        var context = new CoachAgentContext(
+            TestData.CreatePurpose(),
+            [],
+            [latest],
+            Template: SessionTemplateKind.Custom,
+            Knowledge:
+            [
+                new SessionKnowledgeSnippet(
+                    Guid.NewGuid(),
+                    "culinary-guide.pdf",
+                    KnowledgeSourceVisibility.MemberEligible,
+                    "Finish rich dishes with acid, fresh herbs, or both to restore balance. "
+                    + "Texture preservation rules help pastry remain crisp. "
+                    + "Mini glossary Term Meaning Deglaze Add liquid to a hot pan and dissolve browned deposits "
+                    + "Mantecatura Off-heat finishing of risotto with fat and cheese for a creamy texture "
+                    + "Grounding verification checklist")
+            ],
+            AudienceFamiliarity: AudienceFamiliarity.Beginner);
+
+        var cards = PresentationCoachingPolicy.SelectContextualCards(
+            context,
+            [],
+            [latest]);
+
+        Assert.DoesNotContain(
+            cards,
+            card => string.Equals(card.Title, rejectedTitle, StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

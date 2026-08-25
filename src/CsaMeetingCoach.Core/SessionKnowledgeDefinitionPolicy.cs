@@ -132,13 +132,19 @@ internal static partial class SessionKnowledgeDefinitionPolicy
 
             var remainder = string.Join(' ', words.Skip(wordCount))
                 .Trim(TitleTrimCharacters);
+            var separatorIndex = Math.Min(candidate.Length, line.Length);
+            var hasExplicitSeparator = separatorIndex < line.Length
+                && line[separatorIndex] is ':' or ';' or '-' or '–' or '—';
+            var hasDefinitionCue =
+                remainder.StartsWith("is ", StringComparison.OrdinalIgnoreCase)
+                || remainder.StartsWith("means ", StringComparison.OrdinalIgnoreCase)
+                || remainder.StartsWith("refers ", StringComparison.OrdinalIgnoreCase);
             string definition;
             string quote;
-            if (remainder.Length >= 20)
+            if (remainder.Length >= 20
+                && (hasExplicitSeparator || hasDefinitionCue))
             {
-                definition = remainder.StartsWith("is ", StringComparison.OrdinalIgnoreCase)
-                    || remainder.StartsWith("means ", StringComparison.OrdinalIgnoreCase)
-                    || remainder.StartsWith("refers ", StringComparison.OrdinalIgnoreCase)
+                definition = hasDefinitionCue
                     ? $"{candidate} {remainder}"
                     : remainder;
                 quote = line;
@@ -176,6 +182,7 @@ internal static partial class SessionKnowledgeDefinitionPolicy
         title = string.Empty;
         content = string.Empty;
         evidenceQuote = string.Empty;
+        var searchContent = GetDefinitionSearchRegion(sourceContent);
         var transcriptWords = WordRegex().Matches(segment.Text)
             .Select(match => match.Value)
             .ToArray();
@@ -190,15 +197,15 @@ internal static partial class SessionKnowledgeDefinitionPolicy
                     ' ',
                     transcriptWords.Skip(start).Take(wordCount));
                 foreach (var match in FindWholeTermMatches(
-                             sourceContent,
+                             searchContent,
                              transcriptTerm))
                 {
-                    var sourceTitle = sourceContent
+                    var sourceTitle = searchContent
                         .Substring(match.Index, match.Length)
                         .Trim(TitleTrimCharacters);
                     if (!IsEligibleTitle(sourceTitle, familiarity)
                         || !TryExtractFollowingDefinition(
-                            sourceContent,
+                            searchContent,
                             match.Index + match.Length,
                             out var definition,
                             out var quote))
@@ -206,7 +213,7 @@ internal static partial class SessionKnowledgeDefinitionPolicy
                         continue;
                     }
 
-                    var glossaryIndex = sourceContent.LastIndexOf(
+                    var glossaryIndex = searchContent.LastIndexOf(
                         "glossary",
                         match.Index,
                         StringComparison.OrdinalIgnoreCase);
@@ -235,6 +242,49 @@ internal static partial class SessionKnowledgeDefinitionPolicy
         content = best.Content;
         evidenceQuote = best.EvidenceQuote;
         return true;
+    }
+
+    private static string GetDefinitionSearchRegion(string sourceContent)
+    {
+        var glossaryIndex = sourceContent.IndexOf(
+            "glossary",
+            StringComparison.OrdinalIgnoreCase);
+        if (glossaryIndex < 0)
+        {
+            return sourceContent;
+        }
+
+        var start = glossaryIndex + "glossary".Length;
+        var termMeaningIndex = sourceContent.IndexOf(
+            "Term Meaning",
+            start,
+            StringComparison.OrdinalIgnoreCase);
+        if (termMeaningIndex >= 0 && termMeaningIndex - start < 200)
+        {
+            start = termMeaningIndex + "Term Meaning".Length;
+        }
+
+        var endMarkers = new[]
+        {
+            "Grounding verification",
+            "References",
+            "Appendix",
+            "Recommended demo prompt"
+        };
+        var end = sourceContent.Length;
+        foreach (var marker in endMarkers)
+        {
+            var markerIndex = sourceContent.IndexOf(
+                marker,
+                start,
+                StringComparison.OrdinalIgnoreCase);
+            if (markerIndex >= 0)
+            {
+                end = Math.Min(end, markerIndex);
+            }
+        }
+
+        return sourceContent[start..end];
     }
 
     private static bool TryExtractFollowingDefinition(
