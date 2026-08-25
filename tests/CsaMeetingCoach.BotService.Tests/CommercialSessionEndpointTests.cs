@@ -67,6 +67,86 @@ public sealed class CommercialSessionEndpointTests
     }
 
     [Fact]
+    public async Task MemberMicrophoneTranscriptUsesServerEnforcedParticipantName()
+    {
+        using var factory = new CoachApiFactory();
+        using var host = CreateClient(factory);
+        using var member = CreateClient(factory);
+        var created = await CreateHostSessionAsync(host);
+        using var joinResponse = await member.PostAsJsonAsync(
+            "/api/sessions/join",
+            new JoinMeetingSessionRequest(created.JoinCode, "Jordan Member"),
+            JsonOptions);
+        joinResponse.EnsureSuccessStatusCode();
+        var sourceId = Guid.NewGuid();
+
+        using var publishResponse = await member.PostAsJsonAsync(
+            $"/api/sessions/{created.Session.Id:D}/member-transcript",
+            new AddTranscriptSegmentRequest(
+                "Spoofed Speaker",
+                "This is a final member microphone segment.",
+                SourceSegmentId: sourceId,
+                IsSpeechRecognized: true),
+            JsonOptions);
+
+        publishResponse.EnsureSuccessStatusCode();
+        using var memberJson = JsonDocument.Parse(
+            await publishResponse.Content.ReadAsStringAsync());
+        Assert.True(memberJson.RootElement.TryGetProperty("alerts", out _));
+        Assert.False(memberJson.RootElement.TryGetProperty("transcript", out _));
+        var hostState = await host.GetFromJsonAsync<MeetingSessionState>(
+            $"/api/sessions/{created.Session.Id:D}",
+            JsonOptions);
+        var segment = Assert.Single(hostState!.Transcript);
+        Assert.Equal("Jordan Member", segment.Speaker);
+        Assert.Equal(sourceId, segment.SourceSegmentId);
+        Assert.True(segment.IsFinal);
+    }
+
+    [Fact]
+    public async Task HostCannotPublishThroughMemberMicrophoneEndpoint()
+    {
+        using var factory = new CoachApiFactory();
+        using var host = CreateClient(factory);
+        var created = await CreateHostSessionAsync(host);
+
+        using var response = await host.PostAsJsonAsync(
+            $"/api/sessions/{created.Session.Id:D}/member-transcript",
+            new AddTranscriptSegmentRequest(
+                "Host",
+                "This route is member-only.",
+                SourceSegmentId: Guid.NewGuid(),
+                IsSpeechRecognized: true),
+            JsonOptions);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ActiveMemberIsAuthorizedToRequestSpeechToken()
+    {
+        using var factory = new CoachApiFactory();
+        using var host = CreateClient(factory);
+        using var member = CreateClient(factory);
+        var created = await CreateHostSessionAsync(host);
+        using var joinResponse = await member.PostAsJsonAsync(
+            "/api/sessions/join",
+            new JoinMeetingSessionRequest(created.JoinCode, "Member"),
+            JsonOptions);
+        joinResponse.EnsureSuccessStatusCode();
+
+        using var response = await member.PostAsync(
+            $"/api/sessions/{created.Session.Id:D}/speech-token",
+            content: null);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(
+            "Browser microphone transcription is not configured.",
+            problem.GetProperty("detail").GetString());
+    }
+
+    [Fact]
     public async Task HostPrivateKnowledgeRequiresApprovalBeforeMemberAlertIsVisible()
     {
         using var factory = new CoachApiFactory();

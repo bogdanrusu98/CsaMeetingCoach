@@ -18,10 +18,10 @@ public sealed class StaticAssetCacheTests
         indexResponse.EnsureSuccessStatusCode();
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
-        Assert.Contains("styles.css?v=20260825e", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260825e", html, StringComparison.Ordinal);
+        Assert.Contains("styles.css?v=20260825f", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260825f", html, StringComparison.Ordinal);
         Assert.Contains(
-            "assets/host-workspace-preview.png?v=20260825e",
+            "assets/host-workspace-preview.png?v=20260825f",
             html,
             StringComparison.Ordinal);
         Assert.Contains("id=\"toast-root\"", html, StringComparison.Ordinal);
@@ -75,6 +75,12 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("id=\"member-leave-session\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"member-success-criteria\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"member-show-latest\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"member-microphone-gate\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"member-start-microphone\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"member-microphone-mute\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"member-microphone-preview\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"microphone-mute\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("id=\"include-system-audio\"", html, StringComparison.Ordinal);
         Assert.Contains("Live Member View", html, StringComparison.Ordinal);
         Assert.Contains("id=\"knowledge-file-form\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"knowledge-link-form\"", html, StringComparison.Ordinal);
@@ -108,7 +114,7 @@ public sealed class StaticAssetCacheTests
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260825e");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260825f");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
@@ -151,10 +157,14 @@ public sealed class StaticAssetCacheTests
             "32 to 256 printable ASCII characters",
             script,
             StringComparison.Ordinal);
-        Assert.Contains("getDisplayMedia", script, StringComparison.Ordinal);
+        Assert.Contains("getUserMedia", script, StringComparison.Ordinal);
         Assert.Contains("AudioConfig.fromStreamInput", script, StringComparison.Ordinal);
-        Assert.Contains("createMediaStreamDestination", script, StringComparison.Ordinal);
-        Assert.Contains("Share system audio", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("getDisplayMedia", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("createMediaStreamDestination", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("Share system audio", script, StringComparison.Ordinal);
+        Assert.Contains("/member-transcript", script, StringComparison.Ordinal);
+        Assert.Contains("toggleMicrophoneMute", script, StringComparison.Ordinal);
+        Assert.Contains("setMicrophonePreview", script, StringComparison.Ordinal);
         Assert.Contains("renderContextualCards", script, StringComparison.Ordinal);
         Assert.Contains("window.sessionToast", script, StringComparison.Ordinal);
         Assert.Contains("\"recommendation\"", script, StringComparison.Ordinal);
@@ -234,7 +244,7 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("Training guidance", script, StringComparison.Ordinal);
         Assert.Contains("customMeetingType.required", script, StringComparison.Ordinal);
 
-        using var styleResponse = await client.GetAsync("/styles.css?v=20260825e");
+        using var styleResponse = await client.GetAsync("/styles.css?v=20260825f");
         styleResponse.EnsureSuccessStatusCode();
         AssertNoStore(styleResponse);
         var styles = await styleResponse.Content.ReadAsStringAsync();
@@ -280,7 +290,7 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("--host-cyan: #60cdff", styles, StringComparison.Ordinal);
 
         using var previewResponse = await client.GetAsync(
-            "/assets/host-workspace-preview.png?v=20260825e");
+            "/assets/host-workspace-preview.png?v=20260825f");
         previewResponse.EnsureSuccessStatusCode();
         AssertNoStore(previewResponse);
         Assert.Equal("image/png", previewResponse.Content.Headers.ContentType?.MediaType);

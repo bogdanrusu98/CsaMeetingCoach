@@ -10,9 +10,8 @@ evidence-backed checklist and recommend private talking points to the host.
 - Creates a meeting checklist from the meeting type, objective, and success
   criteria.
 - Accepts final transcript segments through a real-time ingestion API.
-- Can transcribe an explicitly consented local microphone and, when the user
-  selects it, audio played by the device through short-lived Azure Speech tokens;
-  the subscription key never reaches the browser.
+- Can transcribe each explicitly consented Host or Member microphone through
+  short-lived Azure Speech tokens; the subscription key never reaches the browser.
 - Auto-completes a checklist item only above a confidence threshold and only
   when the agent supplies an exact quote from its cited final transcript segment
   and the deterministic evaluator independently approves that same source.
@@ -46,11 +45,11 @@ evidence-backed checklist and recommend private talking points to the host.
 - Persists meeting sessions as local JSON files under the current user's local
   application-data directory, outside the repository.
 
-The browser UI includes both a transcript simulator and an explicitly started
-audio source. By default, it captures only the presenter microphone. The user can
-optionally combine that microphone with meeting audio explicitly selected through
-the browser's screen-sharing picker. This is an admin-free demo convenience, not
-a claim of native Teams participant capture or speaker attribution.
+The browser UI includes a transcript simulator and an explicitly started
+microphone for every participant. Member View remains gated until that Member
+consents and successfully starts a microphone. System/display audio capture is
+not used, preventing duplicate ingestion. Member transcript identity is enforced
+from the server-side session participant rather than trusted from the browser.
 
 ## Accented-speech resilience
 
@@ -120,12 +119,13 @@ A production integration must choose one approved source:
 
 ## Browser microphone transcription
 
-The admin-free live demo path uses the Azure Speech JavaScript SDK. The user must
-confirm participant notice, select **Start listening**, and grant the
-Teams/browser microphone permission. The app sends only final text segments to
-the existing session API. It does not persist or upload raw audio to the Coach
-API, does not start automatically, and stops when the user ends the session or
-selects **Stop listening**.
+The admin-free live demo path uses the Azure Speech JavaScript SDK. Every Host and
+Member must confirm participant notice, explicitly start their microphone, and
+grant browser permission. Member View is unavailable until microphone activation.
+The app sends only final text segments to the session API. It does not persist or
+upload raw audio to the Coach API and does not start automatically. Host and
+Member controls can mute the local audio track without stopping the Speech
+session; mute never controls another participant's microphone.
 
 Continuous recognition uses Azure Speech's `Time` segmentation strategy, with a
 1.2-second silence boundary and a 20-second maximum phrase length. This ensures
@@ -133,20 +133,11 @@ that uninterrupted presentation audio still produces final recognition events.
 Diagnostics exposes separate interim, final, queued, published, and failed
 publish counts; interim text remains preview-only and can never become evidence.
 
-To include what the user hears, select **Include meeting audio played by this
-device** before starting. Edge or Chrome then opens its standard display-capture
-picker. For Teams in a browser, select the Teams tab and enable tab audio. For the
-Teams desktop client, select **Entire screen** and enable **Share system audio**.
-The browser requires a display selection to authorize system-audio capture; the
-coach disables the resulting video track and never processes or uploads screen
-video. Web Audio mixes the selected system audio with the local microphone and
-passes that in-memory stream directly to Azure Speech.
-
-If the Teams side-panel webview does not expose display capture, open the public
-coach URL as a top-level Edge or Chrome page beside the meeting. System-audio
-capture has no speaker attribution and can include notifications or other sounds
-played by the selected source. If sharing is canceled, no system-audio track is
-returned, or the user stops sharing, the mixed recognition path stops safely.
+Final Member segments use a dedicated endpoint that ignores any browser-supplied
+speaker label and assigns the active participant's server-side display name.
+Stable source segment IDs deduplicate retries. Host and Member segments enter the
+same server-ordered transcript and existing coalesced Foundry analysis pipeline,
+so concurrent speakers do not create one model call per microphone.
 
 The API exchanges the Speech subscription key for a short-lived authorization
 token. Configure the key only on the server:
@@ -169,12 +160,11 @@ The GitHub deployment enables this path only when the repository variable
 `MEDIA_BOT_SPEECH_KEY`, `MEDIA_BOT_SPEECH_REGION`, and
 `MEDIA_BOT_SPEECH_LANGUAGE`, so browser transcription can be enabled while
 `MEDIA_BOT_ENABLED` remains `false`. Store a separate random value of at least
-32 characters in the `BROWSER_SPEECH_ACCESS_KEY` repository secret and enter
-that value in the side panel for an authorized demo. The plaintext value is
-retained only in page memory and cleared after a successful exchange. The
-server then grants that browser a protected, HttpOnly authorization cookie for
-up to 30 days; rotating the configured access code revokes existing browser
-authorization. The Teams manifest requests the `media` device permission;
+32 characters in the `BROWSER_SPEECH_ACCESS_KEY` repository secret for Host
+device activation. The plaintext value is retained only in page memory and
+cleared after a successful exchange. An active Member session grant can request
+its own short-lived Speech token after explicit consent without receiving that
+Host access code. The Teams manifest requests the `media` device permission;
 tenant policy can still block custom app or microphone access.
 
 ### Custom Speech lifecycle and cost

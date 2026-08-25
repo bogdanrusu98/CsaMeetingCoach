@@ -11,6 +11,8 @@ const state = {
   microphoneAudioConfig: null,
   microphoneCapture: null,
   microphoneSourceLabel: "Presenter microphone",
+  microphoneMuted: false,
+  participantDisplayName: null,
   microphoneRefreshTimer: null,
   sessionExpiryTimer: null,
   sessionExpiryHandling: false,
@@ -40,10 +42,7 @@ const state = {
   notifiedWarningMessages: new Set(),
   knownParticipantIds: new Set(),
   participantTrackingInitialized: false,
-  fallbackToastTimer: null,
-  systemAudioCaptureAvailable: Boolean(
-    navigator.mediaDevices?.getDisplayMedia
-      && (window.AudioContext || window.webkitAudioContext))
+  fallbackToastTimer: null
 };
 
 const THEME_STORAGE_KEY = "session-copilot-theme";
@@ -154,7 +153,6 @@ const elements = {
   transcriptForm: document.querySelector("#transcript-form"),
   microphonePanel: document.querySelector("#microphone-panel"),
   microphoneConsent: document.querySelector("#microphone-consent"),
-  includeSystemAudio: document.querySelector("#include-system-audio"),
   microphoneAccessKey: document.querySelector("#microphone-access-key"),
   microphoneAccessStatus: document.querySelector("#microphone-access-status"),
   microphoneToggle: document.querySelector("#microphone-toggle"),
@@ -166,6 +164,8 @@ const elements = {
   speechStatePill: document.querySelector("#speech-state-pill"),
   speechStateLabel: document.querySelector("#speech-state-label"),
   audioSourceLabel: document.querySelector("#audio-source-label"),
+  microphoneMute: document.querySelector("#microphone-mute"),
+  microphoneMuteLabel: document.querySelector("#microphone-mute-label"),
   hostLiveTranscript: document.querySelector("#host-live-transcript"),
   hostContextSignal: document.querySelector("#host-context-signal"),
   planProgressOrb: document.querySelector("#plan-progress-orb"),
@@ -212,6 +212,14 @@ const elements = {
   memberAlertUpdated: document.querySelector("#member-alert-updated"),
   memberRefreshSession: document.querySelector("#member-refresh-session"),
   memberLeaveSession: document.querySelector("#member-leave-session"),
+  memberMicrophoneMute: document.querySelector("#member-microphone-mute"),
+  memberMicrophoneMuteLabel: document.querySelector("#member-microphone-mute-label"),
+  memberMicrophonePreview: document.querySelector("#member-microphone-preview"),
+  memberMicrophoneGate: document.querySelector("#member-microphone-gate"),
+  memberMicrophoneConsent: document.querySelector("#member-microphone-consent"),
+  memberMicrophoneGateStatus: document.querySelector("#member-microphone-gate-status"),
+  memberStartMicrophone: document.querySelector("#member-start-microphone"),
+  memberGateLeave: document.querySelector("#member-gate-leave"),
   memberShowLatest: document.querySelector("#member-show-latest"),
   memberAlertLayerLabel: document.querySelector("#member-alert-layer-label"),
   memberAlertLayerHeading: document.querySelector("#member-alert-layer-heading"),
@@ -335,7 +343,7 @@ document.querySelector("#member-session-code").addEventListener("input", event =
 });
 
 elements.microphoneConsent.addEventListener("change", renderMicrophoneControls);
-elements.includeSystemAudio.addEventListener("change", renderMicrophoneControls);
+elements.memberMicrophoneConsent.addEventListener("change", renderMicrophoneControls);
 elements.microphoneAccessKey.addEventListener("input", renderMicrophoneControls);
 elements.microphoneToggle.addEventListener("click", async () => {
   if (!state.microphoneRecognizer
@@ -363,6 +371,17 @@ elements.microphoneToggle.addEventListener("click", async () => {
   } catch (error) {
     showToast(normalizeMicrophoneError(error), "error");
   }
+});
+elements.microphoneMute.addEventListener("click", toggleMicrophoneMute);
+elements.memberMicrophoneMute.addEventListener("click", toggleMicrophoneMute);
+elements.memberStartMicrophone.addEventListener("click", async event => {
+  await runWithButton(event.currentTarget, async () => {
+    await queueMicrophoneOperation(startMicrophone);
+    showToast("Your microphone is contributing to the live session.", "success");
+  });
+});
+elements.memberGateLeave.addEventListener("click", () => {
+  elements.memberLeaveSession.click();
 });
 elements.confirmMicrophone.addEventListener("click", async () => {
   try {
@@ -467,6 +486,8 @@ elements.sessionForm.addEventListener("submit", async event => {
     state.role = "host";
     state.session = created.session;
     state.joinCode = created.joinCode;
+    state.participantDisplayName = null;
+    state.microphoneMuted = false;
     persistSessionHistory();
     elements.setupView.classList.add("hidden");
     elements.sessionView.classList.remove("hidden");
@@ -480,17 +501,20 @@ elements.sessionForm.addEventListener("submit", async event => {
 elements.memberJoinForm.addEventListener("submit", async event => {
   event.preventDefault();
   await runWithButton(event.submitter, async () => {
+    const displayName = document.querySelector("#member-display-name").value.trim();
     const joined = await api("/api/sessions/join", {
       method: "POST",
       body: JSON.stringify({
         code: document.querySelector("#member-session-code").value,
-        displayName: document.querySelector("#member-display-name").value
+        displayName
       })
     });
     resetContextualCards();
     state.role = "member";
     state.session = joined.session;
     state.joinCode = null;
+    state.participantDisplayName = displayName;
+    state.microphoneMuted = false;
     persistSessionHistory();
     elements.setupView.classList.add("hidden");
     elements.sessionView.classList.add("hidden");
@@ -1013,6 +1037,7 @@ function renderMember() {
     return;
   }
 
+  renderMicrophoneControls();
   const templateProfile = getTemplateProfile(session.template);
   elements.memberSessionView.dataset.template = session.template;
   elements.memberPurposeTitle.textContent = session.purpose.title;
@@ -1336,13 +1361,17 @@ async function startMicrophone() {
     throw new Error("Create an active coaching session before starting the microphone.");
   }
   const sessionId = state.session.id;
-  if (!elements.microphoneConsent.checked) {
+  const consentGranted = state.role === "member"
+    ? elements.memberMicrophoneConsent.checked
+    : elements.microphoneConsent.checked;
+  if (!consentGranted) {
     throw new Error("Confirm participant notice and permission before starting.");
   }
   if (!state.browserSpeechAvailable) {
     throw new Error("Browser microphone transcription is not configured.");
   }
-  if (!state.browserSpeechAuthorized
+  if (state.role === "host"
+      && !state.browserSpeechAuthorized
       && !elements.microphoneAccessKey.value) {
     throw new Error("Enter the demo access code before starting.");
   }
@@ -1362,17 +1391,13 @@ async function startMicrophone() {
   let capture = null;
   let recognitionStarted = false;
   try {
-    if (elements.includeSystemAudio.checked) {
-      capture = await createMixedMeetingAudioCapture();
-      state.microphoneCapture = capture;
-      attachSystemAudioEndedHandler(capture);
-      ensureMixedMeetingAudioActive(capture);
-      ensureMicrophoneSessionActive(sessionId);
-    }
+    capture = await createMicrophoneCapture();
+    state.microphoneCapture = capture;
+    state.microphoneMuted = false;
+    ensureMicrophoneSessionActive(sessionId);
     const token = await requestSpeechToken(
       sessionId,
       startupAbortController.signal);
-    ensureMixedMeetingAudioActive(capture);
     ensureMicrophoneSessionActive(sessionId);
     const speechConfig = window.SpeechSDK.SpeechConfig.fromAuthorizationToken(
       token.token,
@@ -1395,9 +1420,7 @@ async function startMicrophone() {
     speechConfig.setProperty(
       window.SpeechSDK.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs,
       "1200");
-    audioConfig = capture
-      ? window.SpeechSDK.AudioConfig.fromStreamInput(capture.stream)
-      : window.SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+    audioConfig = window.SpeechSDK.AudioConfig.fromStreamInput(capture.stream);
     recognizer = new window.SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
 
     if (token.phrases && token.phrases.length > 0
@@ -1415,14 +1438,14 @@ async function startMicrophone() {
       const text = event.result?.text?.trim();
       if (text) {
         recordSpeechDiagnostic("Interim speech received.", "interim");
-        elements.microphonePreview.textContent = text;
+        setMicrophonePreview(text);
       }
     };
     recognizer.recognized = (_, event) => {
       if (event.result?.reason === window.SpeechSDK.ResultReason.NoMatch) {
         recordSpeechDiagnostic("Azure Speech returned no final phrase.");
-        elements.microphonePreview.textContent =
-          "No final phrase was recognized. Pause briefly, then try again.";
+        setMicrophonePreview(
+          "No final phrase was recognized. Pause briefly, then try again.");
         return;
       }
       if (event.result?.reason !== window.SpeechSDK.ResultReason.RecognizedSpeech) {
@@ -1443,13 +1466,9 @@ async function startMicrophone() {
         state.seenRecognitionIds.add(recognitionId);
       }
 
-      elements.microphonePreview.textContent =
-        "Final phrase received; sending it to the coach.";
-      enqueueSpeechSegment(
-        text,
-        capture
-          ? "Meeting audio (microphone + system)"
-          : "Presenter microphone");
+      setMicrophonePreview(
+        "Final phrase received; sending it to the coach.");
+      enqueueSpeechSegment(text, currentMicrophoneSpeaker());
     };
     recognizer.sessionStarted = () => {
       if (state.microphoneRecognizer === recognizer) {
@@ -1478,18 +1497,14 @@ async function startMicrophone() {
     state.microphoneRecognizer = recognizer;
     state.microphoneAudioConfig = audioConfig;
     state.microphoneCapture = capture;
-    state.microphoneSourceLabel = capture
-      ? "Meeting audio (microphone + system)"
-      : "Presenter microphone";
+    state.microphoneSourceLabel = currentMicrophoneSpeaker();
     state.seenRecognitionIds.clear();
     await startContinuousRecognition(recognizer);
     recognitionStarted = true;
-    ensureMixedMeetingAudioActive(capture);
     ensureMicrophoneSessionActive(sessionId);
     elements.microphoneUnlock.classList.add("hidden");
-    elements.microphonePreview.textContent = capture
-      ? "Listening to your microphone and shared meeting audio…"
-      : "Listening for the next discussion point…";
+    setMicrophonePreview(
+      "Listening for your next discussion point…");
     scheduleSpeechTokenRefresh(token, recognizer);
   } catch (error) {
     state.microphoneRecognizer = null;
@@ -1497,6 +1512,7 @@ async function startMicrophone() {
     state.microphoneAudioConfig = null;
     state.microphoneCapture = null;
     state.microphoneSourceLabel = "Presenter microphone";
+    state.microphoneMuted = false;
     state.speechDiagnostics.phraseVocabCount = 0;
     speechPublishAbortController.abort();
     if (state.speechPublishAbortController === speechPublishAbortController) {
@@ -1507,12 +1523,9 @@ async function startMicrophone() {
     }
     recognizer?.close();
     audioConfig?.close();
-    await closeMixedMeetingAudioCapture(capture);
+    await closeMicrophoneCapture(capture);
     state.seenRecognitionIds.clear();
     recordSpeechDiagnostic("Microphone start failed.");
-    if (capture?.ended) {
-      throw new Error("Shared meeting audio stopped before recognition started.");
-    }
     throw error;
   } finally {
     if (state.microphoneStartupAbortController === startupAbortController) {
@@ -1535,6 +1548,7 @@ async function stopMicrophone() {
   state.microphoneAudioConfig = null;
   state.microphoneCapture = null;
   state.microphoneSourceLabel = "Presenter microphone";
+  state.microphoneMuted = false;
   window.clearTimeout(state.microphoneRefreshTimer);
   state.microphoneRefreshTimer = null;
   renderMicrophoneControls();
@@ -1550,7 +1564,7 @@ async function stopMicrophone() {
       recognizer.close();
     }
     audioConfig?.close();
-    await closeMixedMeetingAudioCapture(capture);
+    await closeMicrophoneCapture(capture);
     await drainSpeechPublishQueue(speechPublishAbortController);
     recordSpeechDiagnostic("Speech publishing stopped.");
   } finally {
@@ -1559,14 +1573,14 @@ async function stopMicrophone() {
       state.speechPublishAbortController = null;
     }
     state.microphoneBusy = false;
-    elements.microphonePreview.textContent =
-      "Tap the microphone to resume live coaching.";
+    setMicrophonePreview(
+      "Tap the microphone to resume live coaching.");
     renderMicrophoneControls();
   }
 }
 
 async function requestSpeechToken(sessionId = state.session?.id, signal) {
-  const accessKey = state.browserSpeechAuthorized
+  const accessKey = state.role !== "host" || state.browserSpeechAuthorized
     ? ""
     : elements.microphoneAccessKey.value.trim();
   if (accessKey && !/^[\x21-\x7e]{32,256}$/.test(accessKey)) {
@@ -1658,7 +1672,10 @@ function enqueueSpeechSegment(text, speaker = state.microphoneSourceLabel) {
 
   state.speechPublishQueue = state.speechPublishQueue
     .then(async () => {
-      const updated = await api(`/api/sessions/${state.session.id}/transcript`, {
+      const endpoint = state.role === "member"
+        ? `/api/sessions/${state.session.id}/member-transcript`
+        : `/api/sessions/${state.session.id}/transcript`;
+      const updated = await api(endpoint, {
         method: "POST",
         signal: abortController.signal,
         body: JSON.stringify(segment)
@@ -1676,8 +1693,8 @@ function enqueueSpeechSegment(text, speaker = state.microphoneSourceLabel) {
       } else {
         recordSpeechDiagnostic("Coach API publish succeeded.", "published");
       }
-      elements.microphonePreview.textContent =
-        "Final phrase sent. Live coaching is updating.";
+      setMicrophonePreview(
+        "Final phrase sent. Live coaching is updating.");
     })
     .catch(error => {
       if (!abortController.signal.aborted) {
@@ -1760,132 +1777,28 @@ async function drainSpeechPublishQueue(abortController) {
     "warning");
 }
 
-async function createMixedMeetingAudioCapture() {
-  if (!state.systemAudioCaptureAvailable) {
-    throw new Error(
-      "This browser cannot capture meeting audio. Open the coach in Microsoft Edge or Chrome.");
-  }
-
-  let displayStream = null;
-  let microphoneStream = null;
-  let audioContext = null;
-  try {
-    const displayPromise = navigator.mediaDevices.getDisplayMedia({
-      video: {
-        displaySurface: "monitor"
-      },
-      audio: true,
-      systemAudio: "include",
-      selfBrowserSurface: "exclude",
-      surfaceSwitching: "exclude",
-      monitorTypeSurfaces: "include"
-    });
-    displayStream = await displayPromise;
-    if (displayStream.getAudioTracks().length === 0) {
-      throw new Error(
-        "System audio was not shared. Choose the Teams tab or Entire screen and enable Share system audio.");
+async function createMicrophoneCapture() {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: false,
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true
     }
-
-    for (const videoTrack of displayStream.getVideoTracks()) {
-      videoTrack.enabled = false;
-    }
-
-    microphoneStream = await navigator.mediaDevices.getUserMedia({
-      video: false,
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      }
-    });
-
-    const AudioContextType = window.AudioContext || window.webkitAudioContext;
-    audioContext = new AudioContextType();
-    const mixedDestination = audioContext.createMediaStreamDestination();
-    const compressor = audioContext.createDynamicsCompressor();
-    const microphoneGain = audioContext.createGain();
-    const systemGain = audioContext.createGain();
-    microphoneGain.gain.value = 0.85;
-    systemGain.gain.value = 0.85;
-
-    audioContext
-      .createMediaStreamSource(microphoneStream)
-      .connect(microphoneGain)
-      .connect(compressor);
-    audioContext
-      .createMediaStreamSource(displayStream)
-      .connect(systemGain)
-      .connect(compressor);
-    compressor.connect(mixedDestination);
-    if (audioContext.state === "suspended") {
-      await audioContext.resume();
-    }
-
-    return {
-      stream: mixedDestination.stream,
-      displayStream,
-      microphoneStream,
-      audioContext,
-      closing: false,
-      ended: false
-    };
-  } catch (error) {
-    stopMediaStream(displayStream);
-    stopMediaStream(microphoneStream);
-    if (audioContext && audioContext.state !== "closed") {
-      await audioContext.close().catch(() => {});
-    }
-    throw error;
-  }
-}
-
-function attachSystemAudioEndedHandler(capture) {
-  const handleEnded = () => {
-    if (capture.closing
-        || capture.ended
-        || state.microphoneCapture !== capture) {
-      return;
-    }
-
-    capture.ended = true;
-    cancelMicrophoneTokenRequests();
-    showToast(
-      "Shared meeting audio stopped. Speech recognition is stopping safely.",
-      "warning");
-    void queueMicrophoneOperation(stopMicrophone);
+  });
+  return {
+    stream,
+    closing: false
   };
-
-  for (const track of capture.displayStream.getTracks()) {
-    track.addEventListener("ended", handleEnded, { once: true });
-  }
 }
 
-function ensureMixedMeetingAudioActive(capture) {
-  if (!capture) {
-    return;
-  }
-
-  const tracks = capture.displayStream.getTracks();
-  if (capture.ended
-      || tracks.length === 0
-      || tracks.some(track => track.readyState !== "live")) {
-    capture.ended = true;
-    throw new Error("Shared meeting audio stopped before recognition started.");
-  }
-}
-
-async function closeMixedMeetingAudioCapture(capture) {
+async function closeMicrophoneCapture(capture) {
   if (!capture || capture.closing) {
     return;
   }
 
   capture.closing = true;
   stopMediaStream(capture.stream);
-  stopMediaStream(capture.displayStream);
-  stopMediaStream(capture.microphoneStream);
-  if (capture.audioContext.state !== "closed") {
-    await capture.audioContext.close().catch(() => {});
-  }
 }
 
 function stopMediaStream(stream) {
@@ -1947,28 +1860,31 @@ function stopContinuousRecognition(recognizer) {
 }
 
 function renderMicrophoneControls() {
+  const isHost = state.role === "host";
+  const isMember = state.role === "member";
   elements.microphonePanel.classList.toggle(
     "hidden",
-    state.role !== "host" || !state.browserSpeechAvailable);
+    !isHost || !state.browserSpeechAvailable);
   const listening = Boolean(state.microphoneRecognizer);
-  const mixedAudio = Boolean(state.microphoneCapture);
   const sessionCompleted = state.session?.status !== "active";
   elements.microphoneToggle.classList.toggle("listening", listening);
   elements.speechStatePill.dataset.state = state.microphoneBusy
     ? "starting"
+    : state.microphoneMuted
+      ? "muted"
     : listening
       ? "listening"
       : "off";
   elements.speechStateLabel.textContent = state.microphoneBusy
     ? "Starting"
+    : state.microphoneMuted
+      ? "Muted"
     : listening
       ? "Listening"
       : sessionCompleted
         ? "Ended"
         : "Ready";
-  elements.audioSourceLabel.textContent = mixedAudio
-    ? "Microphone + shared audio"
-    : "Presenter microphone";
+  elements.audioSourceLabel.textContent = "Presenter microphone";
   elements.microphoneToggle.disabled = state.microphoneBusy
     || sessionCompleted
     || !state.browserSpeechAvailable;
@@ -1979,11 +1895,6 @@ function renderMicrophoneControls() {
       && !elements.microphoneAccessKey.value);
   elements.microphoneConsent.disabled =
     state.microphoneBusy || listening || sessionCompleted;
-  elements.includeSystemAudio.disabled =
-    state.microphoneBusy
-    || listening
-    || sessionCompleted
-    || !state.systemAudioCaptureAvailable;
   elements.microphoneAccessKey.disabled =
     state.microphoneBusy
     || listening
@@ -1994,10 +1905,10 @@ function renderMicrophoneControls() {
     : "Enter once per browser; the code is exchanged for protected access and is not copied to the clipboard.";
   elements.microphoneStatus.textContent = state.microphoneBusy
     ? "Starting"
-    : listening
-      ? mixedAudio
-        ? "Mic + meeting"
-        : "Listening"
+    : state.microphoneMuted
+      ? "Muted"
+      : listening
+        ? "Listening"
       : "Off";
   elements.microphoneStatus.className =
     `status ${listening ? "listening" : "neutral"}`;
@@ -2005,16 +1916,50 @@ function renderMicrophoneControls() {
   elements.microphoneToggle.setAttribute(
     "aria-label",
     listening
-      ? mixedAudio
-        ? "Stop listening to the microphone and shared meeting audio"
-        : "Stop listening to the local microphone"
+      ? "Stop listening to the presenter microphone"
       : elements.microphoneConsent.checked
           && (state.browserSpeechAuthorized
             || elements.microphoneAccessKey.value)
-        ? elements.includeSystemAudio.checked
-          ? "Start listening to the microphone and shared meeting audio"
-          : "Start listening to the local microphone"
-        : "Set up meeting audio");
+        ? "Start listening to the presenter microphone"
+        : "Set up presenter microphone");
+  elements.microphoneMute.classList.toggle("hidden", !isHost || !listening);
+  elements.memberMicrophoneMute.classList.toggle(
+    "hidden",
+    !isMember || !listening || sessionCompleted);
+  for (const button of [elements.microphoneMute, elements.memberMicrophoneMute]) {
+    button.disabled = state.microphoneBusy || !listening || sessionCompleted;
+    button.setAttribute("aria-pressed", String(state.microphoneMuted));
+    button.setAttribute(
+      "aria-label",
+      state.microphoneMuted ? "Unmute microphone" : "Mute microphone");
+    button.title = state.microphoneMuted ? "Unmute microphone" : "Mute microphone";
+  }
+  elements.microphoneMuteLabel.textContent =
+    state.microphoneMuted ? "Unmute" : "Mute";
+  elements.memberMicrophoneMuteLabel.textContent =
+    state.microphoneMuted ? "Unmute" : "Mute";
+
+  const memberMayContinue = !isMember || listening || sessionCompleted;
+  elements.memberSessionView.classList.toggle(
+    "microphone-ready",
+    memberMayContinue);
+  elements.memberMicrophoneGate.classList.toggle(
+    "hidden",
+    !isMember || memberMayContinue);
+  elements.memberMicrophoneConsent.disabled =
+    state.microphoneBusy || listening || sessionCompleted;
+  elements.memberStartMicrophone.disabled =
+    !isMember
+    || state.microphoneBusy
+    || listening
+    || sessionCompleted
+    || !state.browserSpeechAvailable
+    || !elements.memberMicrophoneConsent.checked;
+  elements.memberMicrophoneGateStatus.textContent = !state.browserSpeechAvailable
+    ? "Microphone transcription is unavailable. Leave the session and contact the Host."
+    : state.microphoneBusy
+      ? "Starting Azure Speech…"
+      : "Your browser will ask for microphone permission.";
 }
 
 function queueMicrophoneOperation(operation) {
@@ -2044,18 +1989,43 @@ async function initializeBrowserSpeechAvailability() {
 
 function normalizeMicrophoneError(error) {
   const message = error?.message || String(error);
-  if (error?.name === "NotAllowedError"
-      && elements.includeSystemAudio.checked) {
-    return "Microphone or meeting-audio sharing was not allowed. Share the Teams tab or Entire screen with audio enabled, then try again.";
-  }
-  if (error?.name === "InvalidStateError"
-      && elements.includeSystemAudio.checked) {
-    return "Meeting audio sharing must be started directly from the Start listening button.";
-  }
   if (/permission|notallowed|denied/i.test(`${error?.name || ""} ${message}`)) {
     return "Microphone permission was denied. Allow microphone access and try again.";
   }
   return message;
+}
+
+function currentMicrophoneSpeaker() {
+  if (state.role === "member") {
+    return state.participantDisplayName || "Session member";
+  }
+  return (state.session?.participants ?? [])
+    .find(participant =>
+      String(participant.role).toLowerCase() === "host")
+    ?.displayName || "Host";
+}
+
+function toggleMicrophoneMute() {
+  const tracks = state.microphoneCapture?.stream?.getAudioTracks() ?? [];
+  if (tracks.length === 0) {
+    return;
+  }
+  state.microphoneMuted = !state.microphoneMuted;
+  tracks.forEach(track => {
+    track.enabled = !state.microphoneMuted;
+  });
+  setMicrophonePreview(state.microphoneMuted
+    ? "Microphone muted. Recognition remains ready."
+    : "Microphone unmuted. Listening for your next discussion point…");
+  renderMicrophoneControls();
+}
+
+function setMicrophonePreview(text) {
+  elements.microphonePreview.textContent = text;
+  elements.memberMicrophonePreview.textContent = text;
+  elements.memberMicrophonePreview.classList.toggle(
+    "hidden",
+    state.role !== "member" || !state.microphoneRecognizer);
 }
 
 async function api(url, options = {}) {
@@ -2137,6 +2107,11 @@ function getSessionHistory() {
     joinCode: typeof value.joinCode === "string"
         && /^[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}$/.test(value.joinCode)
       ? value.joinCode
+      : null,
+    participantDisplayName: typeof value.participantDisplayName === "string"
+        && value.participantDisplayName.trim().length >= 1
+        && value.participantDisplayName.trim().length <= 80
+      ? value.participantDisplayName.trim()
       : null
   };
 }
@@ -2151,7 +2126,10 @@ function persistSessionHistory() {
       ...(window.history.state ?? {}),
       [SESSION_HISTORY_KEY]: {
         sessionId: state.session.id,
-        joinCode: state.role === "host" ? state.joinCode : null
+        joinCode: state.role === "host" ? state.joinCode : null,
+        participantDisplayName: state.role === "member"
+          ? state.participantDisplayName
+          : null
       }
     },
     "");
@@ -2185,6 +2163,10 @@ async function restoreSessionAfterRefresh() {
     state.role = role;
     state.session = session;
     state.joinCode = role === "host" ? locator.joinCode : null;
+    state.participantDisplayName = role === "member"
+      ? locator.participantDisplayName
+      : null;
+    state.microphoneMuted = false;
     elements.setupView.classList.add("hidden");
     elements.sessionView.classList.toggle("hidden", role !== "host");
     elements.memberSessionView.classList.toggle("hidden", role !== "member");
@@ -2217,6 +2199,8 @@ async function returnToEntry() {
   state.session = null;
   state.role = null;
   state.joinCode = null;
+  state.participantDisplayName = null;
+  state.microphoneMuted = false;
   state.sessionExpiryHandling = false;
   resetContextualCards();
   elements.sessionView.classList.add("hidden");
@@ -2418,7 +2402,7 @@ window.addEventListener("pagehide", () => {
   state.speechPublishAbortController?.abort();
   state.microphoneRecognizer?.close();
   state.microphoneAudioConfig?.close();
-  void closeMixedMeetingAudioCapture(state.microphoneCapture);
+  void closeMicrophoneCapture(state.microphoneCapture);
 });
 
 void restoreSessionAfterRefresh();

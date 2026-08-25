@@ -2344,6 +2344,80 @@ html[data-theme="dark"] .member-dashboard {
   background: rgba(180, 35, 24, .06);
 }
 
+.speech-card-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.microphone-mute {
+  min-height: 30px;
+  padding: 4px 9px;
+  font-size: 9px;
+}
+
+.member-microphone-gate {
+  display: grid;
+  width: min(100% - 40px, 620px);
+  margin: clamp(36px, 8vh, 86px) auto;
+  padding: clamp(28px, 5vw, 48px);
+  justify-items: center;
+  border: 1px solid var(--cp-border);
+  border-top: 4px solid var(--session-accent, #5b5fc7);
+  border-radius: 16px;
+  background: var(--cp-surface);
+  box-shadow: var(--cp-card-shadow);
+  text-align: center;
+}
+
+.member-microphone-gate-icon {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  margin-bottom: 16px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--session-accent, #5b5fc7);
+  background: var(--session-accent-soft, rgba(91, 95, 199, .1));
+}
+
+.member-microphone-gate-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.member-microphone-gate h1 {
+  margin: 5px 0 12px;
+  font-size: clamp(25px, 4vw, 36px);
+}
+
+.member-microphone-gate > p:not(.eyebrow) {
+  max-width: 500px;
+  color: var(--cp-text-soft);
+  line-height: 1.55;
+}
+
+.member-microphone-consent {
+  max-width: 500px;
+  margin: 18px 0 8px;
+  padding: 14px;
+  border: 1px solid var(--cp-border);
+  border-radius: 10px;
+  background: var(--cp-panel);
+  text-align: left;
+}
+
+.member-microphone-gate-actions {
+  display: flex;
+  margin-top: 18px;
+  justify-content: center;
+  gap: 10px;
+}
+
+.member-dashboard:not(.microphone-ready) .member-stage {
+  display: none;
+}
+
 .member-dashboard .member-header {
   border-top: 3px solid var(--session-accent, var(--cp-link));
 }
@@ -2802,6 +2876,21 @@ html[data-theme="dark"] .member-dashboard {
     width: 34px;
     padding: 0;
     justify-content: center;
+  }
+
+  .member-microphone-gate {
+    width: calc(100% - 24px);
+    margin: 24px auto;
+    padding: 24px 18px;
+  }
+
+  .member-microphone-gate-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .member-microphone-gate-actions .button {
+    width: 100%;
   }
 
   .member-hero {
@@ -4043,6 +4132,15 @@ html:not([data-theme="contrast"]) .host-dashboard[data-template="csaVbd"] {
 
 .host-dashboard .listening-pill[data-state="starting"] > span:first-child {
   background: #fce100;
+}
+
+.host-dashboard .listening-pill[data-state="muted"] {
+  color: #ffb0b8;
+  background: rgba(154, 54, 68, .16);
+}
+
+.host-dashboard .listening-pill[data-state="muted"] > span:first-child {
+  background: #ff7b88;
 }
 
 .host-dashboard .audio-source-button {

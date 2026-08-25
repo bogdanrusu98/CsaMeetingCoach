@@ -120,6 +120,7 @@ certification.
 | Beginner, familiar, and expert member explanations | Implemented |
 | Domain definitions grounded in member-eligible session documents | Implemented |
 | Host and Member session restoration after refresh | Implemented |
+| Consent-gated Host and Member microphones with server-side attribution | Implemented |
 | Consent-based browser speech | Implemented |
 | Private AI recommendations | Implemented |
 | Evidence-backed checklist and tasks | Implemented |

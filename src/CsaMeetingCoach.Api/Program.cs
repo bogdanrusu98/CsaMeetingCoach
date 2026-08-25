@@ -76,6 +76,17 @@ builder.Services.AddRateLimiter(options =>
                QueueLimit = 0,
                AutoReplenishment = true
             }));
+    options.AddPolicy(
+        "speech-token",
+        context => RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+               PermitLimit = 12,
+               Window = TimeSpan.FromMinutes(5),
+               QueueLimit = 0,
+               AutoReplenishment = true
+            }));
 });
 builder.Services.AddSingleton<IMeetingChecklistPlanner, MeetingChecklistPlanner>();
 builder.Services.AddSingleton<SessionAccessTokenService>();
@@ -540,11 +551,12 @@ app.MapPost(
         IBrowserSpeechTokenService speechTokens,
         CancellationToken cancellationToken) =>
     {
-        var session = (await sessionAuthorization.RequireAsync(
+        var authorized = await sessionAuthorization.RequireAsync(
             context,
             sessionId,
-            SessionRole.Host,
-            cancellationToken)).Session;
+            requiredRole: null,
+            cancellationToken);
+        var session = authorized.Session;
         RequireSessionMutationHeader(context);
         if (session.Status != MeetingSessionStatus.Active)
         {
@@ -552,7 +564,8 @@ app.MapPost(
                 "Microphone transcription requires an active meeting session.");
         }
 
-        var shouldGrantPersistentAccess = speechAuthorizer.Authorize(context);
+        var shouldGrantPersistentAccess = authorized.Grant.Role == SessionRole.Host
+            && speechAuthorizer.Authorize(context);
         var token = await speechTokens.IssueTokenAsync(cancellationToken);
         if (shouldGrantPersistentAccess)
         {
@@ -561,6 +574,45 @@ app.MapPost(
 
         context.Response.Headers.CacheControl = "no-store";
         return Results.Ok(token);
+    })
+    .RequireRateLimiting("speech-token");
+
+app.MapPost(
+    "/api/sessions/{sessionId:guid}/member-transcript",
+    async (
+        Guid sessionId,
+        AddTranscriptSegmentRequest request,
+        HttpContext context,
+        SessionAuthorizationService sessionAuthorization,
+        MeetingSessionCoordinator coordinator,
+        CancellationToken cancellationToken) =>
+    {
+        RequireSessionMutationHeader(context);
+        var authorized = await sessionAuthorization.RequireAsync(
+            context,
+            sessionId,
+            SessionRole.Member,
+            cancellationToken);
+        if (!request.IsFinal
+            || !request.IsSpeechRecognized
+            || !request.SourceSegmentId.HasValue
+            || request.SourceSegmentId.Value == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "Member microphone ingestion requires a final recognized segment with a source ID.");
+        }
+
+        var attributed = request with
+        {
+            Speaker = authorized.Participant.DisplayName,
+            IsFinal = true,
+            IsSpeechRecognized = true
+        };
+        var session = await coordinator.AddTranscriptAsync(
+            sessionId,
+            attributed,
+            cancellationToken);
+        return Results.Ok(SessionViewProjector.ForMember(session));
     });
 
 app.MapPost(

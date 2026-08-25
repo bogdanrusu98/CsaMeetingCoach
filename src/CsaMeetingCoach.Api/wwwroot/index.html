@@ -26,7 +26,7 @@
   </script>
   <link rel="stylesheet"
         href="vendor/react-toastify.bundle.css?v=11.1.0-20260819c">
-  <link rel="stylesheet" href="styles.css?v=20260825e">
+  <link rel="stylesheet" href="styles.css?v=20260825f">
 </head>
 <body>
   <main class="app-shell">
@@ -147,7 +147,7 @@
         </div>
 
         <figure class="entry-product-preview">
-          <img src="assets/host-workspace-preview.png?v=20260825e"
+          <img src="assets/host-workspace-preview.png?v=20260825f"
                width="1600" height="1000"
                alt="Actual Session Copilot host workspace showing live speech, private AI guidance, and the evidence-backed action plan."
                fetchpriority="high" decoding="async">
@@ -386,13 +386,20 @@
                      aria-labelledby="microphone-heading">
               <div class="reference-card-heading">
                 <h2 id="microphone-heading" class="section-label">Live speech</h2>
-                <span id="speech-state-pill" class="listening-pill" data-state="off">
-                  <span aria-hidden="true"></span>
-                  <span id="speech-state-label">Ready</span>
-                </span>
+                <div class="speech-card-controls">
+                  <button id="microphone-mute" class="button subtle microphone-mute hidden"
+                          type="button" aria-pressed="false">
+                    <span aria-hidden="true">◉</span>
+                    <span id="microphone-mute-label">Mute</span>
+                  </button>
+                  <span id="speech-state-pill" class="listening-pill" data-state="off">
+                    <span aria-hidden="true"></span>
+                    <span id="speech-state-label">Ready</span>
+                  </span>
+                </div>
               </div>
               <button id="microphone-toggle" class="audio-source-button" type="button"
-                      aria-pressed="false" aria-label="Set up meeting audio">
+                      aria-pressed="false" aria-label="Set up presenter microphone">
                 <span class="audiogram" aria-hidden="true">
                   <span style="--bar-height: 11px; --bar-delay: -0.42s"></span>
                   <span style="--bar-height: 22px; --bar-delay: -0.18s"></span>
@@ -445,15 +452,6 @@
                 <label class="consent-option">
                   <input id="microphone-consent" type="checkbox">
                   <span>I notified participants and have permission to transcribe.</span>
-                </label>
-                <label class="consent-option">
-                  <input id="include-system-audio" type="checkbox">
-                  <span>
-                    Include meeting audio played by this device.
-                    <span class="field-hint">
-                      Share the Teams tab or screen with system audio enabled.
-                    </span>
-                  </span>
                 </label>
                 <label>
                   Demo speech access code
@@ -701,6 +699,19 @@
             </svg>
             <span>Refresh</span>
           </button>
+          <button id="member-microphone-mute"
+                  class="button member-header-button hidden" type="button"
+                  aria-label="Mute microphone" aria-pressed="false"
+                  title="Mute microphone">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="9" y="3" width="6" height="11" rx="3"
+                    stroke="currentColor" stroke-width="1.8"></rect>
+              <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v4M9 21h6"
+                    stroke="currentColor" stroke-width="1.8"
+                    stroke-linecap="round"></path>
+            </svg>
+            <span id="member-microphone-mute-label">Mute</span>
+          </button>
           <button id="member-leave-session"
                   class="button member-header-button danger" type="button"
                   aria-label="Leave member session" title="Leave member session">
@@ -713,6 +724,43 @@
           </button>
         </div>
       </header>
+      <p id="member-microphone-preview" class="member-microphone-preview hidden"
+         role="status" aria-live="polite"></p>
+      <section id="member-microphone-gate" class="member-microphone-gate"
+               aria-labelledby="member-microphone-title">
+        <div class="member-microphone-gate-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <rect x="9" y="3" width="6" height="11" rx="3"
+                  stroke="currentColor" stroke-width="1.8"></rect>
+            <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v4M9 21h6"
+                  stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round"></path>
+          </svg>
+        </div>
+        <p class="eyebrow">Required for this session</p>
+        <h1 id="member-microphone-title">Enable your microphone to continue</h1>
+        <p>
+          Session Copilot sends only final recognized text with your participant
+          name. Raw audio is processed by Azure Speech and is not stored by this app.
+        </p>
+        <label class="consent-option member-microphone-consent">
+          <input id="member-microphone-consent" type="checkbox">
+          <span>
+            I understand that my speech will be transcribed for this live session,
+            and the participants have been notified.
+          </span>
+        </label>
+        <p id="member-microphone-gate-status" class="field-hint" aria-live="polite">
+          Your browser will ask for microphone permission.
+        </p>
+        <div class="member-microphone-gate-actions">
+          <button id="member-start-microphone" class="button primary" type="button"
+                  disabled>Enable microphone</button>
+          <button id="member-gate-leave" class="button subtle" type="button">
+            Leave session
+          </button>
+        </div>
+      </section>
       <div class="member-stage">
         <div class="member-hero">
           <div>
@@ -809,6 +857,6 @@
   <script src="https://res.cdn.office.net/teams-js/2.31.0/js/MicrosoftTeams.min.js"></script>
   <script src="vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0"></script>
   <script src="vendor/react-toastify.bundle.js?v=11.1.0-20260819c"></script>
-  <script src="app.js?v=20260825e"></script>
+  <script src="app.js?v=20260825f"></script>
 </body>
 </html>
