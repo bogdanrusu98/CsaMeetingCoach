@@ -34,14 +34,16 @@ evidence-backed checklist and recommend private talking points to the host.
 - Restores an authorized Host or Member view after refresh using a minimal browser
   history locator plus the existing role-scoped HttpOnly session cookie; transcript,
   guidance, and authorization tokens are never written to browser storage.
-- Pushes session updates to the side panel with Server-Sent Events.
+- Pushes role-scoped session updates to Host and Member web clients with
+  Server-Sent Events.
 - Protects each session with a scoped HttpOnly access cookie so another local
   caller cannot read or alter a transcript by guessing its session ID.
 - Binds Teams-hosted sessions to the Teams meeting ID and exposes a separate,
   disabled-by-default transcript-adapter endpoint.
 - Deduplicates adapter retries by source segment ID and retries AI processing
   safely when the transcript was persisted before an agent failure.
-- Supports a deterministic local agent and an optional Azure OpenAI agent.
+- Supports a deterministic local agent, Azure AI Foundry, and a legacy optional
+  Azure OpenAI adapter.
 - Persists meeting sessions as local JSON files under the current user's local
   application-data directory, outside the repository.
 
@@ -67,16 +69,16 @@ acoustics or guarantee recognition of a particular accent. No meeting audio,
 transcript, customer data, or user data is included in the training dataset.
 
 ### Phrase vocabulary
-The speech-token endpoint now includes a bounded, deduplicated list of canonical
-Azure service names and safe aliases sourced from the educational concept catalog.
-The browser configures an Azure Speech SDK `PhraseListGrammar` with these phrases
-and weight 2.0 before continuous recognition starts, improving recognition of Azure
-terminology before results are final. Phrase vocabulary is privacy-safe (no spoken
-content is logged).
+For Azure-focused sessions, the speech-token endpoint includes a bounded,
+deduplicated list of canonical Azure service names and safe aliases sourced from
+the educational concept catalog. The browser configures an Azure Speech SDK
+`PhraseListGrammar` with these phrases and weight 2.0 before continuous recognition
+starts. Phrase vocabulary is privacy-safe because spoken content is not logged.
 
-The browser uses both adaptations together: it selects the configured Custom
-Speech endpoint and still applies the exact 500-entry phrase list at weight 2.0
-before constructing recognition evidence.
+The browser uses Custom Speech and the 500-entry Azure phrase list together only
+when the session uses the CSA/VBD template or its configured purpose explicitly
+contains Azure context. Other domains receive the base Speech endpoint with no
+Azure phrase bias.
 
 ### Contextual speech normalizer (fallback)
 For segments explicitly marked as speech-recognized (`IsSpeechRecognized: true`),
@@ -103,8 +105,9 @@ By default, session files are stored in
 ## Important platform limitation
 
 Microsoft Graph meeting transcripts are available after a meeting, not as a
-public streaming transcript API for Teams meeting apps. The current side-panel
-app therefore does not claim to capture every participant live.
+public streaming transcript API for Teams meeting apps. The current standalone
+web demo therefore captures only participants who explicitly join Session Copilot
+and enable their own microphones.
 
 A production integration must choose one approved source:
 
@@ -326,19 +329,25 @@ token. No client secret belongs in this repository.
 
 ## Frontend
 
-The compact Teams side-panel client is served directly from
+The responsive standalone web client is served directly from
 `src/CsaMeetingCoach.Api/wwwroot`. It uses dependency-free HTML, CSS, and
-JavaScript so it can build and deploy in corporate environments where npm is
-blocked. Its visual system follows Microsoft Fluent and Teams interaction
-patterns without downloading runtime UI dependencies.
+JavaScript so it can build and deploy in corporate environments where public npm
+is blocked. Its visual system follows Microsoft Fluent and Teams interaction
+patterns without runtime UI dependencies.
 
-The live view intentionally keeps only the meeting bar, microphone, next
-coaching action, and compact progress visible. Consent and the access-code field
-are shown during microphone activation. After successful authorization the
-plaintext code is cleared and is never copied to the clipboard or browser
-storage; an HttpOnly protected cookie authorizes Speech access for up to 30
-days. Transcript simulation, evidence, and safety warnings are kept in a single
-diagnostics dialog.
+The Host view keeps the session bar, local microphone and mute control, private
+next action, evidence-backed progress, Member presence, Member alert preview, and
+session knowledge visible. The Member view is consent-gated and exposes only the
+session purpose, audience familiarity, success criteria, approved educational
+alerts, local microphone state, mute, refresh, and leave controls. Transcript
+simulation, evidence, and safety warnings remain in the Host diagnostics dialog.
+
+After successful Host Speech authorization, the plaintext access code is cleared
+and is never copied to clipboard or browser storage; an HttpOnly protected cookie
+authorizes that browser for up to 30 days. Active Members use their scoped session
+grant to request short-lived Speech tokens and never receive the Host access code.
+Refresh restores the role-scoped session but deliberately requires microphone
+activation again.
 Up to three contextual cards can be visible at once above the normal status
 toast. Each card can be dismissed and closes automatically after 25 seconds;
 dismissed cards do not replay on later SSE updates. Hovering or moving keyboard
@@ -347,15 +356,22 @@ available in Diagnostics after the popup closes.
 
 ## Educational Alert System
 
-Client alerts are limited to two card types:
+Member alerts are limited to two card types:
 
-- **Definition** — explains an explicitly transcript-grounded technology term.
+- **Definition** — explains an explicitly transcript-grounded domain term.
 - **Hint** — adds a concrete mechanism, example, prerequisite, distinction,
   consequence, or limitation for that grounded term.
 
-Client alerts never contain CSA recommendations, sales guidance, presenter
-coaching, questions for the client, next-best actions, or recommended tasks.
-Recommended tasks remain in the separate CSA panel.
+Member alerts never contain Host recommendations, sales guidance, presenter
+coaching, questions for the participant, next-best actions, or recommended tasks.
+Recommended tasks remain in the private Host experience.
+
+Definitions may come from the reviewed built-in Azure catalog or from an explicit
+glossary section in a session document marked `MemberEligible`. Flattened PDF text
+is restricted to the final `Mini glossary` section or a `Glossary Term Meaning`
+table region, and generic words outside those markers are rejected. Every
+document-derived card keeps the exact supporting excerpt and source ID;
+`HostPrivate` knowledge is structurally excluded.
 
 The educational catalog now contains 183 concepts across these categories:
 
@@ -402,20 +418,20 @@ Diagnostics use structured rejection reasons:
 ## Architecture
 
 ```text
-Teams meeting side panel
-        |
-        +-- meeting purpose and controls
-        +-- SSE session updates
-        |
-ASP.NET Core API
-        |
-        +-- MeetingSessionCoordinator
-        +-- evidence validation and confidence threshold
-        +-- Local, Azure AI Foundry, or Azure OpenAI coach agent
-        +-- JSON session store
-        |
-Approved live transcript adapter
-        +-- POST final transcript segments to the ingestion API
+Host microphone -----\
+Member microphone ----+--> Azure AI Speech --> final text + source ID
+Member microphone ---/                              |
+                                                    v
+                                          ASP.NET Core session engine
+                                                    |
+                     +------------------------------+-------------------+
+                     |                              |                   |
+      server-serialized ingestion            evidence validator   role projection
+             and deduplication                      |             Host / Member SSE
+                     |                              |
+                     +--> Local / Foundry / legacy Azure OpenAI
+                                                    |
+                                      private guidance + proven progress
 ```
 
 ## Run locally
