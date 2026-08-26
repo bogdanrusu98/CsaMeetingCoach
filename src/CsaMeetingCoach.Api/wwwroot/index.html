@@ -26,7 +26,7 @@
   </script>
   <link rel="stylesheet"
         href="vendor/react-toastify.bundle.css?v=11.1.0-20260819c">
-  <link rel="stylesheet" href="styles.css?v=20260825f">
+  <link rel="stylesheet" href="styles.css?v=20260826a">
 </head>
 <body>
   <main class="app-shell">
@@ -147,7 +147,7 @@
         </div>
 
         <figure class="entry-product-preview">
-          <img src="assets/host-workspace-preview.png?v=20260825f"
+          <img src="assets/host-workspace-preview.png?v=20260826a"
                width="1600" height="1000"
                alt="Actual Session Copilot host workspace showing live speech, private AI guidance, and the evidence-backed action plan."
                fetchpriority="high" decoding="async">
@@ -663,7 +663,14 @@
              aria-labelledby="member-purpose-title">
       <header class="member-header">
         <div class="product-brand">
-          <span class="product-glyph member-glyph" aria-hidden="true">M</span>
+          <span class="product-glyph member-glyph" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 3.5 13.7 8l4.8 1.7-4.8 1.7L12 16l-1.7-4.6-4.8-1.7L10.3 8 12 3.5Z"
+                    fill="currentColor"></path>
+              <path d="m18.2 15 .8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8.8-2.1Z"
+                    fill="currentColor" opacity=".78"></path>
+            </svg>
+          </span>
           <span>Live member view</span>
         </div>
         <div class="member-header-actions">
@@ -699,19 +706,6 @@
             </svg>
             <span>Refresh</span>
           </button>
-          <button id="member-microphone-mute"
-                  class="button member-header-button hidden" type="button"
-                  aria-label="Mute microphone" aria-pressed="false"
-                  title="Mute microphone">
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <rect x="9" y="3" width="6" height="11" rx="3"
-                    stroke="currentColor" stroke-width="1.8"></rect>
-              <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v4M9 21h6"
-                    stroke="currentColor" stroke-width="1.8"
-                    stroke-linecap="round"></path>
-            </svg>
-            <span id="member-microphone-mute-label">Mute</span>
-          </button>
           <button id="member-leave-session"
                   class="button member-header-button danger" type="button"
                   aria-label="Leave member session" title="Leave member session">
@@ -724,8 +718,6 @@
           </button>
         </div>
       </header>
-      <p id="member-microphone-preview" class="member-microphone-preview hidden"
-         role="status" aria-live="polite"></p>
       <section id="member-microphone-gate" class="member-microphone-gate"
                aria-labelledby="member-microphone-title">
         <div class="member-microphone-gate-icon" aria-hidden="true">
@@ -770,6 +762,54 @@
           </div>
           <span id="member-session-status" class="member-session-status">Live</span>
         </div>
+        <article class="member-listener-card" aria-labelledby="member-listener-title">
+          <div class="member-listener-heading">
+            <div>
+              <p class="eyebrow">Your live speech</p>
+              <h2 id="member-listener-title">Azure Speech listener</h2>
+            </div>
+            <span id="member-speech-state-pill" class="listening-pill"
+                  data-state="listening">
+              <span aria-hidden="true"></span>
+              <span id="member-speech-state-label">Listening</span>
+            </span>
+          </div>
+          <div class="member-listener-body">
+            <span class="audiogram member-audiogram" aria-hidden="true">
+              <span style="--bar-height: 11px; --bar-delay: -0.42s"></span>
+              <span style="--bar-height: 22px; --bar-delay: -0.18s"></span>
+              <span style="--bar-height: 31px; --bar-delay: -0.34s"></span>
+              <span style="--bar-height: 39px; --bar-delay: -0.08s"></span>
+              <span style="--bar-height: 24px; --bar-delay: -0.26s"></span>
+              <span style="--bar-height: 17px; --bar-delay: -0.48s"></span>
+              <span style="--bar-height: 28px; --bar-delay: -0.14s"></span>
+              <span style="--bar-height: 35px; --bar-delay: -0.31s"></span>
+              <span style="--bar-height: 18px; --bar-delay: -0.04s"></span>
+              <span style="--bar-height: 25px; --bar-delay: -0.39s"></span>
+              <span style="--bar-height: 33px; --bar-delay: -0.21s"></span>
+              <span style="--bar-height: 20px; --bar-delay: -0.46s"></span>
+            </span>
+            <div class="member-listener-copy">
+              <strong id="member-microphone-speaker">Your microphone</strong>
+              <p id="member-microphone-preview" role="status" aria-live="polite">
+                Listening for your next discussion point...
+              </p>
+            </div>
+            <button id="member-microphone-mute"
+                    class="button member-listener-mute" type="button"
+                    aria-label="Mute microphone" aria-pressed="false"
+                    title="Mute microphone">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="9" y="3" width="6" height="11" rx="3"
+                      stroke="currentColor" stroke-width="1.8"></rect>
+                <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v4M9 21h6"
+                      stroke="currentColor" stroke-width="1.8"
+                      stroke-linecap="round"></path>
+              </svg>
+              <span id="member-microphone-mute-label">Mute</span>
+            </button>
+          </div>
+        </article>
         <div class="member-session-summary" aria-label="Session information">
           <article>
             <span>Audience familiarity</span>
@@ -857,6 +897,6 @@
   <script src="https://res.cdn.office.net/teams-js/2.31.0/js/MicrosoftTeams.min.js"></script>
   <script src="vendor/microsoft.cognitiveservices.speech.sdk.bundle-min.js?v=1.51.0"></script>
   <script src="vendor/react-toastify.bundle.js?v=11.1.0-20260819c"></script>
-  <script src="app.js?v=20260825f"></script>
+  <script src="app.js?v=20260826a"></script>
 </body>
 </html>

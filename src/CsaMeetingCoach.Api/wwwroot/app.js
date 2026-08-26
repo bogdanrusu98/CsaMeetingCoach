@@ -215,6 +215,9 @@ const elements = {
   memberMicrophoneMute: document.querySelector("#member-microphone-mute"),
   memberMicrophoneMuteLabel: document.querySelector("#member-microphone-mute-label"),
   memberMicrophonePreview: document.querySelector("#member-microphone-preview"),
+  memberMicrophoneSpeaker: document.querySelector("#member-microphone-speaker"),
+  memberSpeechStatePill: document.querySelector("#member-speech-state-pill"),
+  memberSpeechStateLabel: document.querySelector("#member-speech-state-label"),
   memberMicrophoneGate: document.querySelector("#member-microphone-gate"),
   memberMicrophoneConsent: document.querySelector("#member-microphone-consent"),
   memberMicrophoneGateStatus: document.querySelector("#member-microphone-gate-status"),
@@ -1964,6 +1967,24 @@ function renderMicrophoneControls() {
     state.microphoneMuted ? "Unmute" : "Mute";
   elements.memberMicrophoneMuteLabel.textContent =
     state.microphoneMuted ? "Unmute" : "Mute";
+  elements.memberMicrophoneSpeaker.textContent =
+    state.participantDisplayName
+      ? `${state.participantDisplayName}'s microphone`
+      : "Your microphone";
+  elements.memberSpeechStatePill.dataset.state = state.microphoneBusy
+    ? "starting"
+    : state.microphoneMuted
+      ? "muted"
+      : listening
+        ? "listening"
+        : "off";
+  elements.memberSpeechStateLabel.textContent = state.microphoneBusy
+    ? "Starting"
+    : state.microphoneMuted
+      ? "Muted"
+      : listening
+        ? "Listening"
+        : "Stopped";
 
   const memberMayContinue = !isMember || listening || sessionCompleted;
   elements.memberSessionView.classList.toggle(
@@ -2049,9 +2070,6 @@ function toggleMicrophoneMute() {
 function setMicrophonePreview(text) {
   elements.microphonePreview.textContent = text;
   elements.memberMicrophonePreview.textContent = text;
-  elements.memberMicrophonePreview.classList.toggle(
-    "hidden",
-    state.role !== "member" || !state.microphoneRecognizer);
 }
 
 async function api(url, options = {}) {
