@@ -556,7 +556,7 @@ elements.knowledgeFileForm.addEventListener("submit", async event => {
     elements.knowledgeFileForm.reset();
     render();
     showToast("Knowledge file scanned and added.", "success");
-  });
+  }, "Uploading, scanning, and extracting...");
 });
 
 elements.knowledgeLinkForm.addEventListener("submit", async event => {
@@ -2380,13 +2380,24 @@ function formatEnumLabel(value) {
     .replace(/^./, character => character.toUpperCase());
 }
 
-async function runWithButton(button, action) {
+async function runWithButton(button, action, busyLabel = null) {
+  const originalLabel = button.textContent;
   button.disabled = true;
+  if (busyLabel) {
+    button.textContent = busyLabel;
+    button.classList.add("is-loading");
+    button.setAttribute("aria-busy", "true");
+  }
   try {
     await action();
   } catch (error) {
     showToast(error.message, "error");
   } finally {
+    if (busyLabel) {
+      button.textContent = originalLabel;
+      button.classList.remove("is-loading");
+      button.removeAttribute("aria-busy");
+    }
     button.disabled = false;
     if (state.session) {
       render();

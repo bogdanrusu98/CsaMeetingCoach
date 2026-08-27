@@ -477,28 +477,41 @@ internal static partial class KnowledgeTextExtractor
         IPdfKnowledgeExtractor pdfExtractor,
         CancellationToken cancellationToken)
     {
-        var text = extension switch
+        try
         {
-            ".docx" => await ExtractOpenXmlAsync(
-                path,
-                entry => string.Equals(entry, "word/document.xml", StringComparison.OrdinalIgnoreCase),
-                cancellationToken),
-            ".pptx" => await ExtractOpenXmlAsync(
-                path,
-                entry => entry.StartsWith("ppt/slides/slide", StringComparison.OrdinalIgnoreCase)
-                    && entry.EndsWith(".xml", StringComparison.OrdinalIgnoreCase),
-                cancellationToken),
-            ".xlsx" => await ExtractOpenXmlAsync(
-                path,
-                entry => string.Equals(entry, "xl/sharedStrings.xml", StringComparison.OrdinalIgnoreCase)
-                    || entry.StartsWith("xl/worksheets/sheet", StringComparison.OrdinalIgnoreCase)
-                    && entry.EndsWith(".xml", StringComparison.OrdinalIgnoreCase),
-                cancellationToken),
-            ".html" => ExtractHtml(await ReadTextAsync(path, cancellationToken)),
-            ".pdf" => await pdfExtractor.ExtractAsync(path, cancellationToken),
-            _ => await ReadTextAsync(path, cancellationToken)
-        };
-        return NormalizeAndLimit(text);
+            var text = extension switch
+            {
+                ".docx" => await ExtractOpenXmlAsync(
+                    path,
+                    entry => string.Equals(entry, "word/document.xml", StringComparison.OrdinalIgnoreCase),
+                    cancellationToken),
+                ".pptx" => await ExtractOpenXmlAsync(
+                    path,
+                    entry => entry.StartsWith("ppt/slides/slide", StringComparison.OrdinalIgnoreCase)
+                        && entry.EndsWith(".xml", StringComparison.OrdinalIgnoreCase),
+                    cancellationToken),
+                ".xlsx" => await ExtractOpenXmlAsync(
+                    path,
+                    entry => string.Equals(entry, "xl/sharedStrings.xml", StringComparison.OrdinalIgnoreCase)
+                        || entry.StartsWith("xl/worksheets/sheet", StringComparison.OrdinalIgnoreCase)
+                        && entry.EndsWith(".xml", StringComparison.OrdinalIgnoreCase),
+                    cancellationToken),
+                ".html" => ExtractHtml(await ReadTextAsync(path, cancellationToken)),
+                ".pdf" => await pdfExtractor.ExtractAsync(path, cancellationToken),
+                _ => await ReadTextAsync(path, cancellationToken)
+            };
+            return NormalizeAndLimit(text);
+        }
+        catch (InvalidDataException exception)
+            when (extension is ".docx" or ".pptx" or ".xlsx")
+        {
+            throw InvalidOpenXmlFile(extension, exception);
+        }
+        catch (XmlException exception)
+            when (extension is ".docx" or ".pptx" or ".xlsx")
+        {
+            throw InvalidOpenXmlFile(extension, exception);
+        }
     }
 
     public static string ExtractFetchedContent(string content, string mediaType) =>
@@ -636,6 +649,16 @@ internal static partial class KnowledgeTextExtractor
         }
 
         return builder.ToString();
+    }
+
+    private static KnowledgeRejectedException InvalidOpenXmlFile(
+        string extension,
+        Exception innerException)
+    {
+        var format = extension[1..].ToUpperInvariant();
+        return new KnowledgeRejectedException(
+            $"The {format} file is encrypted, protected, malformed, or not a valid Open XML document. Save or export it as a standard {format} file and try again.",
+            innerException);
     }
 
     private static string ExtractHtml(string html)

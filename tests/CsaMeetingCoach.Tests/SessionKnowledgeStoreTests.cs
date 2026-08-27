@@ -263,6 +263,32 @@ public sealed class SessionKnowledgeStoreTests : IDisposable
                 CancellationToken.None));
     }
 
+    [Fact]
+    public async Task ProtectedOrInvalidPowerPoint_ReturnsActionableRejection()
+    {
+        var store = new LocalSessionKnowledgeStore(
+            _directory,
+            new RecordingScanner(KnowledgeMalwareScanResult.Clean));
+        await using var content = new MemoryStream(
+        [
+            0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1
+        ]);
+
+        var exception = await Assert.ThrowsAsync<KnowledgeRejectedException>(() =>
+            store.StoreFileAsync(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                "protected.pptx",
+                KnowledgeSourceVisibility.HostPrivate,
+                "protected.pptx",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                content,
+                CancellationToken.None));
+
+        Assert.Contains("encrypted, protected, malformed", exception.Message);
+        Assert.Contains("standard PPTX", exception.Message);
+    }
+
     [Theory]
     [InlineData("127.0.0.1")]
     [InlineData("10.0.0.7")]

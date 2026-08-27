@@ -308,6 +308,39 @@ public sealed class CommercialSessionEndpointTests
     }
 
     [Fact]
+    public async Task InvalidPowerPointUploadReturnsActionableRejection()
+    {
+        using var factory = new CoachApiFactory();
+        using var host = CreateClient(factory);
+        var created = await CreateHostSessionAsync(host);
+        using var upload = new MultipartFormDataContent();
+        var file = new ByteArrayContent(
+        [
+            0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1
+        ]);
+        file.Headers.ContentType = new MediaTypeHeaderValue(
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+        upload.Add(file, "file", "protected.pptx");
+        upload.Add(new StringContent("hostPrivate"), "visibility");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/sessions/{created.Session.Id:D}/knowledge/files")
+        {
+            Content = upload
+        };
+        request.Headers.Add("X-Session-Request", "1");
+
+        using var response = await host.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Contains(
+            "standard PPTX",
+            problem.GetProperty("detail").GetString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task BodylessHostMutationRequiresCsrfResistantHeader()
     {
         using var factory = new CoachApiFactory();

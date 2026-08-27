@@ -18,8 +18,8 @@ public sealed class StaticAssetCacheTests
         indexResponse.EnsureSuccessStatusCode();
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
-        Assert.Contains("styles.css?v=20260826a", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260827a", html, StringComparison.Ordinal);
+        Assert.Contains("styles.css?v=20260827b", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260827b", html, StringComparison.Ordinal);
         Assert.Contains(
             "assets/host-workspace-preview.png?v=20260826a",
             html,
@@ -123,7 +123,7 @@ public sealed class StaticAssetCacheTests
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260827a");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260827b");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
@@ -190,6 +190,8 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("/knowledge/files", script, StringComparison.Ordinal);
         Assert.Contains("MAXIMUM_KNOWLEDGE_FILE_MEGABYTES = 150", script, StringComparison.Ordinal);
         Assert.Contains("Knowledge files cannot exceed", script, StringComparison.Ordinal);
+        Assert.Contains("Uploading, scanning, and extracting...", script, StringComparison.Ordinal);
+        Assert.Contains("aria-busy", script, StringComparison.Ordinal);
         Assert.Contains("X-Session-Request", script, StringComparison.Ordinal);
         Assert.Contains("function scheduleSessionExpiry", script, StringComparison.Ordinal);
         Assert.Contains("async function handleSessionExpired", script, StringComparison.Ordinal);
@@ -257,10 +259,12 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("Training guidance", script, StringComparison.Ordinal);
         Assert.Contains("customMeetingType.required", script, StringComparison.Ordinal);
 
-        using var styleResponse = await client.GetAsync("/styles.css?v=20260826a");
+        using var styleResponse = await client.GetAsync("/styles.css?v=20260827b");
         styleResponse.EnsureSuccessStatusCode();
         AssertNoStore(styleResponse);
         var styles = await styleResponse.Content.ReadAsStringAsync();
+        Assert.Contains(".button.is-loading", styles, StringComparison.Ordinal);
+        Assert.Contains("@keyframes button-loading-spin", styles, StringComparison.Ordinal);
         Assert.Contains("\"Segoe UI Variable Text\"", styles, StringComparison.Ordinal);
         Assert.Contains(".session-toast--error", styles, StringComparison.Ordinal);
         Assert.Contains(".session-toast--recommendation", styles, StringComparison.Ordinal);

@@ -272,6 +272,17 @@ app.UseExceptionHandler(errorApplication =>
             InvalidOperationException => (StatusCodes.Status409Conflict, "Operation rejected"),
             _ => (StatusCodes.Status500InternalServerError, "Unexpected server error")
         };
+        if (status == StatusCodes.Status500InternalServerError && exception is not null)
+        {
+            var logger = context.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("CsaMeetingCoach.UnhandledException");
+            logger.LogError(
+                exception,
+                "Unhandled exception while processing {Method} {Path}.",
+                context.Request.Method,
+                context.Request.Path);
+        }
 
         context.Response.StatusCode = status;
         context.Response.ContentType = "application/problem+json";
