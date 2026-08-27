@@ -19,7 +19,7 @@ public sealed class StaticAssetCacheTests
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
         Assert.Contains("styles.css?v=20260826a", html, StringComparison.Ordinal);
-        Assert.Contains("app.js?v=20260826a", html, StringComparison.Ordinal);
+        Assert.Contains("app.js?v=20260827a", html, StringComparison.Ordinal);
         Assert.Contains(
             "assets/host-workspace-preview.png?v=20260826a",
             html,
@@ -123,7 +123,7 @@ public sealed class StaticAssetCacheTests
             html,
             StringComparison.Ordinal);
 
-        using var scriptResponse = await client.GetAsync("/app.js?v=20260826a");
+        using var scriptResponse = await client.GetAsync("/app.js?v=20260827a");
 
         scriptResponse.EnsureSuccessStatusCode();
         AssertNoStore(scriptResponse);
@@ -188,6 +188,8 @@ public sealed class StaticAssetCacheTests
             StringComparison.Ordinal);
         Assert.Contains("/api/sessions/join", script, StringComparison.Ordinal);
         Assert.Contains("/knowledge/files", script, StringComparison.Ordinal);
+        Assert.Contains("MAXIMUM_KNOWLEDGE_FILE_MEGABYTES = 150", script, StringComparison.Ordinal);
+        Assert.Contains("Knowledge files cannot exceed", script, StringComparison.Ordinal);
         Assert.Contains("X-Session-Request", script, StringComparison.Ordinal);
         Assert.Contains("function scheduleSessionExpiry", script, StringComparison.Ordinal);
         Assert.Contains("async function handleSessionExpired", script, StringComparison.Ordinal);

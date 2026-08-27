@@ -344,7 +344,8 @@ public sealed class LocalSessionKnowledgeStore(
             total = checked(total + read);
             if (total > maximumBytes)
             {
-                throw new BadHttpRequestException("Knowledge files cannot exceed 50 MB.");
+                throw new BadHttpRequestException(
+                    $"Knowledge files cannot exceed {SessionKnowledgeLimits.MaximumFileMegabytes} MB.");
             }
 
             await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);

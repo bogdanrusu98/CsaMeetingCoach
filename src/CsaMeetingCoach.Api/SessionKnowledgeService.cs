@@ -20,7 +20,7 @@ public sealed class SessionKnowledgeService(
         if (file.Length <= 0 || file.Length > SessionKnowledgeLimits.MaximumFileBytes)
         {
             throw new ArgumentException(
-                "Knowledge files must contain data and cannot exceed 50 MB.");
+                $"Knowledge files must contain data and cannot exceed {SessionKnowledgeLimits.MaximumFileMegabytes} MB.");
         }
 
         await EnsureCapacityAsync(sessionId, file.Length, cancellationToken);
@@ -187,7 +187,7 @@ public sealed class SessionKnowledgeService(
         if (totalBytes > SessionKnowledgeLimits.MaximumTotalBytes)
         {
             throw new InvalidOperationException(
-                "Session knowledge exceeds the 100 MB aggregate limit.");
+                $"Session knowledge exceeds the {SessionKnowledgeLimits.MaximumTotalMegabytes} MB aggregate limit.");
         }
     }
 

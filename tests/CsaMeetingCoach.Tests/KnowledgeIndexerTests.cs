@@ -136,7 +136,7 @@ public sealed class KnowledgeIndexerTests
 
             var exception = Assert.Throws<InvalidOperationException>(() =>
                 KnowledgeSourceValidator.GetValidatedFiles(directory));
-            Assert.Contains("50 MB", exception.Message);
+            Assert.Contains("150 MB", exception.Message);
         }
         finally
         {

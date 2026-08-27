@@ -47,6 +47,9 @@ const state = {
 
 const THEME_STORAGE_KEY = "session-copilot-theme";
 const SESSION_HISTORY_KEY = "sessionCopilot";
+const MAXIMUM_KNOWLEDGE_FILE_MEGABYTES = 150;
+const MAXIMUM_KNOWLEDGE_FILE_BYTES =
+  MAXIMUM_KNOWLEDGE_FILE_MEGABYTES * 1024 * 1024;
 
 const templateProfiles = Object.freeze({
   presentation: {
@@ -534,6 +537,12 @@ elements.knowledgeFileForm.addEventListener("submit", async event => {
     const file = document.querySelector("#knowledge-file").files[0];
     if (!file) {
       throw new Error("Choose one knowledge file.");
+    }
+    if (file.size > MAXIMUM_KNOWLEDGE_FILE_BYTES) {
+      const fileSizeMegabytes = (file.size / (1024 * 1024)).toFixed(1);
+      throw new Error(
+        `The selected file is ${fileSizeMegabytes} MB. ` +
+        `Knowledge files cannot exceed ${MAXIMUM_KNOWLEDGE_FILE_MEGABYTES} MB.`);
     }
 
     const form = new FormData();

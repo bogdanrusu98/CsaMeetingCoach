@@ -91,8 +91,10 @@ public sealed partial record IndexerConfiguration(
 public static class KnowledgeSourceValidator
 {
     public const int MaximumFileCount = 50;
-    public const long MaximumFileBytes = 50L * 1024 * 1024;
-    public const long MaximumTotalBytes = 100L * 1024 * 1024;
+    public const int MaximumFileMegabytes = 150;
+    public const int MaximumTotalMegabytes = 300;
+    public const long MaximumFileBytes = MaximumFileMegabytes * 1024L * 1024L;
+    public const long MaximumTotalBytes = MaximumTotalMegabytes * 1024L * 1024L;
 
     private static readonly HashSet<string> AllowedExtensions =
         new(StringComparer.OrdinalIgnoreCase)
@@ -148,14 +150,14 @@ public static class KnowledgeSourceValidator
             if (length > MaximumFileBytes)
             {
                 throw new InvalidOperationException(
-                    $"Knowledge file '{Path.GetFileName(path)}' exceeds the 50 MB limit.");
+                    $"Knowledge file '{Path.GetFileName(path)}' exceeds the {MaximumFileMegabytes} MB limit.");
             }
 
             totalBytes = checked(totalBytes + length);
             if (totalBytes > MaximumTotalBytes)
             {
                 throw new InvalidOperationException(
-                    "Knowledge files exceed the 100 MB aggregate limit.");
+                    $"Knowledge files exceed the {MaximumTotalMegabytes} MB aggregate limit.");
             }
         }
 

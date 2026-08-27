@@ -1039,7 +1039,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 if (totalBytes > SessionKnowledgeLimits.MaximumTotalBytes)
                 {
                     throw new InvalidOperationException(
-                        "Session knowledge exceeds the 100 MB aggregate limit.");
+                        $"Session knowledge exceeds the {SessionKnowledgeLimits.MaximumTotalMegabytes} MB aggregate limit.");
                 }
 
                 return session with

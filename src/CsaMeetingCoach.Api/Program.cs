@@ -243,6 +243,9 @@ app.UseExceptionHandler(errorApplication =>
         var (status, title) = exception switch
         {
             ArgumentException => (StatusCodes.Status400BadRequest, "Invalid request"),
+            BadHttpRequestException badRequest
+                when badRequest.StatusCode == StatusCodes.Status413PayloadTooLarge =>
+                (StatusCodes.Status413PayloadTooLarge, "Upload too large"),
             BadHttpRequestException => (StatusCodes.Status400BadRequest, "Invalid request"),
             JsonException => (StatusCodes.Status400BadRequest, "Invalid JSON request"),
             UnauthorizedAccessException => (StatusCodes.Status401Unauthorized, "Access denied"),
@@ -277,9 +280,14 @@ app.UseExceptionHandler(errorApplication =>
             type = "about:blank",
             title,
             status,
-            detail = status == StatusCodes.Status500InternalServerError
-                ? "The server could not process the request."
-                : exception?.Message
+            detail = status switch
+            {
+                StatusCodes.Status500InternalServerError =>
+                    "The server could not process the request.",
+                StatusCodes.Status413PayloadTooLarge =>
+                    $"Knowledge files cannot exceed {SessionKnowledgeLimits.MaximumFileMegabytes} MB.",
+                _ => exception?.Message
+            }
         });
     });
 });

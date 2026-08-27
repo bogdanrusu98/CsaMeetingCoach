@@ -77,8 +77,10 @@ public static class SessionLifecycle
 public static class SessionKnowledgeLimits
 {
     public const int MaximumSourceCount = 50;
-    public const long MaximumFileBytes = 50L * 1024 * 1024;
-    public const long MaximumTotalBytes = 100L * 1024 * 1024;
+    public const int MaximumFileMegabytes = 150;
+    public const int MaximumTotalMegabytes = 300;
+    public const long MaximumFileBytes = MaximumFileMegabytes * 1024L * 1024L;
+    public const long MaximumTotalBytes = MaximumTotalMegabytes * 1024L * 1024L;
     public const int MaximumExtractedCharactersPerSource = 100_000;
     public const int MaximumPromptCharacters = 40_000;
 }
