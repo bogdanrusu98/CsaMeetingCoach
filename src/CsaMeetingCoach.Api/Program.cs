@@ -99,14 +99,12 @@ var browserSpeechOptions = new BrowserSpeechOptions
 {
     Enabled = builder.Configuration.GetValue<bool>("BrowserSpeech:Enabled"),
     SubscriptionKey = builder.Configuration["BrowserSpeech:SubscriptionKey"] ?? string.Empty,
-    AccessKey = builder.Configuration["BrowserSpeech:AccessKey"] ?? string.Empty,
     Region = builder.Configuration["BrowserSpeech:Region"] ?? string.Empty,
     Language = builder.Configuration["BrowserSpeech:Language"] ?? "en-US",
     EndpointId = builder.Configuration["BrowserSpeech:EndpointId"] ?? string.Empty
 };
 browserSpeechOptions.Validate();
 builder.Services.AddSingleton(browserSpeechOptions);
-builder.Services.AddSingleton<BrowserSpeechAuthorizer>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services
     .AddHttpClient<IBrowserSpeechTokenService, AzureBrowserSpeechTokenService>(client =>
@@ -355,14 +353,6 @@ app.MapGet("/api/health", () => Results.Ok(new
             : "custom"
 }));
 
-app.MapGet(
-    "/api/browser-speech/access",
-    (HttpContext context, BrowserSpeechAuthorizer speechAuthorizer) =>
-        Results.Ok(new
-        {
-            authorized = speechAuthorizer.HasPersistentAccess(context)
-        }));
-
 app.MapPost(
     "/api/sessions",
     async (
@@ -566,7 +556,6 @@ app.MapPost(
         Guid sessionId,
         HttpContext context,
         SessionAuthorizationService sessionAuthorization,
-        BrowserSpeechAuthorizer speechAuthorizer,
         IBrowserSpeechTokenService speechTokens,
         CancellationToken cancellationToken) =>
     {
@@ -583,8 +572,6 @@ app.MapPost(
                 "Microphone transcription requires an active meeting session.");
         }
 
-        var shouldGrantPersistentAccess = authorized.Grant.Role == SessionRole.Host
-            && speechAuthorizer.Authorize(context);
         var token = await speechTokens.IssueTokenAsync(cancellationToken);
         if (!SpeechVocabularyPolicy.UseAzureVocabulary(session))
         {
@@ -594,11 +581,6 @@ app.MapPost(
                 EndpointId = null
             };
         }
-        if (shouldGrantPersistentAccess)
-        {
-            speechAuthorizer.GrantPersistentAccess(context);
-        }
-
         context.Response.Headers.CacheControl = "no-store";
         return Results.Ok(token);
     })

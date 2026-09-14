@@ -1,7 +1,5 @@
 using System.Net;
 using CsaMeetingCoach.Api;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Http;
 
 namespace CsaMeetingCoach.Tests;
 
@@ -130,7 +128,6 @@ public sealed class BrowserSpeechTokenServiceTests
         {
             Enabled = true,
             SubscriptionKey = options.SubscriptionKey,
-            AccessKey = options.AccessKey,
             Region = "westus2.example.com",
             Language = options.Language
         };
@@ -161,97 +158,6 @@ public sealed class BrowserSpeechTokenServiceTests
         options.Validate();
     }
 
-    [Fact]
-    public void AccessCodeAuthorizationUsesAnExactCredentialAndGrantsCookie()
-    {
-        var options = EnabledOptions();
-        options.Validate();
-        var dataProtection = new EphemeralDataProtectionProvider();
-        var authorizer = new BrowserSpeechAuthorizer(
-            options,
-            dataProtection,
-            TimeProvider.System);
-        var missingContext = new DefaultHttpContext();
-        var wrongContext = new DefaultHttpContext();
-        wrongContext.Request.Headers[
-            BrowserSpeechAuthorizer.ApiKeyHeaderName] = new string('x', 32);
-        var validContext = new DefaultHttpContext();
-        validContext.Request.Scheme = "https";
-        validContext.Request.Headers[
-            BrowserSpeechAuthorizer.ApiKeyHeaderName] = options.AccessKey;
-
-        Assert.Throws<UnauthorizedAccessException>(() =>
-            authorizer.Authorize(missingContext));
-        Assert.Throws<UnauthorizedAccessException>(() =>
-            authorizer.Authorize(wrongContext));
-        Assert.True(authorizer.Authorize(validContext));
-        authorizer.GrantPersistentAccess(validContext);
-
-        var setCookie = validContext.Response.Headers.SetCookie.ToString();
-        Assert.Contains("httponly", setCookie, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("secure", setCookie, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("samesite=none", setCookie, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("max-age=2592000", setCookie, StringComparison.OrdinalIgnoreCase);
-        var persistedContext = CreateContextWithCookie(setCookie);
-        Assert.True(authorizer.HasPersistentAccess(persistedContext));
-        Assert.False(authorizer.Authorize(persistedContext));
-    }
-
-    [Fact]
-    public void AccessCookieIsRevokedWhenTheConfiguredCodeRotates()
-    {
-        var dataProtection = new EphemeralDataProtectionProvider();
-        var currentOptions = EnabledOptions();
-        var currentAuthorizer = new BrowserSpeechAuthorizer(
-            currentOptions,
-            dataProtection,
-            TimeProvider.System);
-        var validContext = new DefaultHttpContext();
-        validContext.Request.Headers[
-            BrowserSpeechAuthorizer.ApiKeyHeaderName] = currentOptions.AccessKey;
-        Assert.True(currentAuthorizer.Authorize(validContext));
-        currentAuthorizer.GrantPersistentAccess(validContext);
-
-        var rotatedOptions = EnabledOptions(
-            "rotated-browser-speech-key-00000002");
-        var rotatedAuthorizer = new BrowserSpeechAuthorizer(
-            rotatedOptions,
-            dataProtection,
-            TimeProvider.System);
-        var persistedContext = CreateContextWithCookie(
-            validContext.Response.Headers.SetCookie.ToString());
-
-        Assert.False(rotatedAuthorizer.HasPersistentAccess(persistedContext));
-        Assert.Throws<UnauthorizedAccessException>(() =>
-            rotatedAuthorizer.Authorize(persistedContext));
-    }
-
-    [Fact]
-    public void EnabledOptionsRequireAThirtyTwoCharacterAccessCode()
-    {
-        var options = new BrowserSpeechOptions
-        {
-            Enabled = true,
-            SubscriptionKey = "speech-key",
-            AccessKey = "too-short",
-            Region = "westus2",
-            Language = "en-US"
-        };
-
-        Assert.Throws<InvalidOperationException>(options.Validate);
-    }
-
-    [Theory]
-    [InlineData("browser-speech-access-key-with-unicode-ș")]
-    [InlineData("browser speech access key with spaces 0001")]
-    public void EnabledOptionsRejectAccessCodesThatCannotBeSentSafelyInAHeader(
-        string accessKey)
-    {
-        var options = EnabledOptions(accessKey);
-
-        Assert.Throws<InvalidOperationException>(options.Validate);
-    }
-
     private static AzureBrowserSpeechTokenService CreateService(
         HttpMessageHandler handler,
         BrowserSpeechOptions options,
@@ -262,24 +168,15 @@ public sealed class BrowserSpeechTokenServiceTests
             new FixedTimeProvider(now));
 
     private static BrowserSpeechOptions EnabledOptions(
-        string accessKey = "browser-speech-access-key-00000001",
         string endpointId = "") =>
         new()
         {
             Enabled = true,
             SubscriptionKey = "speech-key",
-            AccessKey = accessKey,
             Region = "westus2",
             Language = "en-US",
             EndpointId = endpointId
         };
-
-    private static DefaultHttpContext CreateContextWithCookie(string setCookie)
-    {
-        var context = new DefaultHttpContext();
-        context.Request.Headers.Cookie = setCookie.Split(';', 2)[0];
-        return context;
-    }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {

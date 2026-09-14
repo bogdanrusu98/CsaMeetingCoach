@@ -156,7 +156,6 @@ token. Configure the key only on the server:
 ```powershell
 $env:BrowserSpeech__Enabled = "true"
 $env:BrowserSpeech__SubscriptionKey = "FROM-SECRET-STORE"
-$env:BrowserSpeech__AccessKey = "RANDOM-VALUE-OF-AT-LEAST-32-CHARACTERS"
 $env:BrowserSpeech__Region = "westus2"
 $env:BrowserSpeech__Language = "en-US"
 $env:BrowserSpeech__EndpointId = "11111111-1111-4111-8111-111111111111"
@@ -170,12 +169,10 @@ The GitHub deployment enables this path only when the repository variable
 `BROWSER_SPEECH_ENABLED` is `true`. It reuses
 `MEDIA_BOT_SPEECH_KEY`, `MEDIA_BOT_SPEECH_REGION`, and
 `MEDIA_BOT_SPEECH_LANGUAGE`, so browser transcription can be enabled while
-`MEDIA_BOT_ENABLED` remains `false`. Store a separate random value of at least
-32 characters in the `BROWSER_SPEECH_ACCESS_KEY` repository secret for Host
-device activation. The plaintext value is retained only in page memory and
-cleared after a successful exchange. An active Member session grant can request
-its own short-lived Speech token after explicit consent without receiving that
-Host access code. The Teams manifest requests the `media` device permission;
+`MEDIA_BOT_ENABLED` remains `false`. An active Host or Member session grant can
+request its own short-lived Speech token after explicit consent; no separate
+speech access code is exposed to the browser. The Teams manifest requests the
+`media` device permission;
 tenant policy can still block custom app or microphone access.
 
 ### Custom Speech lifecycle and cost

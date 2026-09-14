@@ -304,13 +304,22 @@ public sealed class MeetingSessionCoordinator : IDisposable
                 transcriptUpdate.AudienceFamiliarity);
             var deterministicDecision = await _deterministicAgent.AnalyzeAsync(
                 context, segment, cancellationToken);
-            var fastLaneDecision = (_aiAgent is null
-                ? deterministicDecision
-                : deterministicDecision with { RecommendedTasks = [] }) with
+            var technicalRecommendations =
+                TechnicalSignalPolicy.SelectRecommendations(segment);
+            var fastLaneRecommendations = technicalRecommendations
+                .Concat(_aiAgent is null
+                    ? deterministicDecision.RecommendedTasks
+                    : [])
+                .ToArray();
+            var technicalCards = TechnicalSignalPolicy.SelectContextualCards(segment);
+            var fastLaneDecision = deterministicDecision with
             {
+                RecommendedTasks = fastLaneRecommendations,
                 ContextualCards = PresentationCoachingPolicy.SelectContextualCards(
                     context,
-                    deterministicDecision.ContextualCards,
+                    technicalCards
+                        .Concat(deterministicDecision.ContextualCards)
+                        .ToArray(),
                     analysisWindow)
             };
             var decision = CrossCuttingRecommendationPolicy.Apply(
@@ -1545,7 +1554,18 @@ public sealed class MeetingSessionCoordinator : IDisposable
             bool requiresAzureVendorScope;
             AlertRejectionReason reason;
             string details;
-            if (EducationalConceptCatalog.TryResolveByAliasOrTitle(
+            var isTechnicalSignal = TechnicalSignalPolicy.TryValidateContextualCard(
+                proposal,
+                proposal.SourceTranscriptSegmentIds
+                    .Select(id => analysisWindowById[id])
+                    .ToArray(),
+                out category);
+            if (isTechnicalSignal)
+            {
+                conceptKey = proposal.ConceptKey!;
+                requiresAzureVendorScope = false;
+            }
+            else if (EducationalConceptCatalog.TryResolveByAliasOrTitle(
                     proposal.ConceptKey ?? proposal.Title,
                     out _))
             {
@@ -1632,6 +1652,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
                     definitionCooldowns,
                     hintCooldowns,
                     session.AudienceFamiliarity,
+                    isTechnicalSignal,
                     out reason,
                     out details))
             {
@@ -1790,6 +1811,7 @@ public sealed class MeetingSessionCoordinator : IDisposable
         IReadOnlyDictionary<string, DateTimeOffset> definitionCooldowns,
         IReadOnlyDictionary<string, DateTimeOffset> hintCooldowns,
         AudienceFamiliarity audienceFamiliarity,
+        bool allowHintWithoutDefinition,
         out AlertRejectionReason reason,
         out string details)
     {
@@ -1815,7 +1837,8 @@ public sealed class MeetingSessionCoordinator : IDisposable
         }
 
         if (!shownDefinitionKeys.Contains(conceptKey)
-            && audienceFamiliarity != AudienceFamiliarity.Expert)
+            && audienceFamiliarity != AudienceFamiliarity.Expert
+            && !allowHintWithoutDefinition)
         {
             reason = AlertRejectionReason.CooldownActive;
             details = "hint cards require a previously shown definition for the same concept";

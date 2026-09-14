@@ -6,7 +6,6 @@ const state = {
   eventProbePending: false,
   teamsMeetingId: null,
   browserSpeechAvailable: false,
-  browserSpeechAuthorized: false,
   microphoneRecognizer: null,
   microphoneAudioConfig: null,
   microphoneCapture: null,
@@ -156,8 +155,6 @@ const elements = {
   transcriptForm: document.querySelector("#transcript-form"),
   microphonePanel: document.querySelector("#microphone-panel"),
   microphoneConsent: document.querySelector("#microphone-consent"),
-  microphoneAccessKey: document.querySelector("#microphone-access-key"),
-  microphoneAccessStatus: document.querySelector("#microphone-access-status"),
   microphoneToggle: document.querySelector("#microphone-toggle"),
   microphoneUnlock: document.querySelector("#microphone-unlock"),
   closeMicrophoneUnlock: document.querySelector("#close-microphone-unlock"),
@@ -350,17 +347,11 @@ document.querySelector("#member-session-code").addEventListener("input", event =
 
 elements.microphoneConsent.addEventListener("change", renderMicrophoneControls);
 elements.memberMicrophoneConsent.addEventListener("change", renderMicrophoneControls);
-elements.microphoneAccessKey.addEventListener("input", renderMicrophoneControls);
 elements.microphoneToggle.addEventListener("click", async () => {
   if (!state.microphoneRecognizer
-      && (!elements.microphoneConsent.checked
-        || (!state.browserSpeechAuthorized
-          && !elements.microphoneAccessKey.value))) {
+      && !elements.microphoneConsent.checked) {
     elements.microphoneUnlock.classList.remove("hidden");
-    elements.microphoneUnlock.querySelector(
-      elements.microphoneConsent.checked
-        ? "#microphone-access-key"
-        : "#microphone-consent")?.focus();
+    elements.microphoneConsent.focus();
     return;
   }
 
@@ -1408,11 +1399,6 @@ async function startMicrophone() {
   if (!state.browserSpeechAvailable) {
     throw new Error("Browser microphone transcription is not configured.");
   }
-  if (state.role === "host"
-      && !state.browserSpeechAuthorized
-      && !elements.microphoneAccessKey.value) {
-    throw new Error("Enter the demo access code before starting.");
-  }
   if (!window.SpeechSDK) {
     throw new Error("Azure Speech SDK could not be loaded.");
   }
@@ -1618,31 +1604,10 @@ async function stopMicrophone() {
 }
 
 async function requestSpeechToken(sessionId = state.session?.id, signal) {
-  const accessKey = state.role !== "host" || state.browserSpeechAuthorized
-    ? ""
-    : elements.microphoneAccessKey.value.trim();
-  if (accessKey && !/^[\x21-\x7e]{32,256}$/.test(accessKey)) {
-    throw new Error(
-      "The demo access code must contain 32 to 256 printable ASCII characters.");
-  }
-  try {
-    const token = await api(`/api/sessions/${sessionId}/speech-token`, {
-      method: "POST",
-      signal,
-      headers: accessKey
-        ? { "X-Browser-Speech-Key": accessKey }
-        : {}
-    });
-    state.browserSpeechAuthorized = true;
-    elements.microphoneAccessKey.value = "";
-    return token;
-  } catch (error) {
-    if (/valid browser speech access code/i.test(error?.message || "")) {
-      state.browserSpeechAuthorized = false;
-      elements.microphoneUnlock.classList.remove("hidden");
-    }
-    throw error;
-  }
+  return api(`/api/sessions/${sessionId}/speech-token`, {
+    method: "POST",
+    signal
+  });
 }
 
 function ensureMicrophoneSessionActive(sessionId) {
@@ -1928,19 +1893,9 @@ function renderMicrophoneControls() {
     || !state.browserSpeechAvailable;
   elements.confirmMicrophone.disabled = state.microphoneBusy
     || sessionCompleted
-    || !elements.microphoneConsent.checked
-    || (!state.browserSpeechAuthorized
-      && !elements.microphoneAccessKey.value);
+    || !elements.microphoneConsent.checked;
   elements.microphoneConsent.disabled =
     state.microphoneBusy || listening || sessionCompleted;
-  elements.microphoneAccessKey.disabled =
-    state.microphoneBusy
-    || listening
-    || sessionCompleted
-    || state.browserSpeechAuthorized;
-  elements.microphoneAccessStatus.textContent = state.browserSpeechAuthorized
-    ? "Device authorized. The code is not stored or copied; protected access lasts up to 30 days."
-    : "Enter once per browser; the code is exchanged for protected access and is not copied to the clipboard.";
   elements.microphoneStatus.textContent = state.microphoneBusy
     ? "Starting"
     : state.microphoneMuted
@@ -1956,8 +1911,6 @@ function renderMicrophoneControls() {
     listening
       ? "Stop listening to the presenter microphone"
       : elements.microphoneConsent.checked
-          && (state.browserSpeechAuthorized
-            || elements.microphoneAccessKey.value)
         ? "Start listening to the presenter microphone"
         : "Set up presenter microphone");
   elements.microphoneMute.classList.toggle("hidden", !isHost || !listening);
@@ -2026,19 +1979,11 @@ function queueMicrophoneOperation(operation) {
 
 async function initializeBrowserSpeechAvailability() {
   try {
-    const [health, access] = await Promise.all([
-      api("/api/health"),
-      api("/api/browser-speech/access")
-    ]);
+    const health = await api("/api/health");
     state.browserSpeechAvailable =
       health.browserMicrophoneTranscription === "ready";
-    state.browserSpeechAuthorized = access.authorized === true;
-    if (state.browserSpeechAuthorized) {
-      elements.microphoneAccessKey.value = "";
-    }
   } catch {
     state.browserSpeechAvailable = false;
-    state.browserSpeechAuthorized = false;
   }
   renderMicrophoneControls();
 }

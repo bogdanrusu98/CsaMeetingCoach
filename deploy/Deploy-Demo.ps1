@@ -25,7 +25,6 @@ param(
 
     [string] $BrowserSpeechSubscriptionKey = "",
 
-    [string] $BrowserSpeechAccessKey = "",
 
     [string] $BrowserSpeechRegion = "",
 
@@ -460,7 +459,6 @@ $FoundryVectorStoreIds = $normalizedVectorStoreIds -join ","
 
 if ($BrowserSpeechEnabled) {
     if ([string]::IsNullOrWhiteSpace($BrowserSpeechSubscriptionKey) -or
-        $BrowserSpeechAccessKey.Length -lt 32 -or
         $BrowserSpeechRegion -notmatch "^[a-z0-9-]+$" -or
         $BrowserSpeechLanguage -notmatch "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})+$") {
         throw "Browser speech requires a key, Azure region, and valid speech locale."
@@ -591,7 +589,6 @@ try {
             "CoachAgent__Foundry__VectorStoreIds=$FoundryVectorStoreIds",
             "BrowserSpeech__Enabled=$($BrowserSpeechEnabled.IsPresent.ToString().ToLowerInvariant())",
             "BrowserSpeech__SubscriptionKey=$BrowserSpeechSubscriptionKey",
-            "BrowserSpeech__AccessKey=$BrowserSpeechAccessKey",
             "BrowserSpeech__Region=$BrowserSpeechRegion",
             "BrowserSpeech__Language=$BrowserSpeechLanguage",
             "BrowserSpeech__EndpointId=$BrowserSpeechEndpointId",

@@ -32,7 +32,6 @@ env:
   FOUNDRY_AGENT_NAME: csa-meeting-coach-v5
   FOUNDRY_VECTOR_STORE_IDS: ${{ vars.FOUNDRY_VECTOR_STORE_IDS }}
   BROWSER_SPEECH_ENABLED: ${{ vars.BROWSER_SPEECH_ENABLED || 'false' }}
-  BROWSER_SPEECH_ACCESS_KEY: ${{ secrets.BROWSER_SPEECH_ACCESS_KEY }}
   BROWSER_SPEECH_ENDPOINT_ID: ${{ vars.BROWSER_SPEECH_ENDPOINT_ID }}
   TRANSCRIPT_ADAPTER_AUTH_MODE: ${{ vars.TRANSCRIPT_ADAPTER_AUTH_MODE || 'Disabled' }}
   TRANSCRIPT_ADAPTER_API_KEY: ${{ secrets.TRANSCRIPT_ADAPTER_API_KEY }}
@@ -224,7 +223,6 @@ jobs:
             FoundryVectorStoreIds = $env:FOUNDRY_VECTOR_STORE_IDS
             BrowserSpeechEnabled = $env:BROWSER_SPEECH_ENABLED -eq "true"
             BrowserSpeechSubscriptionKey = $env:MEDIA_BOT_SPEECH_KEY
-            BrowserSpeechAccessKey = $env:BROWSER_SPEECH_ACCESS_KEY
             BrowserSpeechRegion = $env:MEDIA_BOT_SPEECH_REGION
             BrowserSpeechLanguage = $env:MEDIA_BOT_SPEECH_LANGUAGE
             BrowserSpeechEndpointId = $env:BROWSER_SPEECH_ENDPOINT_ID

@@ -394,6 +394,13 @@ internal static partial class PresentationCoachingPolicy
             }
         }
 
+        if (result.Any(card =>
+                TechnicalSignalPolicy.IsContextualSignalKey(
+                    card.ConceptKey ?? string.Empty)))
+        {
+            return result.Take(2).ToArray();
+        }
+
         var educationalMatches = EducationalConceptCatalog.All
             .Where(concept => AudienceFamiliarityPolicy.IncludeCatalogConcept(
                 concept,

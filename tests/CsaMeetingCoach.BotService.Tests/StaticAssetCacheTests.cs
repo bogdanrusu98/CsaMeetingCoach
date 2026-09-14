@@ -140,11 +140,11 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("Member left", script, StringComparison.Ordinal);
         Assert.Contains("/leave", script, StringComparison.Ordinal);
         Assert.Contains("applyTheme(nextTheme, true)", script, StringComparison.Ordinal);
-        Assert.Contains("Device authorized", script, StringComparison.Ordinal);
         Assert.Contains(
-            "/api/browser-speech/access",
-            script,
+            "Speech access is authorized automatically for the active Host session.",
+            html,
             StringComparison.Ordinal);
+        Assert.DoesNotContain("microphone-access-key", html, StringComparison.Ordinal);
         Assert.Contains(
             "Speech_SegmentationSilenceTimeoutMs",
             script,
@@ -235,7 +235,7 @@ public sealed class StaticAssetCacheTests
             "Original Speech SDK recognition retained for traceability",
             script,
             StringComparison.Ordinal);
-        Assert.Contains("protected access lasts up to 30 days", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("X-Browser-Speech-Key", script, StringComparison.Ordinal);
         Assert.Contains("const templateProfiles", script, StringComparison.Ordinal);
         Assert.Contains("renderParticipantPresence", script, StringComparison.Ordinal);
         Assert.Contains("renderLiveSpeech", script, StringComparison.Ordinal);
