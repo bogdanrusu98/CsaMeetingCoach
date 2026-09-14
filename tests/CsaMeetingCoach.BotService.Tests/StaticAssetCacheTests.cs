@@ -164,10 +164,7 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("Final speech received.", script, StringComparison.Ordinal);
         Assert.Contains("Final speech queued for the Coach API.", script, StringComparison.Ordinal);
         Assert.Contains("Coach API publish succeeded.", script, StringComparison.Ordinal);
-        Assert.Contains(
-            "32 to 256 printable ASCII characters",
-            script,
-            StringComparison.Ordinal);
+        Assert.DoesNotContain("demo access code", script, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("getUserMedia", script, StringComparison.Ordinal);
         Assert.Contains("AudioConfig.fromStreamInput", script, StringComparison.Ordinal);
         Assert.DoesNotContain("getDisplayMedia", script, StringComparison.Ordinal);
