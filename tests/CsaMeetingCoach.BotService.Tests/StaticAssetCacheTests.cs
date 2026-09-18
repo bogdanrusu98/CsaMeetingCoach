@@ -18,7 +18,7 @@ public sealed class StaticAssetCacheTests
         indexResponse.EnsureSuccessStatusCode();
         AssertNoStore(indexResponse);
         var html = await indexResponse.Content.ReadAsStringAsync();
-        Assert.Contains("styles.css?v=20260827b", html, StringComparison.Ordinal);
+        Assert.Contains("styles.css?v=20260918a", html, StringComparison.Ordinal);
         Assert.Contains("app.js?v=20260827b", html, StringComparison.Ordinal);
         Assert.Contains(
             "assets/host-workspace-preview.png?v=20260826a",
@@ -256,7 +256,7 @@ public sealed class StaticAssetCacheTests
         Assert.Contains("Training guidance", script, StringComparison.Ordinal);
         Assert.Contains("customMeetingType.required", script, StringComparison.Ordinal);
 
-        using var styleResponse = await client.GetAsync("/styles.css?v=20260827b");
+        using var styleResponse = await client.GetAsync("/styles.css?v=20260918a");
         styleResponse.EnsureSuccessStatusCode();
         AssertNoStore(styleResponse);
         var styles = await styleResponse.Content.ReadAsStringAsync();

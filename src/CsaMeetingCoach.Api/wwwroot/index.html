@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Session Copilot</title>
-  <link rel="icon" href="data:,">
+  <title>LiveSense</title>
+  <meta name="description" content="Close the understanding gap. LIVE. Private guidance for the presenter, clear explanations for participants, and progress backed by conversation evidence.">
+  <link rel="icon" type="image/svg+xml" href="assets/livesense-icon.svg?v=20260918a">
   <script>
     (() => {
       const storageKey = "session-copilot-theme";
@@ -26,22 +27,21 @@
   </script>
   <link rel="stylesheet"
         href="vendor/react-toastify.bundle.css?v=11.1.0-20260819c">
-  <link rel="stylesheet" href="styles.css?v=20260827b">
+  <link rel="stylesheet" href="styles.css?v=20260918a">
 </head>
 <body>
   <main class="app-shell">
     <section id="setup-view" class="commercial-entry" aria-labelledby="entry-title">
       <header class="entry-header">
-        <a class="product-brand" href="/" aria-label="Session Copilot home">
+        <a class="product-brand" href="/" aria-label="LiveSense home">
           <span class="product-glyph" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none">
-              <path d="M12 3.5 13.7 8l4.8 1.7-4.8 1.7L12 16l-1.7-4.6-4.8-1.7L10.3 8 12 3.5Z"
-                    fill="currentColor"></path>
-              <path d="m18.2 15 .8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8.8-2.1Z"
-                    fill="currentColor" opacity=".78"></path>
+              <path d="M3 12h4l2-6 4 12 2-6h6"
+                    stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round"></path>
             </svg>
           </span>
-          <span>Session Copilot</span>
+          <span>LiveSense</span>
         </a>
         <div class="entry-header-actions">
           <span class="privacy-chip">
@@ -83,12 +83,12 @@
                       fill="currentColor"></path>
               </svg>
             </span>
-            AI guidance for live sessions
+            Live context for both sides
           </p>
-          <h1 id="entry-title">Lead the room.<span>Stay present.</span></h1>
+          <h1 id="entry-title">Close the gap.<span>LIVE.</span></h1>
           <p class="hero-description">
-            Private, role-aware guidance that helps hosts move the conversation
-            forward and gives members only the context they need.
+            Private guidance for the Host. Clear definitions and tips for participants.
+            Progress backed by conversation evidence, while there is still time to act.
           </p>
 
           <div class="role-grid" aria-label="Choose how to enter">
@@ -149,7 +149,7 @@
         <figure class="entry-product-preview">
           <img src="assets/host-workspace-preview.png?v=20260826a"
                width="1600" height="1000"
-               alt="Actual Session Copilot host workspace showing live speech, private AI guidance, and the evidence-backed action plan."
+               alt="Actual LiveSense host workspace showing live speech, private AI guidance, and the evidence-backed action plan."
                fetchpriority="high" decoding="async">
           <figcaption class="visually-hidden">
             Real product view using demonstration content.
@@ -297,19 +297,18 @@
     <section id="session-view" class="session-view host-dashboard hidden"
              aria-labelledby="host-workspace-heading">
       <header class="session-bar commercial-session-bar">
-        <div class="host-product-mark" aria-label="Session Copilot">
+        <div class="host-product-mark" aria-label="LiveSense">
           <span class="host-product-glyph" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none">
-              <path d="M12 3.5 13.7 8l4.8 1.7-4.8 1.7L12 16l-1.7-4.6-4.8-1.7L10.3 8 12 3.5Z"
-                    fill="currentColor"></path>
-              <path d="m18.2 15 .8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8.8-2.1Z"
-                    fill="currentColor" opacity=".78"></path>
+              <path d="M3 12h4l2-6 4 12 2-6h6"
+                    stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round"></path>
             </svg>
           </span>
         </div>
         <div class="session-identity">
           <div>
-            <h1 id="host-workspace-heading">Host workspace</h1>
+            <h1 id="host-workspace-heading">LiveSense · Host</h1>
             <p class="session-meta-line">
               <span id="session-template-label">Session</span>
               <span id="meeting-type-context" class="hidden">
@@ -447,7 +446,7 @@
                 </div>
                 <p>
                   Azure Speech processes selected audio. Raw audio is not stored by
-                  Session Copilot, and screen video is never processed.
+                  LiveSense, and screen video is never processed.
                 </p>
                 <label class="consent-option">
                   <input id="microphone-consent" type="checkbox">
@@ -662,13 +661,12 @@
         <div class="product-brand">
           <span class="product-glyph member-glyph" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none">
-              <path d="M12 3.5 13.7 8l4.8 1.7-4.8 1.7L12 16l-1.7-4.6-4.8-1.7L10.3 8 12 3.5Z"
-                    fill="currentColor"></path>
-              <path d="m18.2 15 .8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8.8-2.1Z"
-                    fill="currentColor" opacity=".78"></path>
+              <path d="M3 12h4l2-6 4 12 2-6h6"
+                    stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round"></path>
             </svg>
           </span>
-          <span>Live member view</span>
+          <span>LiveSense · Member</span>
         </div>
         <div class="member-header-actions">
           <span id="member-connection-status" class="status neutral">Connecting</span>
@@ -729,7 +727,7 @@
         <p class="eyebrow">Required for this session</p>
         <h1 id="member-microphone-title">Enable your microphone to continue</h1>
         <p>
-          Session Copilot sends only final recognized text with your participant
+          LiveSense sends only final recognized text with your participant
           name. Raw audio is processed by Azure Speech and is not stored by this app.
         </p>
         <label class="consent-option member-microphone-consent">

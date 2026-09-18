@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">LiveSense</title>
+  <rect width="64" height="64" rx="16" fill="#101D27"/>
+  <path d="M8 32h11l5-16 10 32 6-16h16"
+        fill="none" stroke="#BDF36C" stroke-width="5"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

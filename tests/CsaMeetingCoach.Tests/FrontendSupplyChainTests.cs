@@ -4,6 +4,46 @@ namespace CsaMeetingCoach.Tests;
 
 public sealed class FrontendSupplyChainTests
 {
+    [Theory]
+    [InlineData("index.html")]
+    [InlineData("configure.html")]
+    [InlineData("privacy.html")]
+    [InlineData("terms.html")]
+    public void BrowserPages_UseLiveSenseBranding(string file)
+    {
+        var html = File.ReadAllText(
+            RepositoryPath("src", "CsaMeetingCoach.Api", "wwwroot", file));
+
+        Assert.Contains("LiveSense", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Session Copilot", html, StringComparison.Ordinal);
+        Assert.Contains("assets/livesense-icon.svg?v=20260918a", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Rebranding_PreservesSessionIdentifiersAndTeamsAppIdentity()
+    {
+        var script = File.ReadAllText(
+            RepositoryPath("src", "CsaMeetingCoach.Api", "wwwroot", "app.js"));
+        var configure = File.ReadAllText(
+            RepositoryPath("src", "CsaMeetingCoach.Api", "wwwroot", "configure.js"));
+        var index = File.ReadAllText(
+            RepositoryPath("src", "CsaMeetingCoach.Api", "wwwroot", "index.html"));
+        using var manifest = JsonDocument.Parse(
+            File.ReadAllText(RepositoryPath("appPackage", "manifest.json")));
+
+        Assert.Contains("const THEME_STORAGE_KEY = \"session-copilot-theme\"", script, StringComparison.Ordinal);
+        Assert.Contains("const SESSION_HISTORY_KEY = \"sessionCopilot\"", script, StringComparison.Ordinal);
+        Assert.Contains("entityId: \"csa-meeting-coach\"", configure, StringComparison.Ordinal);
+        Assert.Contains("suggestedDisplayName: \"LiveSense\"", configure, StringComparison.Ordinal);
+        Assert.Contains("<h1 id=\"entry-title\">Close the gap.<span>LIVE.</span></h1>", index, StringComparison.Ordinal);
+        Assert.Contains("LiveSense · Host", index, StringComparison.Ordinal);
+        Assert.Contains("LiveSense · Member", index, StringComparison.Ordinal);
+        Assert.Equal("ea741c0d-2d8e-43c9-a59d-e16679f41eb3", manifest.RootElement.GetProperty("id").GetString());
+        Assert.Equal("LiveSense", manifest.RootElement.GetProperty("name").GetProperty("short").GetString());
+        Assert.Equal("0.4.1", manifest.RootElement.GetProperty("version").GetString());
+        Assert.True(File.Exists(RepositoryPath("src", "CsaMeetingCoach.Api", "wwwroot", "assets", "livesense-icon.svg")));
+    }
+
     [Fact]
     public void ToastifyDependencies_ArePinnedToMicrosoftCfs()
     {

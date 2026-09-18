@@ -1,10 +1,10 @@
 {
   "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.19/MicrosoftTeams.schema.json",
   "manifestVersion": "1.19",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "id": "ea741c0d-2d8e-43c9-a59d-e16679f41eb3",
   "developer": {
-    "name": "Session Copilot",
+    "name": "LiveSense",
     "websiteUrl": "https://csa-meeting-coach-demo.westus2.cloudapp.azure.com",
     "privacyUrl": "https://csa-meeting-coach-demo.westus2.cloudapp.azure.com/privacy.html",
     "termsOfUseUrl": "https://csa-meeting-coach-demo.westus2.cloudapp.azure.com/terms.html"
@@ -14,8 +14,8 @@
     "color": "color.png"
   },
   "name": {
-    "short": "Session Copilot",
-    "full": "Session Copilot for live customer conversations"
+    "short": "LiveSense",
+    "full": "LiveSense for live conversations"
   },
   "description": {
     "short": "Private live guidance with progress proven by transcript evidence.",
