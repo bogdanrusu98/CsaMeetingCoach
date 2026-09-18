@@ -1,13 +1,8 @@
-# Session Copilot
+# LiveSense
 
 <p align="center">
-  <img src="appPackage/branding/session-copilot-project-card.png"
-       alt="Session Copilot turns live conversation into confident action"
-       width="100%">
-</p>
-
-<p align="center">
-  <strong>Private AI guidance for hosts. Adaptive context for participants. Progress proven by exact conversation evidence.</strong>
+  <strong>Close the understanding gap. LIVE.</strong><br>
+  Private guidance for the presenter, clear explanations for participants, and proof of what was covered—while the conversation can still change.
 </p>
 
 <p align="center">
@@ -15,22 +10,73 @@
   ·
   <a href="#how-it-works">How it works</a>
   ·
+  <a href="https://innovation-studio.microsoft.com/events/hackathon2026/submissions/projects/proj-97c305f2-45ac-4529-ba3e-756b29da8715">Hackathon project</a>
+  ·
   <a href="docs/engineering-reference.md">Engineering reference</a>
 </p>
 
-> **Hackathon status:** Session Copilot is currently a standalone web application.
+> **Naming:** LiveSense was previously called Session Copilot. The repository,
+> source namespaces and some demo assets retain their existing technical names.
+>
+> **Hackathon status:** LiveSense is currently a standalone web application.
 > A Teams meeting side-panel and media-bot path are included as experimental
 > integration work, but the live demo does not claim native Teams transcript access.
 
-## The problem
+## The most valuable moment to help is before the conversation ends.
 
-Customer-facing professionals must listen, understand needs, explain technical
-concepts, guide the discussion, track progress, and capture next actions at the
-same time. This switching cost can produce missed signals, unclear follow-up, and
-less attention for the people in the meeting.
+A customer mentions a constraint. A support engineer misses the next diagnostic question. A participant hears a term they do not understand—and says nothing.
 
-Session Copilot keeps the host focused on the conversation while giving each role
-only the support it needs.
+A transcript can preserve those moments. A summary can describe them later. **LiveSense is designed to help while there is still time to change the outcome.**
+
+## THE GAP: captured words are not shared understanding
+
+Presenters must listen, explain, ask the right questions and track progress at the same time. Participants bring different levels of knowledge. The result can be a gap between what was said, what was understood and what still needs discussing.
+
+LiveSense connects **what is being said + the session goal + reference knowledge + discussion progress** to build live context. It turns that context into different help for each side—not the same answer broadcast to everyone.
+
+## The LIVE difference: one conversation, two experiences
+
+**For the Host:** private suggestions on what to ask, clarify, explain or discuss next, grounded in the conversation and available knowledge.
+
+**For Members:** timely definitions and contextual tips that make the discussion easier to follow, with session-wide familiarity settings and publication controls. Private Host coaching stays out of the Member view.
+
+**For the plan:** the Host can accept a suggestion as a trackable discussion item. It completes automatically only when later transcript evidence supports it, with an exact quote and independent validation. Accepting a suggestion is not the same as covering it.
+
+**The wow moment:** a gap becomes visible, the Host gets a useful next move, and participants get the context they need—all before the meeting becomes follow-up work.
+
+## Where this can help
+
+These are illustrative use cases, not claims of completed customer deployments.
+
+- **Technical support:** “It started after the certificate change.” The Host can receive a suggestion to clarify the change and the exact error using the approved runbook; the customer can receive an explanation of an unfamiliar term. The goal is a clearer diagnostic conversation—not an automatic fix.
+- **CSA / solution design:** “Admins have permanent access, and leavers are removed manually.” With relevant Entra knowledge, the Host can receive a suggestion to explore privileged access and offboarding, while the customer receives explanations of the concepts being discussed.
+- **Customer onboarding:** “We bought it, but the team still does not know how to use it.” The Host can be prompted to uncover a practical adoption gap and explain the relevant workflow; participants receive context matched to their familiarity.
+- **Training and workshops:** learners need explanations while the instructor needs to spot what deserves another example. LiveSense separates those needs instead of interrupting everyone with presenter guidance.
+- **Beyond technology:** in a cooking session, “Our guests are vegan, but the recipe uses butter and honey” can prompt the Host to explain substitutions from the uploaded guide. The same conversation pattern applies to different knowledge domains.
+
+## SCALE: extend expertise, not just meeting notes
+
+The opportunity is to bring useful, knowledge-grounded support to more conversations without requiring a subject-matter expert beside every presenter. A shared interaction model can be adapted through session goals, reference documents, familiarity settings and templates—not a separate experience for every topic.
+
+Start with a support runbook. Extend to a CSA knowledge pack, an onboarding guide or a training manual. **One live-context approach. Multiple roles. Multiple domains.**
+
+This is a path to broader adoption, not a claim of proven infrastructure scale. The current hackathon MVP uses a single Azure VM and local session storage. Enterprise identity, tenant isolation, transactional storage, capacity testing and operational controls are work ahead of a broader rollout.
+
+## Built and demonstrated—not presented as production-certified
+
+The standalone web prototype combines Azure AI Speech, Azure AI Foundry and an ASP.NET Core session engine, with separate Host and Member views and live updates. AI analysis runs asynchronously; suggestions depend on available evidence and knowledge, not every spoken sentence. Local rules support selected scenarios and are not a universal intent detector.
+
+Microphones are explicitly activated with participant notice and consent. The application does not persist raw audio. Local session data is scheduled for deletion after 24 hours; cloud-service logs and retention require separate assessment. Security, privacy and compliance approval are prerequisites for a real-data pilot. Native Teams integration is future work.
+
+## What success would look like
+
+A pilot should measure fewer missed questions, better participant understanding, more evidence-backed discussion coverage and less post-meeting clarification. These are outcomes to validate—not measured savings or a claimed 50% reduction.
+
+**Help shape the pilot:** bring a repeatable conversation, a reviewed knowledge pack and a way to measure the gap today.
+
+**LiveSense: make the next moment of the conversation better.**
+
+## Experience at a glance
 
 | Host experience | Member experience |
 |---|---|
@@ -44,7 +90,7 @@ only the support it needs.
 
 **The plan advances only when the conversation proves it.**
 
-Session Copilot does not mark work complete because an AI model says a topic was
+LiveSense does not mark work complete because an AI model says a topic was
 probably covered. Automatic completion requires:
 
 1. a final transcript segment;
@@ -115,7 +161,7 @@ flowchart LR
 - Audience familiarity applies to the session as a whole; it does not score or
   profile individual members.
 - Session state, transcript text, join codes, and uploaded knowledge are temporary.
-- In this prototype, session data is deleted automatically 24 hours after creation.
+- Local session data is scheduled for deletion after 24 hours; cloud-service logs and retention require separate assessment.
 - Transcript content is treated as untrusted input, not as instructions to the agent.
 - Azure-specific Custom Speech and phrase vocabulary are used only for Azure-focused
   sessions; other domains use the base Speech model to avoid terminology bias.
@@ -171,7 +217,7 @@ enable them again.
 - The live demo is a standalone web app. The repository includes an experimental
   Teams package and media-bot path, but the demo does not claim native Teams live
   transcript access.
-- Browser transcription requires each participant to open Session Copilot and grant
+- Browser transcription requires each participant to open LiveSense and grant
   microphone access. A production Teams-wide capture path would require an approved
   platform API or application-hosted media bot.
 - The demo uses local JSON files rather than transactional or distributed storage.
